@@ -51,6 +51,8 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
         flag2      => 'f',
         status     => 'active',
         bits       => '00001',
+        or         => [ and => [ '!bits' => '00001', bits => { ne => '11111' } ],
+                        and => [ bits => { lt => '10101' }, '!bits' => '10000' ] ],
         start      => '2001-01-02',
         save_col   => [ 1, 5 ],
         nums       => '{1,2,3}',
@@ -298,6 +300,9 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
       [
         id         => { ge => 2 },
         k1         => { lt => 900 },
+        or         => [ k1 => { ne => 99 }, k1 => 100 ],
+        or         => [ and => [ id => { ne => 123 }, id => { lt => 100  } ],
+                        and => [ id => { ne => 456 }, id => { lt => 300  } ] ],
         '!k2'      => { gt => 999 },
         '!t2.name' => 'z',
         start      => { lt => DateTime->new(year => '2005', month => 1, day => 1) },
@@ -349,6 +354,8 @@ SKIP: foreach my $db_type ('mysql')
         flag2      => 0,
         status     => 'active',
         bits       => '00001',
+        or         => [ and => [ '!bits' => '00001', bits => { ne => '11111' } ],
+                        and => [ bits => { lt => '10101' }, '!bits' => '10000' ] ],
         start      => '2001-01-02',
         save_col   => [ 1, 5 ],
         last_modified => { le => 'now' },
@@ -586,6 +593,9 @@ SKIP: foreach my $db_type ('mysql')
       [
         id         => { ge => 2 },
         k1         => { lt => 900 },
+        or         => [ k1 => { ne => 99 }, k1 => 100 ],
+        or         => [ and => [ id => { ne => 123 }, id => { lt => 100  } ],
+                        and => [ id => { ne => 456 }, id => { lt => 300  } ] ],
         '!k2'      => { gt => 999 },
         '!t2.name' => 'z',
         start      => { lt => DateTime->new(year => '2005', month => 1, day => 1) },
@@ -637,6 +647,8 @@ SKIP: foreach my $db_type (qw(informix))
         flag2      => 'f',
         status     => 'active',
         bits       => '00001',
+        or         => [ and => [ '!bits' => '00001', bits => { ne => '11111' } ],
+                        and => [ bits => { lt => '10101' }, '!bits' => '10000' ] ],
         start      => '01/02/2001',
         save_col   => [ 1, 5 ],
         nums       => 'SET{1,2,3}',
@@ -827,8 +839,6 @@ SKIP: foreach my $db_type (qw(informix))
   ok(ref $o->{'other_obj'} eq 'MyInformixOtherObject', "foreign object 4 - $db_type");
   is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
 
-  #local $Rose::DB::Object::Manager::Debug = 1;
-
   $objs = 
     Rose::DB::Object::Manager->get_objects(
       object_class => 'MyInformixObject',
@@ -864,11 +874,14 @@ SKIP: foreach my $db_type (qw(informix))
         fk1        => 2,
         fk1        => { lt => 99 },
         fk1        => { lt => 100 },
+        or         => [ nums => { in_set => [ 2, 22, 222 ] }, 
+                        fk1 => { lt => 777 },
+                        last_modified => '6/6/2020' ],
         nums       => { any_in_set => [ 1, 99, 100 ] },
         nums       => { in_set => [ 2, 22, 222 ] },
         nums       => { in_set => 2 },
         nums       => { all_in_set => [ 1, 2, 3 ] },
-        last_modified => { le => '6/6/2020' }, # XXX: breaks in 2020!
+        last_modified => { le => '6/6/2020' }, # XXX: test breaks in 2020!
         date_created  => '3/30/2004 12:34:56 pm'
       ],
       clauses => [ "LOWER(status) LIKE 'ac%'" ],
@@ -887,6 +900,9 @@ SKIP: foreach my $db_type (qw(informix))
       [
         id         => { ge => 2 },
         k1         => { lt => 900 },
+        or         => [ k1 => { ne => 99 }, k1 => 100 ],
+        or         => [ and => [ id => { ne => 123 }, id => { lt => 100  } ],
+                        and => [ id => { ne => 456 }, id => { lt => 300  } ] ],
         '!k2'      => { gt => 999 },
         '!t2.name' => 'z',
         start      => { lt => DateTime->new(year => '2005', month => 1, day => 1) },

@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 our $Debug = 0;
 
@@ -33,22 +33,26 @@ my %OP_MAP =
   all_in_set => 'ALL IN',
 );
 
-sub build_where_clause { build_query(@_, where_only => 1) }
+sub build_where_clause { build_select(@_, where_only => 1) }
 
 sub build_select
 {
   my(%args) = @_;
 
-  my $dbh        = $args{'dbh'};
-  my $tables     = $args{'tables'}  || Carp::croak "Missing 'tables' argument";
-  my $logic      = $args{'logic'}   || 'AND';
-  my $columns    = $args{'columns'};  
-  my $query_arg  = $args{'query'};
-  my $sort_by    = $args{'sort_by'};
-  my $group_by   = $args{'group_by'};
-  my $limit      = $args{'limit'};
-  my $select     = $args{'select'};
-  my $where_only = $args{'where_only'};
+  my $dbh         = $args{'dbh'};
+  my $tables      = $args{'tables'} || Carp::croak "Missing 'tables' argument";
+  my $logic       = delete $args{'logic'} || 'AND';
+  my $columns     = $args{'columns'};  
+  my $query_arg   = delete $args{'query'};
+  my $sort_by     = delete $args{'sort_by'};
+  my $group_by    = delete $args{'group_by'};
+  my $limit       = delete $args{'limit'};
+  my $select      = $args{'select'};
+  my $where_only  = delete $args{'where_only'};
+  my $clauses_arg = delete $args{'clauses'};  
+  my $pretty      = exists $args{'pretty'} ? $args{'pretty'} : $Debug;
+
+  $args{'_depth'}++;
 
   unless($args{'dbh'})
   {
@@ -60,27 +64,72 @@ sub build_select
     else { Carp::croak "Missing 'dbh' argument" }
   }
 
+  my $do_bind = wantarray;
+
+  my(@bind, @clauses);
+
   my %query;
 
   if($query_arg)
   {
     for(my $i = 0; $i < $#$query_arg; $i += 2)
     {
-      push(@{$query{$query_arg->[$i]}}, $query_arg->[$i + 1]);
+      if($query_arg->[$i] =~ /^(?:and|or)$/i)
+      {
+        my($sql, $bind);
+
+        if($do_bind)
+        {
+          ($sql, $bind) =
+            build_select(%args, 
+                         where_only => 1,
+                         query => $query_arg->[$i + 1],
+                         logic => uc $query_arg->[$i]);
+
+          push(@bind, @$bind);
+        }
+        else
+        {
+          $sql =
+            build_select(%args, 
+                         where_only => 1,
+                         query => $query_arg->[$i + 1],
+                         logic => uc $query_arg->[$i]);
+        }
+
+        if($pretty)
+        {
+          my $pad     = '  ' x $args{'_depth'};
+          my $sub_pad = '  ' x ($args{'_depth'} - 1);
+
+          for($sql)
+          {
+            s/\A //;
+            s/^ +$//g;
+            s/\s*\Z//;
+          }
+        
+          push(@clauses, "(\n" . $sql . "\n" . "$pad)");
+        }
+        else
+        {
+          push(@clauses, "($sql)");
+        }
+      }
+      else
+      {
+        push(@{$query{$query_arg->[$i]}}, $query_arg->[$i + 1]);
+      }
     }
   }
 
   my $query_is_sql = $args{'query_is_sql'};
 
-  my $do_bind = wantarray;
-
-  my @bind;
-
   $select   = join(', ', @$select)    if(ref $select);
   $sort_by  = join(', ', @$sort_by)   if(ref $sort_by);
   $group_by = join(', ', @$group_by)  if(ref $group_by);
 
-  my($not, $op, @clauses, %table_alias, @select_columns, %column_count);
+  my($not, $op, %table_alias, @select_columns, %column_count);
 
   foreach my $table (@$tables)
   {
@@ -198,12 +247,22 @@ sub build_select
     }
   }
 
-  if(ref($args{'clauses'}))
+  if($clauses_arg)
   {
-    push(@clauses, @{$args{'clauses'}});
+    push(@clauses, @$clauses_arg);
   }
 
-  my $where = join(" $logic\n", map { "  $_" } @clauses);
+  my $where;
+  
+  if($pretty)
+  {
+    my $pad = '  ' x $args{'_depth'};
+    $where = join(" $logic\n", map { "$pad$_" } @clauses);
+  }
+  else
+  {
+    $where = join(" $logic\n", map { "  $_" } @clauses);
+  }
 
   my $qs;
 
@@ -720,6 +779,44 @@ The above returns an SQL statement something like this:
       AND
       (title LIKE '%million%' OR title LIKE '%resident%')
     LIMIT 5
+
+Nested boolean logic is possible using the special keywords C<and> and C<or> (case insensitive).  Example:
+
+    $sql = build_select
+    (
+      dbh     => $dbh,
+      select  => 'id, title',
+      tables  => [ 'articles' ],
+      columns => { articles => [ qw(id category type title) ] },
+      query   =>
+      [
+        or =>
+        [
+          and => [ category => undef, type => 'aux' ],
+          category => [ 'sports', 'science' ],
+        ],
+        type     => 'news',
+        title    => { like => [ '%million%', 
+                                '%resident%' ] },
+      ],
+      query_is_sql => 1);
+
+which returns an SQL statement something like this:
+
+    SELECT id, title FROM articles WHERE
+      (
+        (
+          category IS NULL AND
+          type = 'aux'
+        ) 
+        OR category IN ('sports', 'science')
+      )
+      AND
+      type = 'news'
+      AND
+      (title LIKE '%million%' OR title LIKE '%resident%')
+
+If you have a column named "and" or "or", you'll have to use the fully-qualified (table.column) or alias-qualified (tN.column) forms in order to address the column.
 
 If C<query_is_sql> is true, all of the parameter values are passed through the corresponding C<Rose::DB::Object>-derived object methods in order to parse, "deflate", and format the values.  Example:
 

@@ -18,3 +18,7 @@
 
     * Fixed bug in Rose::DB::Object::Std::Metadata that caused the
       number of primary key column to appear to be zero.
+
+0.02 (03.17.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added support for nested boolean logic in queries.

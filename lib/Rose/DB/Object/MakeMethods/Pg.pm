@@ -183,7 +183,7 @@ type with things like Apache's Auth_PostgreSQL module."
 This data type is very handy for storing encrypted values such as passwords while still retaining the ability to perform SELECTs and such using unencrypted values in comparisons.  For example, the query
 
     SELECT * FROM users WHERE password = 'foobar'
-    
+
 will actually find all the users whose passwords are "foobar", even though all the passwords are encrypted in the database.
 
 =over 4

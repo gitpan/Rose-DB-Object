@@ -57,7 +57,7 @@ Rose::DB::Objects::Iterator - Iterate over a series of Rose::DB::Objects.
     while($object = $iterator->next)
     {
       # do stuff with $object...
-      
+
       if(...) # bail out early
       {
         $iterator->finish;

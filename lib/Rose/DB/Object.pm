@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.013';
+our $VERSION = '0.02';
 
 our $Debug = 0;
 
@@ -781,6 +781,8 @@ Returns a new C<Rose::DB::Object> constructed according to PARAMS, where PARAMS 
 =head1 CLASS METHODS
 
 =over 4
+
+=item B<meta>
 
 Returns the C<Rose::DB::Object::Metadata> object associated with this class.  This object describes the database table whose rows are fronted by this class: the name of the table, its columns, unique keys, foreign keys, etc.
 

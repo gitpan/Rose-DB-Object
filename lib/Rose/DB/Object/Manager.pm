@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 our $Debug = 0;
 
@@ -141,6 +141,7 @@ sub get_objects
                    classes => \%classes,
                    meta    => \%meta,
                    db      => $db,
+                   pretty  => $Debug,
                    %args);
 
     if($return_sql)
@@ -181,6 +182,7 @@ sub get_objects
                  classes => \%classes,
                  meta    => \%meta,
                  db      => $db,
+                 pretty  => $Debug,
                  %args);
 
   if($return_sql)
