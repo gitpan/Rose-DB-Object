@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 220;
+use Test::More tests => 232;
   
 BEGIN 
 {
@@ -18,7 +18,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 114)  unless($HAVE_PG);
+  skip("Postgres tests", 120)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -175,6 +175,25 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   eval { $o->meta->alias_column(id => 'foo') };
   ok($@, "alias_column() primary key - $db_type");
+
+  $o = MyPgObject->new(id => 777);
+                          
+  $o->meta->error_mode('fatal');
+
+  $o->dbh->{'PrintError'} = 0;
+
+  eval { $o->load };
+  ok($@ && $o->not_found, "load() not found fatal - $db_type");
+
+  $o->id('abc');
+
+  eval { $o->load };
+  ok($@ && !$o->not_found, "load() fatal - $db_type");
+
+  eval { $o->save };
+  ok($@, "save() fatal - $db_type");
+  
+  $o->meta->error_mode('return');
 }
 
 #
@@ -183,7 +202,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 49)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 52)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -295,6 +314,27 @@ SKIP: foreach my $db_type ('mysql')
 
   eval { $o->meta->alias_column(id => 'foo') };
   ok($@, "alias_column() primary key - $db_type");
+
+  $o = MyMySQLObject->new(id => 777);
+                          
+  $o->meta->error_mode('fatal');
+
+  $o->dbh->{'PrintError'} = 0;
+
+  eval { $o->load };
+  ok($@ && $o->not_found, "load() not found fatal - $db_type");
+
+  my $old_table = $o->meta->table;
+  $o->meta->table('nonesuch');
+
+  eval { $o->load };
+  ok($@ && !$o->not_found, "load() fatal - $db_type");
+
+  eval { $o->save };
+  ok($@, "save() fatal - $db_type");
+
+  $o->meta->table($old_table);  
+  $o->meta->error_mode('return');
 }
 
 #
@@ -303,7 +343,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 56)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 59)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -441,6 +481,25 @@ SKIP: foreach my $db_type ('informix')
 
   eval { $o->meta->alias_column(id => 'foo') };
   ok($@, "alias_column() primary key - $db_type");
+
+  $o = MyInformixObject->new(id => 777);
+                          
+  $o->meta->error_mode('fatal');
+
+  $o->dbh->{'PrintError'} = 0;
+
+  eval { $o->load };
+  ok($@ && $o->not_found, "load() not found fatal - $db_type");
+
+  $o->id('abc');
+
+  eval { $o->load };
+  ok($@ && !$o->not_found, "load() fatal - $db_type");
+
+  eval { $o->save };
+  ok($@, "save() fatal - $db_type");
+  
+  $o->meta->error_mode('return');
 }
 
 BEGIN

@@ -17,7 +17,7 @@
 0.013 (03.11.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Fixed bug in Rose::DB::Object::Std::Metadata that caused the
-      number of primary key column to appear to be zero.
+      number of primary key columns to appear to be zero.
 
 0.02 (03.17.2005) - John Siracusa <siracusa@mindspring.com>
 
@@ -35,3 +35,7 @@
 0.023 (03.25.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Added prepare_*_options (undocumented for now).
+
+0.03 (03.27.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added error_mode methods.

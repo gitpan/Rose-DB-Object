@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.023';
+our $VERSION = '0.03';
 
 our $Debug = 0;
 
@@ -85,6 +85,7 @@ sub _init_db
 
   $self->error($db->error);
 
+  $self->meta->handle_error($self);
   return undef;
 }
 
@@ -103,6 +104,7 @@ sub dbh
   else
   {
     $self->error($db->error);
+    $self->meta->handle_error($self);
     return undef;
   }
 }
@@ -151,6 +153,8 @@ sub load
                    (@key_columns > 1 ? 'non-null values in all columns' : 
                                        'a non-null value') .
                    ' or another unique key with at least one non-null value.');
+
+      $self->meta->handle_error($self);
       return 0;
     }
   }
@@ -158,6 +162,8 @@ sub load
   my $rows = 0;
 
   my $column_names = $meta->column_names;
+
+  $self->{'not_found'} = 0;
 
   eval
   {
@@ -192,8 +198,6 @@ sub load
 
     if($rows > 0)
     {
-      $self->{'not_found'} = 0;
-
       if($meta->column_aliases)
       {
         my $methods = $meta->column_methods;
@@ -224,10 +228,15 @@ sub load
   if($@)
   {
     $self->error("load() - $@");
-    return 0;
+    $self->meta->handle_error($self);
+    return undef;
   }
 
-  return 0  unless($rows > 0);
+  unless($rows > 0)
+  {
+    $self->meta->handle_error($self);
+    return 0;
+  }
 
   $self->{STATE_IN_DB()} = 1;
   return 1;
@@ -402,6 +411,7 @@ sub update
   {
     $self->error("update() - $@");
     #$db->rollback or warn $db->error  if($started_new_tx);
+    $self->meta->handle_error($self);
     return 0;
   }
 
@@ -447,6 +457,7 @@ sub insert
       my $s = (@pk_values == 1 ? '' : 's');
       $self->error("Could not generate primary key$s for column$s " .
                    join(', ', @pk_columns));
+      $self->meta->handle_error($self);
       return undef;
     }
 
@@ -555,6 +566,7 @@ sub insert
   {
     $self->error("update() - $@");
     #$db->rollback or warn $db->error  if($started_new_tx);
+    $self->meta->handle_error($self);
     return 0;
   }
 
@@ -576,6 +588,7 @@ sub delete
   {
     $self->error("Cannot delete " . ref($self) . " without a primary key (" .
                  join(', ', @pk_columns) . ')');
+    $self->meta->handle_error($self);
     return 0;
   }
 
@@ -599,6 +612,7 @@ sub delete
   if($@)
   {
     $self->error("delete() - $@");
+    $self->meta->handle_error($self);
     return 0;
   }
 

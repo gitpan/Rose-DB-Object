@@ -17,7 +17,6 @@ use Rose::Object::MakeMethods::Generic
   scalar => 
   [
     'class',
-    'error',
     'primary_key_generator',
   ],
 
@@ -80,7 +79,7 @@ __PACKAGE__->column_type_classes
 
 our %Class_Loaded;
 
-our $VERSION = '0.012';
+our $VERSION = '0.03';
 
 our $Debug = 0;
 
@@ -96,6 +95,58 @@ sub new
 sub for_class
 {
   return $Objects{$_[1]} ||= $_[0]->new(class => $_[1]);
+}
+
+sub error_mode
+{
+  return $_[0]->{'error_mode'} ||= $_[0]->init_error_mode
+    unless(@_ > 1);
+
+  my($self, $mode) = @_;
+
+  unless($mode =~ /^(?:return|carp|croak|cluck|confess|fatal)$/)
+  {
+    Carp::croak "Invalid error mode: '$mode'";
+  }
+
+  return $self->{'error_mode'} = $mode;
+}
+
+sub init_error_mode { 'return' }
+
+sub handle_error
+{
+  my($self, $object) = @_;
+
+  my $mode = $self->error_mode;
+
+  return  if($mode eq 'return');
+
+  my $level =  $Carp::CarpLevel;
+  local $Carp::CarpLevel = $level + 1;
+
+  if($mode eq 'croak' || $mode eq 'fatal')
+  {
+    Carp::croak $object->error;
+  }
+  elsif($mode eq 'carp')
+  {
+    Carp::carp $object->error;
+  }
+  elsif($mode eq 'cluck')
+  {
+    Carp::croak $object->error;
+  }
+  elsif($mode eq 'confess')
+  {
+    Carp::confess $object->error;
+  }
+  else
+  {
+    Carp::croak "(Invalid error mode set: '$mode') - ", $object->error;
+  }
+
+  return 1;
 }
 
 sub prepare_select_options 
@@ -884,6 +935,8 @@ Rose::DB::Object::Metadata - Database object metadata.
 
 C<Rose::DB::Object::Metadata> objects store information about a single table in a database: the name of the table, the names and types of columns, any foreign keys, etc.  These metadata objects are also responsible for supplying information to, and creating object methods for the C<Rose::DB::Object>-derived objects to which they belong.
 
+C<Rose::DB::Object::Metadata> objects also store information about the C<Rose::DB::Object>s that fronts the database tables they describe.  What might normally be thought of as "class data" for the C<Rose::DB::Object> is stored in the metadata object instead, in order to keep the method namespace of the C<Rose::DB::Object>-derived class uncluttered.
+
 C<Rose::DB::Object::Metadata> objects objects are per-class singletons; there is one C<Rose::DB::Object::Metadata> object for each C<Rose::DB::Object>-derived class.
 
 =head1 CLASS METHODS
@@ -1157,6 +1210,44 @@ Get or set the foreign key named NAME.  NAME should be the name of the thing bei
 If passed a VALUE that is a reference to a hash, a new C<Rose::DB::Object::Metadata::ForeignKey> object is constructed, with the name/value pairs in the hash passed to the constructor, along with the NAME as the value of the C<name> parameter.
 
 If VALUE is a C<Rose::DB::Object::Metadata::ForeignKey>->derived object, it has its C<name> set to NAME and then is stored under that name.
+
+=item B<error_mode [MODE]>
+
+Get or set the error mode of the C<Rose::DB::Object> that fronts the table described by this C<Rose::DB::Object::Metadata> object.  If the error mode is false, then it is defaults to the return value of the C<init_error_mode()> method, which is "return" by default.
+
+The error mode determines what happens when a C<Rose::DB::Object> method  encounters an error.  The default mode, "return", causes the methods to behave as described in the documentation for the C<Rose::DB::Object> class.  All other error modes cause an action to be performed before returning as per the documentation.
+
+Valid error modes are:
+
+=over 4
+
+=item carp
+
+Call C<Carp::carp()> with the value of the object C<error()> as an argument.
+
+=item cluck
+
+Call C<Carp::cluck()> with the value of the object C<error()> as an argument.
+
+=item confess
+
+Call C<Carp::confess()> with the value of the object C<error()> as an argument.
+
+=item croak
+
+Call C<Carp::croak()> with the value of the object C<error()> as an argument.
+
+=item fatal
+
+An alias for the "croak" mode.
+
+=item return
+
+Return a value that indicates that an error has occurred, as described in the documentation for a given method.
+
+=back
+
+In call cases, the object's C<error> attribute will store the error message.
 
 =item B<fq_table_sql>
 

@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.021';
+our $VERSION = '0.03';
 
 our $Debug = 0;
 
@@ -18,7 +18,45 @@ our $Debug = 0;
 use Rose::Class::MakeMethods::Generic
 (
   inheritable_scalar => [ 'error', 'total' ],
+  'scalar --get_set_init' => [ 'error_mode' ],
 );
+
+sub init_error_mode { 'return' }
+
+sub handle_error
+{
+  my($class, $object) = @_;
+
+  my $mode = $class->error_mode;
+
+  return  if($mode eq 'return');
+
+  my $level =  $Carp::CarpLevel;
+  local $Carp::CarpLevel = $level + 1;  
+
+  if($mode eq 'croak' || $mode eq 'fatal')
+  {
+    Carp::croak $object->error;
+  }
+  elsif($mode eq 'carp')
+  {
+    Carp::carp $object->error;
+  }
+  elsif($mode eq 'cluck')
+  {
+    Carp::croak $object->error;
+  }
+  elsif($mode eq 'confess')
+  {
+    Carp::confess $object->error;
+  }
+  else
+  {
+    Carp::croak "(Invalid error mode set: '$mode') - ", $object->error;
+  }
+
+  return 1;
+}
 
 sub get_objects_count
 {
@@ -51,6 +89,7 @@ sub get_objects
     unless($dbh = $db->retain_dbh)
     {
       $class->error($db->error);
+      $class->handle_error($class);
       return undef;
     }
 
@@ -166,6 +205,7 @@ sub get_objects
     {
       $class->total(undef);
       $class->error("get_objects() - $@");
+      $class->handle_error($class);
       return undef;
     }
 
@@ -233,6 +273,7 @@ sub get_objects
           unless($sth->fetch)
           {
             $self->total($self->{'_count'});
+            $class->handle_error($self);
             return 0;
           }
 
@@ -255,6 +296,7 @@ sub get_objects
         if($@)
         {
           $self->error("next() - $@");
+          $class->handle_error($self);
           return undef;
         }
 
@@ -307,6 +349,7 @@ sub get_objects
   if($@)
   {
     $class->error("get_objects() - $@");
+    $class->handle_error($class);
     return undef;
   }
 
@@ -324,6 +367,7 @@ sub _map_action
     unless($object->$action())
     {
       $class->error($object->error);
+      $class->handle_error($class);
       return;
     }
   }
@@ -549,6 +593,43 @@ Class methods are provided for fetching objects all at once, one at a time throu
 =item B<error>
 
 Returns the text message associated with the last error, or false if there was no error.
+
+=item B<error_mode [MODE]>
+
+Get or set the error mode for this class.  If the error mode is false, then it is defaults to the return value of the C<init_error_mode()> class method, which is "return" by default.
+
+The error mode determines what happens when a method of this class encounters an error.  The default mode, "return", causes the methods to behave as described in this documentation.  All other error modes cause an action to be performed before returning as per the documentation.
+
+Valid error modes are:
+
+=over 4
+
+=item carp
+
+Call C<Carp::carp()> with the value of the C<error()> class method as an argument.
+
+=item cluck
+
+Call C<Carp::cluck()> with the value of the C<error()> class method as an argument.
+
+=item confess
+
+Call C<Carp::confess()> with the value of the C<error()> class method as an argument.
+=item croak
+
+Call C<Carp::croak()> with the value of the C<error()> class method as an argument.
+
+=item fatal
+
+An alias for the "croak" mode.
+
+=item return
+
+Return a value that indicates that an error has occurred, as described in the documentation for a given method.
+
+=back
+
+In call cases, the class's C<error> attribute will store the error message.
 
 =item B<get_objects [PARAMS]>
 
