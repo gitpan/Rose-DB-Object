@@ -7,7 +7,7 @@ use Rose::DB::Object::MakeMethods::Date;
 use Rose::DB::Object::Metadata::Column::Date;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Date);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub type { 'datetime' }
 
@@ -20,6 +20,22 @@ sub should_inline_value
   return ($_[1]->validate_datetime_keyword($_[2]) && 
           ($_[1]->driver eq 'Informix' || $_[2] =~ /^\w+\(.*\)$/)) ? 1 : 0;
 }
+
+sub parse_value
+{
+  shift; 
+  my $db = shift;
+  my $dt = $db->parse_datetime(@_);
+  
+  unless($dt)
+  {
+    $dt = Rose::DateTime::Util::parse_date($_[0], $db->server_time_zone)
+  }
+  
+  return $dt;
+}
+
+sub format_value { shift; shift->format_datetime(@_) }
 
 1;
 
@@ -54,6 +70,10 @@ Returns C<Rose::DB::Object::MakeMethods::Date>.
 =item B<method_maker_type>
 
 Returns C<datetime>.
+
+=item B<parse_value DB, VALUE>
+
+Convert VALUE to the equivalent C<DateTime> object.  VALUE maybe returned unmodified if it is a valid datetime keyword or otherwise has special meaning to the underlying database.  DB is a C<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

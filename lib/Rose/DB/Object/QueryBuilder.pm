@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.022';
+our $VERSION = '0.03';
 
 our $Debug = 0;
 
@@ -210,7 +210,7 @@ sub build_select
               or Carp::confess "Could not get method name for '$column'";
 
             my %tmp = ($column_arg => $val);
-            _format_value(\%tmp, $column_arg, $obj, $col_meta, $method, $val);
+            _format_value($db, \%tmp, $column_arg, $obj, $col_meta, $method, $val);
             $val = $tmp{$column_arg};
           }
 
@@ -482,7 +482,7 @@ sub _build_clause
 
 sub _format_value
 {
-  my($store, $param, $object, $col_meta, $method, $value, $asis, $depth) = @_;
+  my($db, $store, $param, $object, $col_meta, $method, $value, $asis, $depth) = @_;
 
   $depth ||= 1;
 
@@ -490,8 +490,16 @@ sub _format_value
   {
     unless($col_meta->type eq 'set' && ref $store eq 'HASH' && $param =~ /^(?:a(?:ny|all)_)?in_set$/)
     {
-      $object->$method($value);
-      $value = $object->$method();
+    $DB::single = 1;
+      if($col_meta->manager_uses_method)
+      {
+        $object->$method($value);
+        $value = $object->$method();
+      }
+      else
+      {
+        $value = $col_meta->format_value($db, $col_meta->parse_value($db, $value));
+      }
     }
   }
   elsif(ref $value eq 'ARRAY')
@@ -499,7 +507,7 @@ sub _format_value
     if($asis || $col_meta->type eq 'array' ||
        ($col_meta->type eq 'set' && $depth == 1))
     {
-      $value = _format_value($value, undef, $object, $col_meta, $method, $value, 1, $depth + 1);
+      $value = _format_value($db, $value, undef, $object, $col_meta, $method, $value, 1, $depth + 1);
     }
     elsif($col_meta->type ne 'set')
     {
@@ -507,7 +515,7 @@ sub _format_value
 
       foreach my $subval (@$value)
       {
-        _format_value(\@vals, undef, $object, $col_meta, $method, $subval, 0, $depth + 1);
+        _format_value($db, \@vals, undef, $object, $col_meta, $method, $subval, 0, $depth + 1);
       }
 
       $value = \@vals;
@@ -517,13 +525,21 @@ sub _format_value
   {    
     foreach my $key (keys %$value)
     {
-      _format_value($value, $key, $object, $col_meta, $method, $value->{$key}, 0, $depth + 1);
+      _format_value($db, $value, $key, $object, $col_meta, $method, $value->{$key}, 0, $depth + 1);
     }
   }
   else
   {
-    $object->$method($value);
-    $value = $object->$method();
+    $DB::single = 1;
+    if($col_meta->manager_uses_method)
+    {
+      $object->$method($value);
+      $value = $object->$method();
+    }
+    else
+    {
+      $value = $col_meta->format_value($db, $col_meta->parse_value($db, $value));
+    }
   }
 
   if(ref $store eq 'HASH')
@@ -870,7 +886,11 @@ which returns an SQL statement something like this:
 
 If you have a column named "and" or "or", you'll have to use the fully-qualified (table.column) or alias-qualified (tN.column) forms in order to address the column.
 
-If C<query_is_sql> is true, all of the parameter values are passed through the corresponding C<Rose::DB::Object>-derived object methods in order to parse, "deflate", and format the values.  Example:
+If C<query_is_sql> is true, all of the parameter values are passed through the C<parse_value()> and C<format_value()> methods of their corresponding C<Rose::DB::Object::Metadata::Column>-dervied column objects.
+
+If a column object returns true from its C<manager_uses_method()> method, then its parameter value is passed through the corresponding C<Rose::DB::Object>-derived object method instead.
+
+Example:
 
     $dt = DateTime->new(year => 2001, month => 1, day => 31);
 

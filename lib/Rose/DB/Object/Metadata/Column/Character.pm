@@ -8,7 +8,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column::Scalar;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 __PACKAGE__->add_method_maker_argument_names
 (
@@ -22,6 +22,16 @@ Rose::Object::MakeMethods::Generic->make_methods
 );
 
 sub type { 'character' }
+
+sub method_maker_type { 'character' }
+
+sub parse_value
+{
+  my $length = $_[0]->length or return $_[2];
+  return sprintf("%-*s", $length, $_[2])
+}
+
+*format_value = \&parse_value;
 
 1;
 
@@ -55,7 +65,11 @@ Returns C<Rose::DB::Object::MakeMethods::Generic>.
 
 =item B<method_maker_type>
 
-Returns C<scalar>.
+Returns C<character>.
+
+=item B<parse_value DB, VALUE>
+
+If C<length> is defined, returns VALUE truncated to a maximum of C<length> characters, or padding with spaces to be exactly C<length> characters long.  DB is a C<Rose::DB> object that may be as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

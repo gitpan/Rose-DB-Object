@@ -5,7 +5,7 @@ use strict;
 use Rose::DB::Object::Metadata::Column::Datetime;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Datetime);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub type { 'datetime year to minute' }
 
@@ -15,6 +15,9 @@ sub should_inline_value
   return ($_[1]->validate_datetime_year_to_minute_keyword($_[2]) && 
           ($_[1]->driver eq 'Informix' || $_[2] =~ /^\w+\(.*\)$/)) ? 1 : 0;
 }
+
+sub parse_value  { shift; shift->parse_datetime_year_to_minute(@_)  }
+sub format_value { shift; shift->format_datetime_year_to_minute(@_) }
 
 1;
 
@@ -51,6 +54,10 @@ Returns C<Rose::DB::Object::MakeMethods::Date>.
 =item B<method_maker_type>
 
 Returns C<datetime>.
+
+=item B<parse_value DB, VALUE>
+
+Convert VALUE to the equivalent C<DateTime> object suitable for storage in a "datetime year to minute" column.  VALUE maybe returned unmodified if it is a valid "datetime year to minute" keyword or otherwise has special meaning to the underlying database.  DB is a C<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

@@ -9,6 +9,16 @@ our $VERSION = '0.01';
 
 sub type { 'varchar' }
 
+sub method_maker_type { 'varchar' }
+
+sub parse_value
+{
+  my $length = $_[0]->length or return $_[2];
+  return substr($_[2], 0, $length);
+}
+
+*format_value = \&parse_value;
+
 1;
 
 __END__
@@ -41,7 +51,11 @@ Returns C<Rose::DB::Object::MakeMethods::Generic>.
 
 =item B<method_maker_type>
 
-Returns C<scalar>.
+Returns C<varchar>.
+
+=item B<parse_value DB, VALUE>
+
+If C<length> is defined, returns VALUE truncated to a maximum of C<length> characters.  DB is a C<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

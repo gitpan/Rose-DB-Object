@@ -2,13 +2,15 @@ package Rose::DB::Object::Metadata::Column::Date;
 
 use strict;
 
+use Rose::DateTime::Util;
+
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Date;
 
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 __PACKAGE__->add_method_maker_argument_names('default', 'type');
 
@@ -29,6 +31,22 @@ sub should_inline_value
   return ($_[1]->validate_date_keyword($_[2]) && 
           ($_[1]->driver eq 'Informix' || $_[2] =~ /^\w+\(.*\)$/)) ? 1 : 0;
 }
+
+sub parse_value
+{
+  shift; 
+  my $db = shift;
+  my $dt = $db->parse_date(@_);
+  
+  unless($dt)
+  {
+    $dt = Rose::DateTime::Util::parse_date($_[0], $db->server_time_zone)
+  }
+
+  return $dt;
+}
+
+sub format_value { shift; shift->format_date(@_) }
 
 1;
 
@@ -67,6 +85,10 @@ Returns C<Rose::DB::Object::MakeMethods::Date>.
 =item B<method_maker_type>
 
 Returns C<date>.
+
+=item B<parse_value DB, VALUE>
+
+Convert VALUE to the equivalent C<DateTime> object.  VALUE maybe returned unmodified if it is a valid date keyword or otherwise has special meaning to the underlying database.  DB is a C<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

@@ -2,16 +2,17 @@
 
 use strict;
 
-use Test::More tests => 71;
+use Test::More tests => 72;
 
 BEGIN
 {
   require 't/test-lib.pl';
+  use_ok('Rose::DB::Object');
   use_ok('Rose::DB::Object::MakeMethods::Generic');
   use_ok('Rose::DB::Object::MakeMethods::Pg');
 }
 
-use Rose::DB::Object::Constants qw(PRIVATE_PREFIX);
+use Rose::DB::Object::Constants qw(STATE_SAVING);
 
 my $p = Person->new() || ok(0);
 ok(ref $p && $p->isa('Person'), 'Construct object (no init)');
@@ -73,7 +74,7 @@ SKIP:
 
   $p->sql_date_birthday('now');
 
-  ok($p->sql_date_birthday->ymd, 'date now');
+  is($p->sql_date_birthday, 'now', 'date now');
 
   $p->sql_date_birthday('infinity');
   is($p->sql_date_birthday(format => ''), 'infinity', 'date infinity');
@@ -170,7 +171,7 @@ SKIP:
 
   if($p->db->driver eq 'Pg')
   {
-    local $p->{PRIVATE_PREFIX . '_saving'} = 1;
+    local $p->{STATE_SAVING()} = 1;
     $p->sql_array(-1, 2.5, 3);
     is($p->sql_array, '{-1,2.5,3}', 'array 1');
 
@@ -195,46 +196,73 @@ is($p->password, 'foobar', 'chkpass() 4');
 
 BEGIN
 {
-  Rose::DB->default_type('pg');
+  Rose::DB->default_type('mysql');
 
   package Person;
 
   use strict;
 
-  @Person::ISA = qw(Rose::Object);
+  @Person::ISA = qw(Rose::DB::Object);
 
-  use Rose::DB::Object::MakeMethods::Date
+  Person->meta->columns
   (
-    date        => 'sql_date_birthday',
-    date        => [ 'sql_date_birthday_def' => { default => '1/1/2002' } ],
-    datetime    => 'sql_datetime_birthday',
-    datetime    => [ 'sql_datetime_birthday_def' => { default => '1/2/2002' } ],
-    timestamp   => 'sql_timestamp_birthday',
-    timestamp   => [ 'sql_timestamp_birthday_def' => { default => '1/3/2002' } ],
+    sql_date_birthday          => { type => 'date' },
+    sql_date_birthday_def      => { type => 'date' },
+    sql_datetime_birthday      => { type => 'datetime' },
+    sql_datetime_birthday_def  => { type => 'datetime' },
+    sql_timestamp_birthday     => { type => 'timestamp' },
+    sql_timestamp_birthday_def => { type => 'timestamp' },
+
+    sql_is_happy  => { type => 'boolean' },
+    sql_bool      => { type => 'boolean' },
+    sql_bool_def1 => { type => 'boolean' },
+
+    sql_bits   => { type => 'bitfield' },
+    sql_8bits  => { type => 'bitfield', bits => 8 },
+    sql_5bits3 => { type => 'bitfield', bits => 5 },
+
+    sql_array  => { type => 'array' },
   );
 
-  use Rose::DB::Object::MakeMethods::Generic
+  my $meta = Person->meta;
+
+  Rose::DB::Object::MakeMethods::Date->make_methods
   (
-    boolean => 'sql_is_happy',
+    { target_class => 'Person' },
+    date        => [ 'sql_date_birthday' => { column => $meta->column('sql_date_birthday') } ],
+    date        => [ 'sql_date_birthday_def' => { default => '1/1/2002', 
+                      column => $meta->column('sql_date_birthday_def') } ],
+    datetime    => [ 'sql_datetime_birthday' => { column => $meta->column('sql_datetime_birthday') } ],
+    datetime    => [ 'sql_datetime_birthday_def' => { default => '1/2/2002',
+                      column => $meta->column('sql_datetime_birthday_def') } ],
+    timestamp   => [ 'sql_timestamp_birthday' => { column => $meta->column('sql_timestamp_birthday') } ],
+    timestamp   => [ 'sql_timestamp_birthday_def' => { default => '1/3/2002',
+                     column => $meta->column('sql_timestamp_birthday_def') } ],
+  );
+
+  Rose::DB::Object::MakeMethods::Generic->make_methods
+  (
+    { target_class => 'Person' },
+    boolean => [ 'sql_is_happy' => { column => $meta->column('sql_is_happy') } ],
 
     boolean =>
     [
-      sql_bool      => { },
-      sql_bool_def1 => { default => 1 },
+      sql_bool      => { column => $meta->column('sql_bool') },
+      sql_bool_def1 => { default => 1, column => $meta->column('sql_bool_def1') },
     ],
 
     bitfield => 
     [
-      'sql_bits' => { with_intersects => 1 },
+      'sql_bits' => { with_intersects => 1, column => $meta->column('sql_bits') },
     ],
 
     bitfield =>
     [
-      sql_8bits  => { bits => 8 },
-      sql_5bits3 => { bits => 5, default => '00011' },
+      sql_8bits  => { bits => 8, column => $meta->column('sql_8bits') },
+      sql_5bits3 => { bits => 5, default => '00011', column => $meta->column('sql_5bits3') },
     ],
     
-    array => 'sql_array',
+    array => [ 'sql_array' => { column => $meta->column('sql_array') } ],
   );
 
   use Rose::DB::Object::MakeMethods::Pg

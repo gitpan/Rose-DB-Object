@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 232;
+use Test::More tests => 244;
   
 BEGIN 
 {
@@ -18,7 +18,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 120)  unless($HAVE_PG);
+  skip("Postgres tests", 126)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -40,6 +40,17 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   ok($o->save, "save() 1 - $db_type");
   ok($o->load, "load() 1 - $db_type");
+
+  $o->name('C' x 50);
+  is($o->name, 'C' x 32, "varchar truncation - $db_type");
+
+  $o->name('John');
+
+  $o->code('A');
+  is($o->code, 'A     ', "character padding - $db_type");
+
+  $o->code('C' x 50);
+  is($o->code, 'C' x 6, "character truncation - $db_type");
 
   my $ouk = MyPgObject->new(k1 => 1,
                             k2 => undef,
@@ -202,7 +213,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 52)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 55)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -220,6 +231,17 @@ SKIP: foreach my $db_type ('mysql')
 
   ok($o->save, "save() 1 - $db_type");
   ok($o->load, "load() 1 - $db_type");
+
+  $o->name('C' x 50);
+  is($o->name, 'C' x 32, "varchar truncation - $db_type");
+
+  $o->name('John');
+
+  $o->code('A');
+  is($o->code, 'A     ', "character padding - $db_type");
+
+  $o->code('C' x 50);
+  is($o->code, 'C' x 6, "character truncation - $db_type");
 
   my $ouk = MyMySQLObject->new(k1 => 1,
                                k2 => undef,
@@ -343,7 +365,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 59)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 62)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -364,6 +386,17 @@ SKIP: foreach my $db_type ('informix')
 
   ok($o->save, "save() 1 - $db_type");
   ok($o->load, "load() 1 - $db_type");
+
+  $o->name('C' x 50);
+  is($o->name, 'C' x 32, "varchar truncation - $db_type");
+
+  $o->name('John');
+
+  $o->code('A');
+  is($o->code, 'A     ', "character padding - $db_type");
+
+  $o->code('C' x 50);
+  is($o->code, 'C' x 6, "character truncation - $db_type");
 
   my $ouk = MyInformixObject->new(k1 => 1,
                                   k2 => undef,
@@ -548,6 +581,7 @@ CREATE TABLE rose_db_object_test
   k3             INT,
   @{[ $PG_HAS_CHKPASS ? 'password CHKPASS,' : '' ]}
   name           VARCHAR(32) NOT NULL,
+  code           CHAR(6),
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
@@ -571,6 +605,7 @@ CREATE TABLE rose_db_object_private.rose_db_object_test
   k3             INT,
   @{[ $PG_HAS_CHKPASS ? 'password CHKPASS,' : '' ]}
   name           VARCHAR(32) NOT NULL,
+  code           CHAR(6),
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
@@ -597,7 +632,8 @@ EOF
       
     MyPgObject->meta->columns
     (
-      'name',
+      name     => { type => 'varchar', length => 32 },
+      code     => { type => 'char', length => 6 },
       id       => { primary_key => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int' },
@@ -661,6 +697,7 @@ CREATE TABLE rose_db_object_test
   k2             INT,
   k3             INT,
   name           VARCHAR(32) NOT NULL,
+  code           CHAR(6),
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
@@ -687,7 +724,8 @@ EOF
 
     MyMySQLObject->meta->columns
     (
-      'name',
+      name     => { type => 'varchar', length => 32 },
+      code     => { type => 'char', length => 6 },
       id       => { primary_key => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int' },
@@ -746,6 +784,7 @@ CREATE TABLE rose_db_object_test
   k2             INT,
   k3             INT,
   name           VARCHAR(32) NOT NULL,
+  code           CHAR(6),
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
@@ -771,7 +810,8 @@ EOF
 
     MyInformixObject->meta->columns
     (
-      'name',
+      name     => { type => 'varchar', length => 32 },
+      code     => { type => 'char', length => 6 },
       id       => { type => 'serial', primary_key => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int' },

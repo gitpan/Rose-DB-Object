@@ -11,7 +11,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub date
 {
@@ -75,11 +75,11 @@ sub date
           }
           else
           {
-            my $dt = Rose::DateTime::Util::parse_date($_[0], $db->server_time_zone);
+            my $dt = $db->parse_date($_[0]);
 
             unless($dt)
             {
-              $dt = $db->parse_date($_[0]) or
+              $dt = Rose::DateTime::Util::parse_date($_[0], $db->server_time_zone) or
                 Carp::croak "Invalid date: '$_[0]'";
             }
 

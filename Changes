@@ -43,3 +43,7 @@
 0.031 (03.27.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Corrected typos and errors in the documentation.
+
+0.04 (04.01.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Refactored column value parsing.  No, really.

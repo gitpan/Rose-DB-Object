@@ -10,7 +10,7 @@ our @ISA = qw(Rose::Object);
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use overload
 (
@@ -31,7 +31,9 @@ Rose::Object::MakeMethods::Generic->make_methods
     'name',
     'method_name',
     __PACKAGE__->method_maker_argument_names,
-  ]
+  ],
+  
+  boolean => 'manager_uses_method',
 );
 
 *accessor_method_name = \&method_name;
@@ -40,6 +42,9 @@ Rose::Object::MakeMethods::Generic->make_methods
 sub type { 'scalar' }
 
 sub should_inline_value { 0 }
+
+sub parse_value  { $_[2] }
+sub format_value { $_[2] }
 
 # sub foreign_key
 # {
@@ -90,7 +95,7 @@ sub make_method
     $args{'options'}, 
     $self->method_maker_type => 
     [
-      $self->method_name => scalar $self->method_maker_arguments
+      $self->method_name => { column => $self, $self->method_maker_arguments }
     ]);
 }
 
@@ -112,7 +117,7 @@ Rose::DB::Object::Metadata::Column - Base class for an object encapsulation of  
 
 =head1 DESCRIPTION
 
-This is the base class for objects that store and manipulate database column metadata.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
+This is the base class for objects that store and manipulate database column metadata.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for parsing, formatting, and creating object methods that manipulate column values.
 
 C<Rose::DB::Object::Metadata::Column> objects stringify to the value returned by the C<name()> method.  This allows full-blown column objects to be used in place of column name strings in most situations.
 
@@ -134,6 +139,10 @@ name/value pairs.  Any object method is a valid parameter name.
 =item B<accessor_method_name [NAME]>
 
 Get or set the name of the method used to get the column value.  This is currently an alias for the C<method_name> method.
+
+=item B<format_value DB, VALUE>
+
+Convert VALUE into a string suitable for the database column of this type.  VALUE is expected to be like the return value of the C<parse_value()> method.  DB is a C<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
 
 =item B<make_method PARAMS>
 
@@ -164,6 +173,12 @@ I know the call above looks confusing, but it is worth studying if you plan to s
 
 More than one method may be created, but there must be at least one get/set accessor method created, and its name must match the return value of C<method_name()>.
 
+=item B<manager_uses_method [BOOL]>
+
+If true, then C<Rose::DB::Object::QueryBuilder> will pass column values through the object method associated with this column when composing SQL queries where C<query_is_sql> is not set.  The default value is false.  See the C<Rose::DB::Object::QueryBuilder> documentation for more information.
+
+Note: the method is named "manager_uses_method" instead of, say, "query_builder_uses_method" because C<Rose::DB::Object::QueryBuilder> is rarely used directly.  Instead, it's mostly used indirectly through the C<Rose::DB::Object::Manager> class.
+
 =item B<method_maker_arguments>
 
 Returns a hash (in list context) or a reference to a hash (in scalar context) or arguments that will be passed (as a hash ref) to the call to the C<make_methods()> class method of the C<method_maker_class>, as shown in the C<make_method> example above.
@@ -189,6 +204,10 @@ Get or set the name of the method used to set the column value.  This is current
 =item B<name [NAME]>
 
 Get or set the name of the column, not including the table name, username, schema, or any other qualifier.
+
+=item B<parse_value DB, VALUE>
+
+Parse and return a convenient Perl representation of VALUE.  What form this value will take is up to the column subclass.  If VALUE is a keyword or otherwise has special meaning to the underlying database, it may be returned unmodified.  DB is a C<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
 
 =item B<should_inline_value DB, VALUE>
 

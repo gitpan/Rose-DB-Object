@@ -79,7 +79,7 @@ __PACKAGE__->column_type_classes
 
 our %Class_Loaded;
 
-our $VERSION = '0.03';
+our $VERSION = '0.031';
 
 our $Debug = 0;
 
@@ -445,6 +445,12 @@ sub initialize
   $self->make_methods(@_);
 }
 
+#sub made_method_for_column 
+#{
+#  (@_ > 2) ? ($_[0]->{'made_methods'}{$_[1]} = $_[2]) :
+#             $_[0]->{'made_methods'}{$_[1]};
+#}
+
 sub make_methods
 {
   my($self) = shift;
@@ -477,10 +483,13 @@ sub make_methods
     $column->method_name($method);
     $methods{$name} = $method;
 
-    # Let the method maker handle this I suppose...
-    #next  if($class->can($method) && $args{'preserve_existing_methods'});
+    #unless($class->can($method) && $args{'preserve_existing_methods'})
+    #{
+    #  $self->made_method_for_column($name => 1);
+    #}
 
     $column->make_method(options => \%opts);
+    
   }
 
   $self->column_methods(\%methods);

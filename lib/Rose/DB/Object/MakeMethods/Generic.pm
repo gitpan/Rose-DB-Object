@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub scalar
 {
@@ -105,6 +105,228 @@ sub scalar
         $methods{$name} = sub
         {
           return $_[0]->{$key} = $_[1]  if(@_ > 1);
+          return $_[0]->{$key};
+        };
+      }
+    }
+  }
+  else { Carp::croak "Unknown interface: $interface" }
+
+  return \%methods;
+}
+
+sub character
+{
+  my($class, $name, $args) = @_;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+  my $length    = $args->{'length'} || 0;
+
+  my %methods;
+
+  if($interface eq 'get_set')
+  {
+    my $code;
+
+    if(my $check = $args->{'check_in'})
+    {
+      $check = [ $check ] unless(ref $check);
+      my %check = map { $_ => 1 } @$check;
+
+      my $default = $args->{'default'};
+
+      if(defined $default)
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = ($length && defined $_[1]) ?
+              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+        };
+      }
+      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+      {
+        my $init_method = $args->{'init_method'} || "init_$name";
+
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = ($length && defined $_[1]) ?
+              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $_[0]->$init_method());
+        };
+      }
+      else
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = ($length && defined $_[1]) ?
+              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+          }
+          return $_[0]->{$key};
+        };
+      }
+    }
+    else
+    {
+      my $default = $args->{'default'};
+
+      if(defined $default)
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1)
+          {
+            return $_[0]->{$key} = ($length && defined $_[1]) ?
+              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+        };
+      }
+      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+      {
+        my $init_method = $args->{'init_method'} || "init_$name";
+
+        $methods{$name} = sub
+        {
+          if(@_ > 1)
+          {
+            return $_[0]->{$key} = ($length && defined $_[1]) ?
+              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $_[0]->$init_method());
+        };
+      }
+      else
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1)
+          {
+            return $_[0]->{$key} = ($length && defined $_[1]) ?
+              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+          }
+          return $_[0]->{$key};
+        };
+      }
+    }
+  }
+  else { Carp::croak "Unknown interface: $interface" }
+
+  return \%methods;
+}
+
+sub varchar
+{
+  my($class, $name, $args) = @_;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+  my $length    = $args->{'length'} || 0;
+
+  my %methods;
+
+  if($interface eq 'get_set')
+  {
+    my $code;
+
+    if(my $check = $args->{'check_in'})
+    {
+      $check = [ $check ] unless(ref $check);
+      my %check = map { $_ => 1 } @$check;
+
+      my $default = $args->{'default'};
+
+      if(defined $default)
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+        };
+      }
+      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+      {
+        my $init_method = $args->{'init_method'} || "init_$name";
+
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $_[0]->$init_method());
+        };
+      }
+      else
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
+          }
+          return $_[0]->{$key};
+        };
+      }
+    }
+    else
+    {
+      my $default = $args->{'default'};
+
+      if(defined $default)
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1)
+          {
+            return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+        };
+      }
+      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+      {
+        my $init_method = $args->{'init_method'} || "init_$name";
+
+        $methods{$name} = sub
+        {
+          if(@_ > 1)
+          {
+            return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $_[0]->$init_method());
+        };
+      }
+      else
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1)
+          {
+            return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
+          }
           return $_[0]->{$key};
         };
       }
@@ -672,12 +894,21 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
   (
     scalar => 
     [
-      'name',
       'type' => 
       {
         with_init => 1,
         check_in  => [ qw(AA AAA C D) ],
       }
+    ],
+
+    character =>
+    [
+      code => { length => 6 }
+    ],
+
+    varchar =>
+    [
+      name => { length => 10 }
     ],
 
     boolean => 
@@ -696,6 +927,12 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
 
   $o->name('Bob'); # set
   $o->type('AA');  # set
+
+  $o->name('C' x 40); # truncate on set
+  print $o->name;     # 'CCCCCCCCCC'
+
+  $o->code('ABC'); # pad on set
+  print $o->code;  # 'ABC   '
 
   eval { $o->type('foo') }; # fatal error: invalid value
 
@@ -963,6 +1200,69 @@ Example:
     $obj->is_red;         # returns 0
 
     $obj->is_happy;       # returns 1
+
+=item B<character>
+
+Create get/set methods for fixed-length character string attributes.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<default>
+
+Determines the default value of the attribute.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of this
+attribute.  Defaults to the name of the method.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get_set>, which is the default.
+
+=item C<length>
+
+The number of characters in the string.  Any strings longer than this will be truncated, and any strings shorter will be padded with spaces to meet the length requirement.  If length is omitted, the string will be left unmodified.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a get/set accessor method for a fixed-length character string attribute.  When setting, any strings longer than C<length> will be truncated, and any strings shorter will be padded with spaces to meet the length requirement.  If C<length> is omitted, the string will be left unmodified.
+
+=back
+
+=back
+
+Example:
+
+    package MyDBObject;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      character => 
+      [
+        'name' => { length => 3 },
+      ],
+    );
+
+    ...
+
+    $o->name('John'); # truncates on set
+    print $o->name;   # 'Joh'
+
+    $o->name('A'); # pads on set
+    print $o->name;   # 'A  '
 
 =item B<objects_by_key>
 
@@ -1317,6 +1617,66 @@ Example:
 
     $person->nicknames('Jack', 'Gimpy');   # set with list
     $person->nicknames([ 'Slim', 'Gip' ]); # set with array ref
+
+=item B<varchar>
+
+Create get/set methods for variable-length character string attributes.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<default>
+
+Determines the default value of the attribute.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of this
+attribute.  Defaults to the name of the method.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get_set>, which is the default.
+
+=item C<length>
+
+The maximum number of characters in the string.  Any strings longer than this will be truncated.  If length is omitted, the string will be left unmodified.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a get/set accessor method for a fixed-length character string attribute.  When setting, any strings longer than C<length> will be truncated.  If C<length> is omitted, the string will be left unmodified.
+
+=back
+
+=back
+
+Example:
+
+    package MyDBObject;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      varchar => 
+      [
+        'name' => { length => 3 },
+      ],
+    );
+
+    ...
+
+    $o->name('John'); # truncates on set
+    print $o->name;   # 'Joh'
 
 =back
 

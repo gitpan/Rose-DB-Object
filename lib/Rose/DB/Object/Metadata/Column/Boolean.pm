@@ -5,11 +5,14 @@ use strict;
 use Rose::DB::Object::Metadata::Column::Scalar;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub type { 'boolean' }
 
 sub method_maker_type  { 'boolean' }
+
+sub parse_value  { shift; shift->parse_boolean(@_)  }
+sub format_value { shift; shift->format_boolean(@_) }
 
 1;
 
@@ -44,6 +47,10 @@ Returns C<Rose::DB::Object::MakeMethods::Generic>.
 =item B<method_maker_type>
 
 Returns C<boolean>.
+
+=item B<parse_value DB, VALUE>
+
+Parse VALUE and return true or false according to how the underlying database would view VALUE as the value for a boolean column.  DB is a C<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 
