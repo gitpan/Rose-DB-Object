@@ -596,11 +596,11 @@ Returns the text message associated with the last error, or false if there was n
 
 =item B<error_mode [MODE]>
 
-Get or set the error mode for this class.  If the error mode is false, then it is defaults to the return value of the C<init_error_mode()> class method, which is "return" by default.
+Get or set the error mode for this class.  If the error mode is false, then it defaults to the return value of the C<init_error_mode()> class method, which is "return" by default.
 
 The error mode determines what happens when a method of this class encounters an error.  The default mode, "return", causes the methods to behave as described in this documentation.  All other error modes cause an action to be performed before returning as per the documentation.
 
-Valid error modes are:
+Valid values of MODE are:
 
 =over 4
 
@@ -625,11 +625,11 @@ An alias for the "croak" mode.
 
 =item return
 
-Return a value that indicates that an error has occurred, as described in the documentation for a given method.
+Return a value that indicates that an error has occurred, as described in the documentation for each method.
 
 =back
 
-In call cases, the class's C<error> attribute will store the error message.
+In all cases, the class's C<error> attribute will also contain the error message.
 
 =item B<get_objects [PARAMS]>
 

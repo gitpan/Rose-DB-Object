@@ -1203,21 +1203,13 @@ The default mapping of type names to class names is:
 
 Delete the type/class mapping entry for the column type TYPE.
 
-=item B<foreign_key NAME [, VALUE]>
-
-Get or set the foreign key named NAME.  NAME should be the name of the thing being referenced by the foreign key, I<not> the name of any of the columns that make up the foreign key.  If called with just a NAME argument, the foreign key stored under that name is returned.  Undef is returned if there is no such foreign key.
-
-If passed a VALUE that is a reference to a hash, a new C<Rose::DB::Object::Metadata::ForeignKey> object is constructed, with the name/value pairs in the hash passed to the constructor, along with the NAME as the value of the C<name> parameter.
-
-If VALUE is a C<Rose::DB::Object::Metadata::ForeignKey>->derived object, it has its C<name> set to NAME and then is stored under that name.
-
 =item B<error_mode [MODE]>
 
-Get or set the error mode of the C<Rose::DB::Object> that fronts the table described by this C<Rose::DB::Object::Metadata> object.  If the error mode is false, then it is defaults to the return value of the C<init_error_mode()> method, which is "return" by default.
+Get or set the error mode of the C<Rose::DB::Object> that fronts the table described by this C<Rose::DB::Object::Metadata> object.  If the error mode is false, then it defaults to the return value of the C<init_error_mode()> method, which is "return" by default.
 
 The error mode determines what happens when a C<Rose::DB::Object> method  encounters an error.  The default mode, "return", causes the methods to behave as described in the documentation for the C<Rose::DB::Object> class.  All other error modes cause an action to be performed before returning as per the documentation.
 
-Valid error modes are:
+Valid values of MODE are:
 
 =over 4
 
@@ -1243,11 +1235,19 @@ An alias for the "croak" mode.
 
 =item return
 
-Return a value that indicates that an error has occurred, as described in the documentation for a given method.
+Return a value that indicates that an error has occurred, as described in the documentation for each method.
 
 =back
 
-In call cases, the object's C<error> attribute will store the error message.
+In all cases, the object's C<error> attribute will also contain the error message.
+
+=item B<foreign_key NAME [, VALUE]>
+
+Get or set the foreign key named NAME.  NAME should be the name of the thing being referenced by the foreign key, I<not> the name of any of the columns that make up the foreign key.  If called with just a NAME argument, the foreign key stored under that name is returned.  Undef is returned if there is no such foreign key.
+
+If passed a VALUE that is a reference to a hash, a new C<Rose::DB::Object::Metadata::ForeignKey> object is constructed, with the name/value pairs in the hash passed to the constructor, along with the NAME as the value of the C<name> parameter.
+
+If VALUE is a C<Rose::DB::Object::Metadata::ForeignKey>->derived object, it has its C<name> set to NAME and then is stored under that name.
 
 =item B<fq_table_sql>
 
