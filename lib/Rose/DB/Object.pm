@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.01';
+our $VERSION = '0.011';
 
 our $Debug = 0;
 
@@ -129,11 +129,10 @@ sub load
     foreach my $cols ($meta->unique_keys)
     {
       my $defined = 0;
-      @key_methods = @$cols;
-      @key_columns = map { $meta->column_method($_) } @key_methods;
+      @key_columns = @$cols;
+      @key_methods = map { $meta->column_method($_) } @key_columns;
       @key_values  = map { $defined++ if(defined $_); $_ } 
                      map { $self->$_() } @key_methods;
-
 
       if($defined)
       {
@@ -272,8 +271,8 @@ sub update
     #foreach my $cols ($meta->unique_keys)
     #{
     #  my $defined = 0;
-    #  @key_methods = @$cols;
-    #  @key_columns = map { $meta->column_method($_) } @key_methods;
+    #  @key_columns = @$cols;
+    #  @key_methods = map { $meta->column_method($_) } @key_columns;
     #  @key_values  = map { $defined++ if(defined $_); $_ } 
     #                 map { $self->$_() } @key_methods;
     #
