@@ -27,3 +27,7 @@
 
     * Added documentation for the "pretty" parameter to build_select()
     * Added support for column value inlining in build_select()
+
+0.022 (03.18.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Fixed POD error that was throwing off search.cpan.org.

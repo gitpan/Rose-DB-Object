@@ -5,7 +5,7 @@ use strict;
 use Rose::DB::Object::MakeMethods::Generic();
 our @ISA = qw(Rose::DB::Object::MakeMethods::Generic);
 
-our $VERSION = '0.01';
+our $VERSION = '0.011';
 
 sub object_by_id
 {
@@ -25,7 +25,7 @@ __END__
 
 =head1 NAME
 
-Rose::DB::Object::MakeMethods::Pg - Create object methods related to Rose::DB::Object::Std-derived objects.
+Rose::DB::Object::MakeMethods::Std - Create object methods related to Rose::DB::Object::Std-derived objects.
 
 =head1 SYNOPSIS
 
