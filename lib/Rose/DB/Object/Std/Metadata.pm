@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Object::Metadata;
 our @ISA = qw(Rose::DB::Object::Metadata);
 
-our $VERSION = '0.01';
+our $VERSION = '0.011';
 
 sub primary_key_columns { wantarray ? 'id' : [ 'id' ] }
 
@@ -66,7 +66,7 @@ sub generate_primary_key_values
   }
   else
   {
-    return $db->generate_primary_key_values(scalar @{$self->{'primary_key_columns'}});
+    return $db->generate_primary_key_values(1); # num primary key columns
   }
 }
 
