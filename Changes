@@ -22,3 +22,8 @@
 0.02 (03.17.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Added support for nested boolean logic in queries.
+
+0.021 (03.17.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added documentation for the "pretty" parameter to build_select()
+    * Added support for column value inlining in build_select()

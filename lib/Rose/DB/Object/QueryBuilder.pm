@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.02';
+our $VERSION = '0.022';
 
 our $Debug = 0;
 
@@ -190,12 +190,14 @@ sub build_select
 
         # Deflate/format values using prototype objects
         foreach my $val (@{$query{$column_arg}})
-        {  
+        {
+          my $col_meta;
+
           unless($query_is_sql)
           {      
             my $obj;
 
-            my $col_meta = $obj_meta->column($column) || $obj_meta->method_column($column)
+            $col_meta = $obj_meta->column($column) || $obj_meta->method_column($column)
               or Carp::confess "Could not get column metadata object for '$column'";
 
             unless($obj = $proto{$obj_class})
@@ -224,7 +226,8 @@ sub build_select
           if(ref($val))
           {
             push(@clauses, _build_clause($dbh, $sql_column, $op, $val, $not, 
-                                         undef, $do_bind ? \@bind : undef));
+                                         undef, $do_bind ? \@bind : undef,
+                                         $db, $col_meta));
           }
           elsif(!defined $val)
           {
@@ -302,7 +305,7 @@ sub build_select
 
 sub _build_clause
 {
-  my($dbh, $field, $op, $vals, $not, $field_mod, $bind) = @_;
+  my($dbh, $field, $op, $vals, $not, $field_mod, $bind, $db, $col_meta) = @_;
 
   if(!defined $op && ref $vals eq 'HASH' && keys(%$vals) == 1)
   {
@@ -317,9 +320,11 @@ sub _build_clause
   {
     $field = $field_mod  if($field_mod);
 
+    my $should_inline = ($db && $col_meta && $col_meta->should_inline_value($db, $vals));
+
     if(defined($vals))
     {
-      if($bind)
+      if($bind && !$should_inline)
       {
         push(@$bind, $vals);
 
@@ -340,7 +345,8 @@ sub _build_clause
       }
       else
       {
-        return ($not ? "$not(" : '') . "$field $op " . $dbh->quote($vals) . 
+        return ($not ? "$not(" : '') . "$field $op " .
+               ($should_inline ? $vals : $dbh->quote($vals)) . 
                ($not ? ')' : '');
       }
     }
@@ -355,11 +361,32 @@ sub _build_clause
       {
         if($bind)
         {
-          push(@$bind, @$vals);
-          return "$field " . ($not ? "$not " : '') . 'IN (' . join(', ', map { '?' } @$vals) . ')';
+          my @new_vals;
+
+          foreach my $val (@$vals)
+          {
+            my $should_inline = ($db && $col_meta && $col_meta->should_inline_value($db, $val));
+
+            if($should_inline)
+            {
+              push(@new_vals, $val);            
+            }
+            else
+            {
+              push(@$bind, $val);
+              push(@new_vals, '?');
+            }
+          }
+
+          return "$field " . ($not ? "$not " : '') . 'IN (' . join(', ', @new_vals) . ')';
         }
 
-        return "$field " . ($not ? "$not " : '') . 'IN (' . join(', ', map { $dbh->quote($_) } @$vals) . ')';
+        return "$field " . ($not ? "$not " : '') . 'IN (' . join(', ', map 
+               {
+                 ($db && $col_meta && $col_meta->should_inline_value($db, $_)) ? 
+                 $_ : $dbh->quote($_)
+               }
+               @$vals) . ')';
       }
       elsif($op =~ /^A(NY|LL) IN$/)
       {
@@ -371,7 +398,7 @@ sub _build_clause
           join($sep, map
           {
             push(@$bind, $_);
-            "? INxxxx $field "
+            "? IN $field "
           }
           (ref $vals ? @$vals : ($vals))) . ')';
         }
@@ -386,13 +413,34 @@ sub _build_clause
 
       if($bind)
       {
-        push(@$bind, @$vals);
-        return '(' . join(' OR ', map { ($not ? "$not(" : '') . "$field $op ?" .
-                                        ($not ? ')' : '') } @$vals) . ')';
+        my @new_vals;
+
+        foreach my $val (@$vals)
+        {
+          my $should_inline = ($db && $col_meta && $col_meta->should_inline_value($db, $val));
+
+          if($should_inline)
+          {
+            push(@new_vals, $val);            
+          }
+          else
+          {
+            push(@$bind, $val);
+            push(@new_vals, '?');
+          }
+        }
+          
+        return '(' . join(' OR ', map { ($not ? "$not(" : '') . "$field $op $_" .
+                                        ($not ? ')' : '') } @new_vals) . ')';
       }
 
-      return '(' . join(' OR ', map { ($not ? "$not(" : '') . "$field $op " . 
-                                       $dbh->quote($_)  . ($not ? ')' : '') } @$vals) . ')';
+      return '(' . join(' OR ', map 
+      {
+        ($not ? "$not(" : '') . "$field $op " . 
+        ($db && $col_meta && $col_meta->should_inline_value($db, $_) ? $_ : $dbh->quote($_)) .
+        ($not ? ')' : '') 
+      }
+      @$vals) . ')';
     }
 
     return;
@@ -409,13 +457,13 @@ sub _build_clause
 
       if(!ref($vals->{$raw_op}))
       {
-        push(@clauses, _build_clause($dbh, $field, $sub_op, $vals->{$raw_op}, $not, $field_mod, $bind));
+        push(@clauses, _build_clause($dbh, $field, $sub_op, $vals->{$raw_op}, $not, $field_mod, $bind, $db, $col_meta));
       }
       elsif(ref($vals->{$raw_op}) eq 'ARRAY')
       {
         foreach my $val (@{$vals->{$raw_op}})
         {
-          push(@clauses, _build_clause($dbh, $field, $sub_op, $val, $not, $field_mod, $bind));
+          push(@clauses, _build_clause($dbh, $field, $sub_op, $val, $not, $field_mod, $bind, $db, $col_meta));
         }
       }
       else
@@ -619,6 +667,10 @@ A string to add to the "LIMIT ..." (or "FIRST ...") clause.
 =item B<logic LOGIC>
 
 A string indicating the logic that will be used to join the statements in the WHERE clause.  Valid values for LOGIC are "AND" and "OR".  If omitted, it defaults to "AND".
+
+=item B<pretty BOOL>
+
+If true, the SQL returned will have slightly nicer formatting.
 
 =item B<select COLUMNS>
 

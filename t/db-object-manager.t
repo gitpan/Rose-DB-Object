@@ -635,6 +635,8 @@ SKIP: foreach my $db_type (qw(informix))
 
   ok($o->save, "object save() 1 - $db_type");
 
+  #local $Rose::DB::Object::Manager::Debug = 1;
+
   my $objs = 
     Rose::DB::Object::Manager->get_objects(
       object_class => 'MyInformixObject',
@@ -654,7 +656,9 @@ SKIP: foreach my $db_type (qw(informix))
         nums       => 'SET{1,2,3}',
         fk1        => 2,
         last_modified => { le => $o->db->format_timestamp($o->db->parse_timestamp('now')) },
-        date_created  => '2004-03-30 12:34:56'
+        date_created  => '2004-03-30 12:34:56',
+        date_created  => { le => 'current' },
+        date_created  => [ 'current', '2004-03-30 12:34:56' ],
       ],
       clauses => [ "LOWER(status) LIKE 'ac%'" ],
       limit   => 5,
