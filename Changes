@@ -31,3 +31,7 @@
 0.022 (03.18.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Fixed POD error that was throwing off search.cpan.org.
+
+0.023 (03.25.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added prepare_*_options (undocumented for now).

@@ -30,6 +30,9 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   ok(ref $o && $o->isa('MyPgObject'), "new() 1 - $db_type");
 
+  # Not yet supported...
+  #is($o->id, 1, "auto-generated primary key - $db_type");
+
   $o->flag2('TRUE');
   $o->date_created('now');
   $o->last_modified($o->date_created);
@@ -728,6 +731,8 @@ EOF
 
     eval { MyInformixObject->meta->initialize };
     Test::More::ok($@, 'meta->initialize() reserved method');
+
+    MyInformixObject->meta->prepare_options({ix_CursorWithHold => 1});    
 
     MyInformixObject->meta->alias_column(save => 'save_col');
 

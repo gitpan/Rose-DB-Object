@@ -80,7 +80,7 @@ __PACKAGE__->column_type_classes
 
 our %Class_Loaded;
 
-our $VERSION = '0.011';
+our $VERSION = '0.012';
 
 our $Debug = 0;
 
@@ -96,6 +96,43 @@ sub new
 sub for_class
 {
   return $Objects{$_[1]} ||= $_[0]->new(class => $_[1]);
+}
+
+sub prepare_select_options 
+{
+  @_ > 1 ? $_[0]->{'prepare_select_options'} = $_[1] : 
+           $_[0]->{'prepare_select_options'} ||= {}
+}
+
+sub prepare_insert_options
+{
+  @_ > 1 ? $_[0]->{'prepare_insert_options'} = $_[1] : 
+           $_[0]->{'prepare_insert_options'} ||= {}
+}
+
+sub prepare_update_options
+{
+  @_ > 1 ? $_[0]->{'prepare_update_options'} = $_[1] : 
+           $_[0]->{'prepare_update_options'} ||= {}
+}
+
+sub prepare_delete_options
+{
+  @_ > 1 ? $_[0]->{'prepare_delete_options'} = $_[1] : 
+           $_[0]->{'prepare_delete_options'} ||= {}
+}
+
+sub prepare_options
+{
+  my($self, $options) = @_;
+
+  Carp::croak "Missing required hash ref argument to prepare_options()"
+    unless(ref $options eq 'HASH');
+
+  $self->prepare_select_options({ %$options });
+  $self->prepare_insert_options({ %$options });
+  $self->prepare_update_options({ %$options });
+  $self->prepare_delete_options({ %$options });
 }
 
 sub table

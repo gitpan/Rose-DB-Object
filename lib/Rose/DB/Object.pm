@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.022';
+our $VERSION = '0.023';
 
 our $Debug = 0;
 
@@ -169,12 +169,12 @@ sub load
     if($null_key)
     {
       $sql = $meta->load_sql_with_null_key(\@key_columns, \@key_values);
-      $sth = $dbh->prepare($sql);
+      $sth = $dbh->prepare($sql, $meta->prepare_select_options);
     }
     else
     {
       $sql = $meta->load_sql(\@key_columns);
-      $sth = $dbh->prepare_cached($sql);
+      $sth = $dbh->prepare_cached($sql, $meta->prepare_select_options);
     }
 
     $Debug && warn "$sql - bind params: ", join(', ', grep { defined } @key_values), "\n";
@@ -335,7 +335,7 @@ sub update
         warn "$sql - bind params: ", join(', ', @$bind, @key_values), "\n";
       }
 
-      $sth = $dbh->prepare($sql);
+      $sth = $dbh->prepare($sql, $meta->prepare_update_options);
       $sth->execute(@$bind, @key_values);
     }
     else
@@ -348,16 +348,16 @@ sub update
       #if($null_key)
       #{
       #  $sql = $meta->update_sql_with_null_key(\@key_columns, \@key_values);
-      #  $sth = $dbh->prepare($sql);
+      #  $sth = $dbh->prepare($sql, $meta->prepare_update_options);
       #}
       #else
       #{
       #  $sql = $meta->update_sql(\@key_columns);
-      #  $sth = $dbh->prepare_cached($sql);
+      #  $sth = $dbh->prepare_cached($sql, $meta->prepare_update_options);
       #}
 
       my $sql = $meta->update_sql(\@key_columns);
-      my $sth = $dbh->prepare_cached($sql);
+      my $sth = $dbh->prepare_cached($sql, $meta->prepare_update_options);
 
       my %key = map { ($_ => 1) } @key_columns;
 
@@ -474,6 +474,8 @@ sub insert
     local $self->{STATE_SAVING()} = 1;
     local $dbh->{'RaiseError'} = 1;
 
+    my $options = $meta->prepare_insert_options;
+
     my $sth;
 
     if($meta->allow_inline_column_values)
@@ -486,14 +488,14 @@ sub insert
         warn "$sql - bind params: ", join(', ', @$bind), "\n";
       }
 
-      $sth = $dbh->prepare($sql);
+      $sth = $dbh->prepare($sql, $options);
       $sth->execute(@$bind);
     }
     else
     {
       my $column_names = $meta->column_names;
 
-      $sth = $dbh->prepare_cached($meta->insert_sql);
+      $sth = $dbh->prepare_cached($meta->insert_sql, $options);
 
       if($Debug)
       {
@@ -518,6 +520,7 @@ sub insert
 
       if($using_pk_placeholders || !defined $self->$pk())
       {
+        #$self->$pk($db->last_insertid_from_sth($sth, $self));
         $self->$pk($db->last_insertid_from_sth($sth));
         $self->{STATE_IN_DB()} = 1;
       }
@@ -581,7 +584,7 @@ sub delete
     local $self->{STATE_SAVING()} = 1;
     local $dbh->{'RaiseError'} = 1;
 
-    my $sth = $dbh->prepare_cached($meta->delete_sql);
+    my $sth = $dbh->prepare_cached($meta->delete_sql, $meta->prepare_delete_options);
 
     $Debug && warn $meta->delete_sql, " - bind params: ", join(', ', @pk_values), "\n";
     $sth->execute(@pk_values);
@@ -849,6 +852,8 @@ If set to a true value, then an update is attempted, regardless of whether or no
 It is an error to pass both the C<insert> and C<update> parameters in a single call.
 
 Returns true if the row was inserted or updated successfully, false otherwise.
+
+If an insert was performed and the primary key is a single column that supports auto-generated values, then the object accessor for the primary key column will contain the auto-generated value.  This currently works for MySQL and Informix.  See C<Rose::DB::Object::Std> for PostgreSQL support for auto-generated primary keys.
 
 =back
 

@@ -2,6 +2,8 @@ package Rose::DB::Object::Constants;
 
 use strict;
 
+our $VERSION = '0.01';
+
 require Exporter;
 our @ISA = qw(Exporter);
 

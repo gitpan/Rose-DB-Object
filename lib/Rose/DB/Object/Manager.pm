@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.02';
+our $VERSION = '0.021';
 
 our $Debug = 0;
 
@@ -156,7 +156,7 @@ sub get_objects
     {
       local $dbh->{'RaiseError'} = 1;
       $Debug && warn "$sql\n";
-      my $sth = $dbh->prepare($sql) or die $dbh->errstr;
+      my $sth = $dbh->prepare($sql, $meta->prepare_select_options) or die $dbh->errstr;
       $sth->execute(@$bind);
       $count = $sth->fetchrow_array;
       $sth->finish;
@@ -196,7 +196,7 @@ sub get_objects
     local $dbh->{'RaiseError'} = 1;
 
     $Debug && warn "$sql (", join(', ', @$bind), ")\n";
-    my $sth = $dbh->prepare($sql) or die $dbh->errstr;
+    my $sth = $dbh->prepare($sql, $meta->prepare_select_options) or die $dbh->errstr;
 
     $sth->{'RaiseError'} = 1;
 
