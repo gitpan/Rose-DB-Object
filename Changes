@@ -1,9 +1,15 @@
-0.10 (03.09.2005) - John Siracusa <siracusa@mindspring.com>
+0.01 (03.09.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Initial release.
 
-0.11 (03.09.2005) - John Siracusa <siracusa@mindspring.com>
+0.011 (03.09.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Well that was quick.  Fixed copy and paste error that caused
       a failure to load using an aliased unique key column.  Deleted
       version 0.10.
+
+0.012 (03.10.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Add tests for aliased unique key fix and primary key aliasing.
+      Documented constraints on column aliasing.  Fixed version
+      numbers in this file.  Deleted version 0.011.

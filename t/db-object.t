@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 212;
+use Test::More tests => 220;
   
 BEGIN 
 {
@@ -18,7 +18,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 110)  unless($HAVE_PG);
+  skip("Postgres tests", 114)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -164,8 +164,14 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   $o->save_col(50);
   ok($o->save, "save() 5 - $db_type");
 
+  $ouk = MyPgObject->new(save_col => 50);
+  ok($ouk->load, "load() aliased unique key - $db_type");
+
   eval { $o->meta->alias_column(nonesuch => 'foo') };
-  ok($@, 'alias_column() nonesuch');
+  ok($@, "alias_column() nonesuch - $db_type");
+
+  eval { $o->meta->alias_column(id => 'foo') };
+  ok($@, "alias_column() primary key - $db_type");
 }
 
 #
@@ -174,7 +180,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 47)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 49)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -278,8 +284,14 @@ SKIP: foreach my $db_type ('mysql')
   $o->save_col(50);
   ok($o->save, "save() 5 - $db_type");
 
+  $ouk = MyMySQLObject->new(save_col => 50);
+  ok($ouk->load, "load() aliased unique key - $db_type");
+
   eval { $o->meta->alias_column(nonesuch => 'foo') };
-  ok($@, 'alias_column() nonesuch');
+  ok($@, "alias_column() nonesuch - $db_type");
+
+  eval { $o->meta->alias_column(id => 'foo') };
+  ok($@, "alias_column() primary key - $db_type");
 }
 
 #
@@ -288,7 +300,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 54)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 56)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -418,8 +430,14 @@ SKIP: foreach my $db_type ('informix')
   
   ok($o->save, "save() 5 - $db_type");
 
+  $ouk = MyInformixObject->new(save_col => 50);
+  ok($ouk->load, "load() aliased unique key - $db_type");
+
   eval { $o->meta->alias_column(nonesuch => 'foo') };
-  ok($@, 'alias_column() nonesuch');
+  ok($@, "alias_column() nonesuch - $db_type");
+
+  eval { $o->meta->alias_column(id => 'foo') };
+  ok($@, "alias_column() primary key - $db_type");
 }
 
 BEGIN
@@ -534,6 +552,7 @@ EOF
       date_created  => { type => 'timestamp' },
     );
 
+    MyPgObject->meta->add_unique_key('save');
     MyPgObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
     MyPgObject->meta->add_columns(
@@ -630,6 +649,7 @@ EOF
     eval { MyMySQLObject->meta->initialize };
     Test::More::ok($@, 'meta->initialize() no override');
 
+    MyMySQLObject->meta->add_unique_key('save');
     MyMySQLObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
     MyMySQLObject->meta->initialize(preserve_existing_methods => 1);
@@ -714,6 +734,7 @@ EOF
     eval { MyInformixObject->meta->initialize };
     Test::More::ok($@, 'meta->initialize() no override');
 
+    MyInformixObject->meta->add_unique_key('save');
     MyInformixObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
     MyInformixObject->meta->initialize(preserve_existing_methods => 1);

@@ -180,14 +180,14 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
   my $fo = MyPgOtherObject->new(name => 'Foo 1',
                                 k1   => 1,
-                                ktwo => 2,
+                                k2   => 2,
                                 k3   => 3);
 
   ok($fo->save, "object save() 5 - $db_type");
 
   $fo = MyPgOtherObject->new(name => 'Foo 2',
                              k1   => 2,
-                             ktwo => 3,
+                             k2   => 3,
                              k3   => 4);
 
   ok($fo->save, "object save() 6 - $db_type");
@@ -211,7 +211,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
   my $fo1 = $o5->other_obj;
 
-  ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->ktwo == 2 && $fo1->k3 == 3,
+  ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->k2 == 2 && $fo1->k3 == 3,
      "foreign object 1 - $db_type");
 
   $objs = 
@@ -227,7 +227,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
       with_objects => [ 'other_obj' ]);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyPgOtherObject', "foreign object 2 - $db_type");
-  is($objs->[0]->other_obj->ktwo, 2, "foreign object 3 - $db_type");
+  is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
 
   $iterator =
     Rose::DB::Object::Manager->get_objects_iterator(
@@ -244,7 +244,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   $o = $iterator->next;
 
   ok(ref $o->{'other_obj'} eq 'MyPgOtherObject', "foreign object 4 - $db_type");
-  is($o->other_obj->ktwo, 2, "foreign object 5 - $db_type");
+  is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
 
   $objs = 
     Rose::DB::Object::Manager->get_objects(
@@ -309,7 +309,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
       with_objects => [ 'other_obj' ]);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyPgOtherObject', "foreign object 6 - $db_type");
-  is($objs->[0]->other_obj->ktwo, 2, "foreign object 7 - $db_type");
+  is($objs->[0]->other_obj->k2, 2, "foreign object 7 - $db_type");
 }
 
 #
@@ -470,14 +470,14 @@ SKIP: foreach my $db_type ('mysql')
 
   my $fo = MyMySQLOtherObject->new(name => 'Foo 1',
                                    k1   => 1,
-                                   ktwo => 2,
+                                   k2   => 2,
                                    k3   => 3);
 
   ok($fo->save, "object save() 5 - $db_type");
 
   $fo = MyMySQLOtherObject->new(name => 'Foo 2',
                                 k1   => 2,
-                                ktwo => 3,
+                                k2   => 3,
                                 k3   => 4);
 
   ok($fo->save, "object save() 6 - $db_type");
@@ -501,7 +501,7 @@ SKIP: foreach my $db_type ('mysql')
 
   my $fo1 = $o5->other_obj;
 
-  ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->ktwo == 2 && $fo1->k3 == 3,
+  ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->k2 == 2 && $fo1->k3 == 3,
      "foreign object 1 - $db_type");
 
   $objs = 
@@ -516,7 +516,7 @@ SKIP: foreach my $db_type ('mysql')
       with_objects => [ 'other_obj' ]);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyMySQLOtherObject', "foreign object 2 - $db_type");
-  is($objs->[0]->other_obj->ktwo, 2, "foreign object 3 - $db_type");
+  is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
 
   $iterator =
     Rose::DB::Object::Manager->get_objects_iterator(
@@ -532,7 +532,7 @@ SKIP: foreach my $db_type ('mysql')
   $o = $iterator->next;
 
   ok(ref $o->{'other_obj'} eq 'MyMySQLOtherObject', "foreign object 4 - $db_type");
-  is($o->other_obj->ktwo, 2, "foreign object 5 - $db_type");
+  is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
 
   $objs = 
     Rose::DB::Object::Manager->get_objects(
@@ -597,7 +597,7 @@ SKIP: foreach my $db_type ('mysql')
       with_objects => [ 'other_obj' ]);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyMySQLOtherObject', "foreign object 6 - $db_type");
-  is($objs->[0]->other_obj->ktwo, 2, "foreign object 7 - $db_type");
+  is($objs->[0]->other_obj->k2, 2, "foreign object 7 - $db_type");
 }
 
 #
@@ -763,14 +763,14 @@ SKIP: foreach my $db_type (qw(informix))
 
   my $fo = MyInformixOtherObject->new(name => 'Foo 1',
                                       k1   => 1,
-                                      ktwo => 2,
+                                      k2   => 2,
                                       k3   => 3);
 
   ok($fo->save, "object save() 5 - $db_type");
 
   $fo = MyInformixOtherObject->new(name => 'Foo 2',
                                    k1   => 2,
-                                   ktwo => 3,
+                                   k2   => 3,
                                    k3   => 4);
 
   ok($fo->save, "object save() 6 - $db_type");
@@ -794,7 +794,7 @@ SKIP: foreach my $db_type (qw(informix))
 
   my $fo1 = $o5->other_obj;
 
-  ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->ktwo == 2 && $fo1->k3 == 3,
+  ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->k2 == 2 && $fo1->k3 == 3,
      "foreign object 1 - $db_type");
 
   $objs = 
@@ -809,7 +809,7 @@ SKIP: foreach my $db_type (qw(informix))
       with_objects => [ 'other_obj' ]);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyInformixOtherObject', "foreign object 2 - $db_type");
-  is($objs->[0]->other_obj->ktwo, 2, "foreign object 3 - $db_type");
+  is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
 
   $iterator =
     Rose::DB::Object::Manager->get_objects_iterator(
@@ -825,7 +825,7 @@ SKIP: foreach my $db_type (qw(informix))
   $o = $iterator->next;
 
   ok(ref $o->{'other_obj'} eq 'MyInformixOtherObject', "foreign object 4 - $db_type");
-  is($o->other_obj->ktwo, 2, "foreign object 5 - $db_type");
+  is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
 
   #local $Rose::DB::Object::Manager::Debug = 1;
 
@@ -898,7 +898,7 @@ SKIP: foreach my $db_type (qw(informix))
       with_objects => [ 'other_obj' ]);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyInformixOtherObject', "foreign object 6 - $db_type");
-  is($objs->[0]->other_obj->ktwo, 2, "foreign object 7 - $db_type");
+  is($objs->[0]->other_obj->k2, 2, "foreign object 7 - $db_type");
 
   #local $Rose::DB::Object::Manager::Debug = 1;
 
@@ -989,7 +989,6 @@ EOF
     );
 
     MyPgOtherObject->meta->primary_key_columns(qw(k1 k2 k3));
-    MyPgOtherObject->meta->alias_column(k2 => 'ktwo');
 
     MyPgOtherObject->meta->initialize;
 
@@ -1119,7 +1118,6 @@ EOF
     );
 
     MyMySQLOtherObject->meta->primary_key_columns([ qw(k1 k2 k3) ]);
-    MyMySQLOtherObject->meta->alias_column(k2 => 'ktwo');
 
     MyMySQLOtherObject->meta->initialize;
 
@@ -1245,7 +1243,6 @@ EOF
     );
 
     MyInformixOtherObject->meta->primary_key_columns([ qw(k1 k2 k3) ]);
-    MyInformixOtherObject->meta->alias_column(k2 => 'ktwo');
 
     MyInformixOtherObject->meta->initialize;
 

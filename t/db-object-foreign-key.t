@@ -135,10 +135,10 @@ SKIP: foreach my $db_type ('pg')
   is($a[2], 6, "load() verify 15 (array value) - $db_type");
   is(@a, 3, "load() verify 16 (array value) - $db_type");
 
-  my $oo1 = MyPgOtherObject->new(k1 => 1, ktwo => 2, k3 => 3, name => 'one');
+  my $oo1 = MyPgOtherObject->new(k1 => 1, k2 => 2, k3 => 3, name => 'one');
   ok($oo1->save, 'other object save() 1');
 
-  my $oo2 = MyPgOtherObject->new(k1 => 11, ktwo => 12, k3 => 13, name => 'two');
+  my $oo2 = MyPgOtherObject->new(k1 => 11, k2 => 12, k3 => 13, name => 'two');
   ok($oo2->save, 'other object save() 2');
 
   is($o->other_obj, undef, 'other_obj() 1');
@@ -329,10 +329,10 @@ SKIP: foreach my $db_type ('informix')
   is($a[2], 6, "load() verify 15 (array value) - $db_type");
   is(@a, 3, "load() verify 16 (array value) - $db_type");
 
-  my $oo1 = MyInformixOtherObject->new(k1 => 1, ktwo => 2, k3 => 3, name => 'one');
+  my $oo1 = MyInformixOtherObject->new(k1 => 1, k2 => 2, k3 => 3, name => 'one');
   ok($oo1->save, 'other object save() 1');
 
-  my $oo2 = MyInformixOtherObject->new(k1 => 11, ktwo => 12, k3 => 13, name => 'two');
+  my $oo2 = MyInformixOtherObject->new(k1 => 11, k2 => 12, k3 => 13, name => 'two');
   ok($oo2->save, 'other object save() 2');
 
   is($o->other_obj, undef, 'other_obj() 1');
@@ -428,7 +428,6 @@ EOF
     );
 
     MyPgOtherObject->meta->primary_key_columns([ qw(k1 k2 k3) ]);
-    MyPgOtherObject->meta->alias_column(k2 => 'ktwo');
     
     MyPgOtherObject->meta->initialize;
     
@@ -673,7 +672,6 @@ EOF
     );
 
     MyInformixOtherObject->meta->primary_key_columns(qw(k1 k2 k3));
-    MyInformixOtherObject->meta->alias_column(k2 => 'ktwo');
     
     MyInformixOtherObject->meta->initialize;
     

@@ -80,7 +80,7 @@ __PACKAGE__->column_type_classes
 
 our %Class_Loaded;
 
-our $VERSION = '0.01';
+our $VERSION = '0.011';
 
 our $Debug = 0;
 
@@ -483,6 +483,14 @@ sub alias_column
 
   Carp::croak "Pointless alias for '$name' to '$new_name' for table ", $self->table
     unless($name ne $new_name);
+
+  foreach my $column ($self->primary_key_columns)
+  {
+    if($name eq $column)
+    {
+      Carp::croak "Cannot alias primary key column '$name'";
+    }
+  }
 
   $self->_clear_column_generated_values;
 
@@ -965,7 +973,9 @@ Add a new unique key made up of COLUMNS, where COLUMNS is a list or a reference 
 
 =item B<alias_column NAME, ALIAS>
 
-Use ALIAS instead of NAME as the accessor method name for column named NAME.  It is sometimes necessary to use an alias for a column because the column name may conflict with an existing C<Rose::DB::Object> method name.
+Use ALIAS instead of NAME as the accessor method name for column named NAME.  Note that primary key columns cannot be aliased.  If the column NAME is part of the primary key, a fatal error will occur.
+
+It is sometimes necessary to use an alias for a column because the column name  conflicts with an existing C<Rose::DB::Object> method name.
 
 For example, imagine a column named "save".  The C<Rose::DB::Object> API already defines a method named C<save()>, so obviously that name can't be used for the accessor method for the "save" column.  To solve this, make an alias:
 
