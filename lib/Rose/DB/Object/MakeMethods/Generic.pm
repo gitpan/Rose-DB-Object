@@ -1,0 +1,1331 @@
+package Rose::DB::Object::MakeMethods::Generic;
+
+use strict;
+
+use Bit::Vector::Overload;
+
+use Carp();
+
+use Rose::Object::MakeMethods;
+our @ISA = qw(Rose::Object::MakeMethods);
+
+use Rose::DB::Object::Manager;
+
+use Rose::DB::Object::Constants 
+  qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
+     STATE_SAVING);
+
+our $VERSION = '0.01';
+
+sub scalar
+{
+  my($class, $name, $args) = @_;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+
+  my %methods;
+
+  if($interface eq 'get_set')
+  {
+    my $code;
+
+    if(my $check = $args->{'check_in'})
+    {
+      $check = [ $check ] unless(ref $check);
+      my %check = map { $_ => 1 } @$check;
+
+      my $default = $args->{'default'};
+
+      if(defined $default)
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+        };
+      }
+      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+      {
+        my $init_method = $args->{'init_method'} || "init_$name";
+
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = $_[1];
+          }
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $_[0]->$init_method());
+        };
+      }
+      else
+      {
+        $methods{$name} = sub
+        {
+          if(@_ > 1 && defined $_[1])
+          {
+            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+            return $_[0]->{$key} = $_[1];
+          }
+          return $_[0]->{$key};
+        };
+      }
+    }
+    else
+    {
+      my $default = $args->{'default'};
+
+      if(defined $default)
+      {
+        $methods{$name} = sub
+        {
+          return $_[0]->{$key} = $_[1]  if(@_ > 1);
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+        };
+      }
+      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+      {
+        my $init_method = $args->{'init_method'} || "init_$name";
+
+        $methods{$name} = sub
+        {
+          return $_[0]->{$key} = $_[1]  if(@_ > 1);
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $_[0]->$init_method());
+        };
+      }
+      else
+      {
+        $methods{$name} = sub
+        {
+          return $_[0]->{$key} = $_[1]  if(@_ > 1);
+          return $_[0]->{$key};
+        };
+      }
+    }
+  }
+  else { Carp::croak "Unknown interface: $interface" }
+
+  return \%methods;
+}
+
+sub boolean
+{
+  my($class, $name, $args) = @_;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+
+  my %methods;
+
+  if($interface eq 'get_set')
+  {
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $default = ($default) ? 1 : 0;
+
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        if(@_)
+        {
+          my $db = $self->db or die "Missing Rose::DB object attribute";
+
+          if($_[0])
+          {
+            my $value = $db->parse_boolean($_[0]);
+
+            unless(defined $value)
+            {
+              Carp::croak($db->error);
+            }
+
+            return $self->{$key} = $value;
+          }
+
+          return $self->{$key} = $_[0] ? 1 : 0;
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          my $db = $self->db or die "Missing Rose::DB object attribute";
+          return (defined $self->{$key}) ? $db->format_boolean($self->{$key}) : 
+                                           $db->format_boolean($self->{$key} = $default);
+        }
+
+        return (defined $self->{$key}) ? $self->{$key} : ($self->{$key} = $default);
+      }
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        if(@_)
+        {
+          if($_[0])
+          {
+            if($_[0] =~ /^(?:1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
+            {
+              return $self->{$key} = 1;
+            }
+            elsif($_[0] =~ /^(?:0(?:\.0*)?|f(?:alse)?|no?)$/i)
+            {
+              return $self->{$key} = 0;
+            }
+            else
+            {
+              Carp::croak("Invalid boolean value: '$_[0]'");
+            }
+          }
+          else { return $self->{$key} = 0 }
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          my $db = $self->db or die "Missing Rose::DB object attribute";
+          return (defined $self->{$key}) ? $db->format_boolean($self->{$key}) : undef;
+        }
+
+        return $self->{$key};
+      }
+    }
+  }
+  else { Carp::croak "Unknown interface: $interface" }
+
+  return \%methods;
+}
+
+sub bitfield
+{
+  my($class, $name, $args) = @_;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+
+  my %methods;
+
+  if($interface eq 'get_set')
+  {
+    my $size = $args->{'bits'} ||= 32;
+
+    my $default = $args->{'default'};
+    my $formatted_key = PRIVATE_PREFIX . "_${key}_formatted";
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(@_)
+        {
+          if($self->{STATE_LOADING()})
+          {
+            $self->{$key} = undef;
+            $self->{$formatted_key} = $_[0];
+          }
+          else
+          {
+            $self->{$key} = $db->parse_bitfield($_[0], $size);
+
+            unless(defined $self->{$key})
+            {
+              $self->error($db->error);
+            }
+          }
+        }
+        elsif(!defined $self->{$key} && (!$self->{STATE_SAVING()} || !defined $self->{$formatted_key}))
+        {
+          $self->{$key} = $db->parse_bitfield($default, $size);
+
+          unless(defined $self->{$key})
+          {
+            $self->error($db->error);
+          }
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          $self->{$formatted_key} = $db->format_bitfield($self->{$key})
+            unless(defined $self->{$formatted_key} || !defined $self->{$key});
+
+          return $self->{$formatted_key};
+        }
+
+        return unless(defined wantarray);
+
+        return $self->{$key} ? $self->{$key} : 
+               $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+      };
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(@_)
+        {
+          if($self->{STATE_LOADING()})
+          {
+            $self->{$key} = undef;
+            $self->{$formatted_key} = $_[0];
+          }
+          else
+          {
+            $self->{$key} = $db->parse_bitfield($_[0], $size);
+          }
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          return undef  unless(defined($self->{$formatted_key}) || $self->{$key});
+
+          $self->{$formatted_key} = $db->format_bitfield($self->{$key})
+            unless(defined $self->{$formatted_key} || !defined $self->{$key});
+
+          return $self->{$formatted_key};
+        }
+
+        return unless(defined wantarray);
+
+        return $self->{$key} ? $self->{$key} : 
+               $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+      };
+    }
+
+    if($args->{'with_intersects'})
+    {
+      my $method = $args->{'intersects'} || $name . '_intersects';
+
+      $methods{$method} = sub 
+      {
+        my($self, $vec) = @_;
+
+        my $val = $self->{$key} or return undef;
+
+        unless(ref $vec)
+        {
+          my $db = $self->db or die "Missing Rose::DB object attribute";
+          $vec = $db->parse_bitfield($vec, $size);
+        }
+
+        $vec = Bit::Vector->new_Bin($size, $vec->to_Bin)  if($vec->Size != $size);
+
+        my $test = Bit::Vector->new($size);
+        $test->Intersection($val, $vec);
+        return ($test->to_Bin > 0) ? 1 : 0;
+      };
+    }
+  }
+  else { Carp::croak "Unknown interface: $interface" }
+
+  return \%methods;
+}
+
+sub array
+{
+  my($class, $name, $args) = @_;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+
+  my %methods;
+
+  if($interface eq 'get_set')
+  {
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(@_)
+        {
+          $self->{$key} = $db->parse_array(@_);
+        }
+        elsif(!defined $self->{$key})
+        {
+          $self->{$key} = $db->parse_array($default);
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          return defined $self->{$key} ? $db->format_array($self->{$key}) : undef;
+        }
+
+        return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;        
+      }
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(@_)
+        {
+          $self->{$key} = $db->parse_array(@_);
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          return defined $self->{$key} ? $db->format_array($self->{$key}) : undef;
+        }
+
+        return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
+      }
+    }
+  }
+  else { Carp::croak "Unknown interface: $interface" }
+
+  return \%methods;
+}
+
+sub set
+{
+  my($class, $name, $args) = @_;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+
+  my %methods;
+
+  if($interface eq 'get_set')
+  {
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(@_)
+        {
+          $self->{$key} = $db->parse_set(@_);
+        }
+        elsif(!defined $self->{$key})
+        {
+          $self->{$key} = $db->parse_set($default);
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          return defined $self->{$key} ? $db->format_set($self->{$key}) : undef;
+        }
+
+        return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;        
+      }
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(@_)
+        {
+          $self->{$key} = $db->parse_set(@_);
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          return defined $self->{$key} ? $db->format_set($self->{$key}) : undef;
+        }
+
+        return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
+      }
+    }
+  }
+  else { Carp::croak "Unknown interface: $interface" }
+
+  return \%methods;
+}
+
+sub object_by_key
+{
+  my($class, $name, $args, $options) = @_;
+
+  my %methods;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+  my $target_class = $options->{'target_class'} or die "Missing target class";
+
+  my $fk_class   = $args->{'class'} or die "Missing foreign object class";
+  my $fk_meta    = $fk_class->meta; 
+  my $meta       = $target_class->meta;
+
+  my $fk_columns = $args->{'key_columns'} or die "Missing key columns hash";
+  my $share_db   = $args->{'share_db'} || 1;
+
+  $methods{$name} = sub
+  {
+    my($self) = shift;
+
+    if(@_)
+    {
+      return $self->{$key} = undef  unless(defined $_[0]);
+
+      while(my($local_column, $foreign_column) = each(%$fk_columns))
+      {
+        my $local_method   = $meta->column_mutator_method($local_column);
+        my $foreign_method = $fk_meta->column_accessor_method($foreign_column);
+
+        $self->$local_method($_[0]->$foreign_method);
+      }
+
+      return $self->{$key} = $_[0];
+    }
+
+    return $self->{$key}  if(defined $self->{$key});
+
+    my %key;
+
+    while(my($local_column, $foreign_column) = each(%$fk_columns))
+    {
+      my $local_method   = $meta->column_accessor_method($local_column);
+      my $foreign_method = $fk_meta->column_mutator_method($foreign_column);
+
+      $key{$foreign_method} = $self->$local_method();
+
+      # Comment this out to allow null keys
+      unless(defined $key{$foreign_method})
+      {
+        keys(%$fk_columns); # reset iterator
+        $self->error("Could not load $name object - the " .
+                     "$local_method attribute is undefined");
+        return undef;
+      }
+    }
+
+    my $obj;
+
+    if($share_db)
+    {
+      $obj = $fk_class->new(%key, db => $self->db);
+    }
+    else
+    {
+      $obj = $fk_class->new(%key);
+    }
+
+    my $ret = $obj->load;
+
+    unless($ret)
+    {
+      $self->error("Could not load $fk_class with key ", 
+                   join(', ', map { "$_ = '$key{$_}'" } sort keys %key) .
+                   " - " . $obj->error);
+      return $ret;
+    }
+
+    return $self->{$key} = $obj;
+  };
+
+  return \%methods;
+}
+
+sub objects_by_key
+{
+  my($class, $name, $args, $options) = @_;
+
+  my %methods;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get_set';
+  my $target_class = $options->{'target_class'} or die "Missing target class";
+
+  my $ft_class   = $args->{'class'} or die "Missing foreign object class";
+  my $meta       = $target_class->meta;
+
+  my $ft_columns = $args->{'key_columns'} or die "Missing key columns hash";
+  my $ft_manager = $args->{'manager_class'};
+  my $ft_method  = $args->{'manager_method'} || 'get_objects';
+  my $share_db   = $args->{'share_db'} || 1;
+  my $mgr_args   = $args->{'manager_args'} || {};
+  my $query_args = $args->{'query_args'} || {};
+
+  unless($ft_manager)
+  {
+    $ft_manager = 'Rose::DB::Object::Manager';
+    $mgr_args->{'object_class'} = $ft_class;
+  }
+
+  $methods{$name} = sub
+  {
+    my($self) = shift;
+
+    if(@_)
+    {      
+      return $self->{$key} = undef  if(@_ == 1 && !defined $_[0]);
+      return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
+    }
+
+    return $self->{$key}  if(defined $self->{$key});
+
+    my %key;
+
+    while(my($local_column, $foreign_column) = each(%$ft_columns))
+    {
+      my $local_method = $meta->column_accessor_method($local_column);
+
+      $key{$foreign_column} = $self->$local_method();
+
+      # Comment this out to allow null keys
+      unless(defined $key{$foreign_column})
+      {
+        keys(%$ft_columns); # reset iterator
+        $self->error("Could not fetch objects via $name() - the " .
+                     "$local_method attribute is undefined");
+        return undef;
+      }
+    }
+
+    while(my($k, $v) = each(%$query_args))
+    {
+      if(exists $key{$k})
+      {
+        Carp::croak "Cannot override $k query argument in objects_by_key ",   
+                    "method $name in class $class";
+      }
+
+      $key{$k} = $v;
+    }
+
+    my $objs;
+
+    if($share_db)
+    {
+      $objs = $ft_manager->$ft_method(query => [ %key ], %$mgr_args, db => $self->db);
+    }
+    else
+    {
+      $objs = $ft_manager->$ft_method(query => [ %key ], %$mgr_args);
+    }
+
+    unless($objs)
+    {
+      $self->error("Could not load $ft_class objects with key ", 
+                   join(', ', map { "$_ = '$key{$_}'" } sort keys %key) .
+                   " - " . $ft_manager->error);
+      return $objs;
+    }
+
+    return $self->{$key} = $objs;
+  };
+
+  if($interface eq 'get_set_load')
+  {
+    my $method_name = $args->{'load_method'} || 'load_' . $name;
+
+    $methods{$method_name} = sub
+    {
+      return (defined shift->$name(@_)) ? 1 : 0;
+    };
+  }
+
+  return \%methods;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose::DB::Object-derived objects.
+
+=head1 SYNOPSIS
+
+  package MyDBObject;
+
+  our @ISA = qw(Rose::DB::Object);
+
+  use Rose::DB::Object::MakeMethods::Generic
+  (
+    scalar => 
+    [
+      'name',
+      'type' => 
+      {
+        with_init => 1,
+        check_in  => [ qw(AA AAA C D) ],
+      }
+    ],
+
+    boolean => 
+    [
+      'is_red',
+      'is_happy' => { default => 1 },
+    ],
+  );
+
+  sub init_type { 'C' }
+  ...
+
+  $o = MyDBObject->new(...);
+
+  print $o->type; # C
+
+  $o->name('Bob'); # set
+  $o->type('AA');  # set
+
+  eval { $o->type('foo') }; # fatal error: invalid value
+
+  print $o->name, ' is ', $o->type; # get
+
+  $obj->is_red;         # returns undef
+  $obj->is_red('true'); # returns 1 (assuming "true" a
+                        # valid boolean literal according to
+                        # $obj->db->parse_boolean('true'))
+  $obj->is_red('');     # returns 0
+  $obj->is_red;         # returns 0
+
+  $obj->is_happy;       # returns 1
+
+  ...
+
+  package Person;
+
+  our @ISA = qw(Rose::DB::Object);
+  ...
+  use Rose::DB::Object::MakeMethods::Generic
+  (
+    set => 
+    [
+      'nicknames',
+      'parts' => { default => [ qw(arms legs) ] },
+    ],
+  );
+  ...
+
+  @parts = $person->parts; # ('arms', 'legs')
+  $parts = $person->parts; # [ 'arms', 'legs' ]
+
+  $person->nicknames('Jack', 'Gimpy');   # set with list
+  $person->nicknames([ 'Slim', 'Gip' ]); # set with array ref
+
+  ...
+
+  package Program;
+
+  our @ISA = qw(Rose::DB::Object);
+  ...
+  use Rose::DB::Object::MakeMethods::Generic
+  (
+    objects_by_key =>
+    [
+      bugs => 
+      {
+        class => 'Bug',
+        key_columns =>
+        {
+          # Map Program column names to Bug column names
+          id      => 'program_id',
+          version => 'version',
+        },
+        manager_args => { sort_by => 'date_submitted DESC' },
+        query_args   => { state => { ne => 'closed' } },
+      },
+    ]
+  );
+  ...
+
+  $prog = Program->new(id => 5, version => '3.0', ...);
+
+  $bugs = $prog->bugs;
+
+  # Calls (essentially):
+  #
+  # Rose::DB::Object::Manager->get_objects(
+  #   db           => $prog->db, # share_db defaults to true
+  #   object_class => 'Bug',
+  #   query =>
+  #   {
+  #     program_id => 5,     # value of $prog->id
+  #     version    => '3.0', # value of $prog->version
+  #     state      => { ne => 'closed' },
+  #   },
+  #   sort_by => 'date_submitted DESC');
+
+  ...
+
+  package Product;
+
+  our @ISA = qw(Rose::DB::Object);
+  ...
+  use Rose::DB::Object::MakeMethods::Generic
+  (
+    object_by_key =>
+    [
+      category => 
+      {
+        class => 'Category',
+        key_columns =>
+        {
+          # Map Product column names to Category column names
+          category_id => 'id',
+        },
+      },
+    ]
+  );
+  ...
+
+  $product = Product->new(id => 5, category_id => 99);
+
+  $category = $product->category;
+
+  # $product->category call is roughly equivalent to:
+  #
+  # $cat = Category->new(id => $product->category_id
+  #                      db => $prog->db);
+  #
+  # $ret = $cat->load;
+  # return $ret  unless($ret);
+  # return $cat;
+
+=head1 DESCRIPTION
+
+C<Rose::DB::Object::MakeMethods::Generic> is a method maker that inherits
+from C<Rose::Object::MakeMethods>.  See the C<Rose::Object::MakeMethods>
+documentation to learn about the interface.  The method types provided
+by this module are described below.
+
+All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) C<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a C<Rose::DB>-derived object.  See the C<Rose::DB::Object> documentation for more details.
+
+=head1 METHODS TYPES
+
+=over 4
+
+=item B<bitfield>
+
+Create get/set methods for bitfield attributes.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<default>
+
+Determines the default value of the attribute.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of this
+attribute.  Defaults to the name of the method.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get_set>, which is the default.
+
+=item C<intersects>
+
+Set the name of the "intersects" method.  (See C<with_intersects> below.)  Defaults to the bitfield attribute method name with "_intersects" appended.
+
+=item C<bits>
+
+The number of bits in the bitfield.  Defaults to 32.
+
+=item C<with_intersects>
+
+If true, create an "intersects" helper method in addition to the C<get_set> method.  The intersection method name will be the attribute method name with "_intersects" appended, or the value of the C<intersects> option, if it is passed.
+
+The "intersects" method will return true if there is any intersection between its arguments and the value of the bitfield attribute (i.e., if C<Bit::Vector>'s C<Intersection()> method returns a value greater than zero), false (but defined) otherwise.  Its argument is passed through the C<parse_bitfield()> method of the object's C<db> attribute before being tested for intersection.  Returns undef if the bitfield is not defined.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a get/set accessor method for a bitfield attribute.  When setting the attribute, the value is passed through the C<parse_bitfield()> method of the object's C<db> attribute before being assigned.
+
+When saving to the database, the method will pass the attribute value through the C<format_bitfield()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
+
+=back
+
+=back
+
+Example:
+
+    package MyDBObject;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      bitfield => 
+      [
+        'flags' => { size => 32, default => 2 },
+        'bits'  => { size => 16, with_intersects => 1 },
+      ],
+    );
+
+    ...
+
+    print $o->flags->to_Bin; # 00000000000000000000000000000010
+
+    $o->bits('101');
+
+    $o->bits_intersects('100'); # true
+    $o->bits_intersects('010'); # false
+
+=item B<boolean>
+
+Create get/set methods for boolean attributes.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<default>
+
+Determines the default value of the attribute.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of this
+attribute.  Defaults to the name of the method.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get_set>, which is the default.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a simple get/set accessor method for a boolean attribute.  When setting the attribute, if the value is "true" according to Perl's rules, it is passed through the C<parse_boolean()> method of the object's C<db> attribute.  If C<parse_boolean()> returns true (1) or false (0), then the attribute is set accordingly.  If C<parse_boolean()> returns undef, a fatal error will occur.  If the value is "false" according to Perl's rules, the attribute is set to zero (0).
+
+When saving to the database, the method will pass the attribute value through the C<format_boolean()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
+
+=back
+
+=back
+
+Example:
+
+    package MyDBObject;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      boolean => 
+      [
+        'is_red',
+        'is_happy' => { default => 1 },
+      ],
+    );
+
+    $obj->is_red;         # returns undef
+    $obj->is_red('true'); # returns 1 (assuming "true" a
+                          # valid boolean literal according to
+                          # $obj->db->parse_boolean('true'))
+    $obj->is_red('');     # returns 0
+    $obj->is_red;         # returns 0
+
+    $obj->is_happy;       # returns 1
+
+=item B<objects_by_key>
+
+Create get/set methods for an array of C<Rose::DB::Object>-derived objects fetched based on a key formed from attributes of the current object.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<class>
+
+The name of the C<Rose::DB::Object>-derived class of the objects to be fetched.  This option is required.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of the fetched objects.  Defaults to the name of the method.
+
+=item C<key_columns>
+
+A reference to a hash that maps column names in the current object to those in the objects to be fetched.  This option is required.
+
+=item C<manager_args>
+
+A reference to a hash of arguments passed to the C<manager_class> when fetching objects.  If C<manager_class> defaults to C<Rose::DB::Object::Manager>, the following argument is added to the C<manager_args> hash: C<object_class =E<gt> CLASS>, where CLASS is the value of the C<class> option (see above).
+
+=item C<manager_class>
+
+The name of the C<Rose::DB::Object::Manager>-derived class used to fetch the objects.  The C<manager_method> class method is called on this class.  Defaults to C<Rose::DB::Object::Manager>.
+
+=item C<manager_method>
+
+The name of the class method to call on C<manager_class> in order to fetch the objects.  Defaults to C<get_objects>.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get_set>, which is the default.
+
+=item C<share_db>
+
+If true, the C<db> attribute of the current object is shared with all of the objects fetched.  Defaults to true.
+
+=item C<query_args>
+
+A reference to a hash of arguments added to the value of the C<query> parameter passed to the call to C<manager_class>'s C<manager_method> class method.  If one of the C<key_column> arguments is overridden, a fatal error will occur when C<manager_method> is called.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a method that will attempt to fetch C<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object.
+
+If passed a single argument of undef, the list of objects is set to undef.  If passed a reference to an array, the list of objects is set to point to that same array.
+
+If called with no arguments and the hash key used to store the list of objects is defined, a reference to that array of objects is returned.  Otherwise, the objects are fetched.
+
+The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, that false value is returned.
+
+If the fetch succeeds, a reference to the array of objects is returned.  (If the fetch finds zero objects, the array will simply be empty.  This is still considered success.)
+
+=back
+
+=back
+
+Example:
+
+    package Program;
+
+    our @ISA = qw(Rose::DB::Object);
+    ...
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      objects_by_key =>
+      [
+        bugs => 
+        {
+          class => 'Bug',
+          key_columns =>
+          {
+            # Map Program column names to Bug column names
+            id      => 'program_id',
+            version => 'version',
+          },
+          manager_args => { sort_by => 'date_submitted DESC' },
+          query_args   => { state => { ne => 'closed' } },
+        },
+      ]
+    );
+    ...
+
+    $prog = Program->new(id => 5, version => '3.0', ...);
+
+    $bugs = $prog->bugs;
+
+    # Calls (essentially):
+    #
+    # Rose::DB::Object::Manager->get_objects(
+    #   db           => $prog->db, # share_db defaults to true
+    #   object_class => 'Bug',
+    #   query =>
+    #   {
+    #     program_id => 5,     # value of $prog->id
+    #     version    => '3.0', # value of $prog->version
+    #     state      => { ne => 'closed' },
+    #   },
+    #   sort_by => 'date_submitted DESC');
+
+=item B<object_by_key>
+
+Create a get/set methods for a single C<Rose::DB::Object>-derived object loaded based on a primary key formed from attributes of the current object.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<class>
+
+The name of the C<Rose::DB::Object>-derived class of the object to be loaded.  This option is required.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of the object.  Defaults to the name of the method.
+
+=item C<key_columns>
+
+A reference to a hash that maps column names in the current object to those of the primary key in the object to be loaded.  This option is required.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get_set>, which is the default.
+
+=item C<share_db>
+
+If true, the C<db> attribute of the current object is shared with the object loaded.  Defaults to true.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a method that will attempt to create and load a C<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object.
+
+If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument is assumed to be an object of type C<class> and is assigned to C<hash_key> after having its C<key_columns> set to their corresponding values in the current object.
+
+If called with no arguments and the C<hash_key> used to store the object is defined, the object is returned.  Otherwise, the object is created and loaded.
+
+The load may fail for several reasons.  The load will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef will be returned.  If the call to the newly created object's C<load> method returns false, that false value is returned.
+
+If the load succeeds, the object is returned.
+
+=back
+
+=back
+
+Example:
+
+    package Product;
+
+    our @ISA = qw(Rose::DB::Object);
+    ...
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      object_by_key =>
+      [
+        category => 
+        {
+          class => 'Category',
+          key_columns =>
+          {
+            # Map Product column names to Category column names
+            category_id => 'id',
+          },
+        },
+      ]
+    );
+    ...
+
+    $product = Product->new(id => 5, category_id => 99);
+
+    $category = $product->category;
+
+    # $product->category call is roughly equivalent to:
+    #
+    # $cat = Category->new(id => $product->category_id
+    #                      db => $prog->db);
+    #
+    # $ret = $cat->load;
+    # return $ret  unless($ret);
+    # return $cat;
+
+=item B<scalar>
+
+Create get/set methods for scalar attributes.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<default>
+
+Determines the default value of the attribute.  This option is only
+applicable when using the C<get_set> interface.
+
+=item C<check_in>
+
+A reference to an array of valid values.  When setting the attribute, if the new value is not equal (string comparison) to one of the valid values, a fatal error will occur.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of this
+attribute.  Defaults to the name of the method.
+
+=item C<init_method>
+
+The name of the method to call when initializing the value of an
+undefined attribute.  Defaults to the method name with the prefix
+C<init_> added.  This option implies C<with_init>.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get_set>, which is the default.
+
+=item C<with_init>
+
+Modifies the behavior of the C<get_set> interface.  If the attribute is undefined, the method specified by the C<init_method>
+option is called and the attribute is set to the return value of that
+method.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a get/set accessor method for an object attribute.  When
+called with an argument, the value of the attribute is set.  The current
+value of the attribute is returned.
+
+=back
+
+=back
+
+Example:
+
+    package MyDBObject;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      scalar => 
+      [
+        name => { default => 'Joe' },
+        type => 
+        {
+          with_init => 1,
+          check_in  => [ qw(AA AAA C D) ],
+        }
+      ],
+    );
+
+    sub init_type { 'C' }
+    ...
+
+    $o = MyDBObject->new(...);
+
+    print $o->name; # Joe
+    print $o->type; # C
+
+    $o->name('Bob'); # set
+    $o->type('AA');  # set
+
+    eval { $o->type('foo') }; # fatal error: invalid value
+
+    print $o->name, ' is ', $o->type; # get
+
+=item B<set>
+
+Create get/set methods for "set" attributes.   A "set" column in a database table contains an unordered group of values.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<default>
+
+Determines the default value of the attribute.  The value should be a reference to an array.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of this
+attribute.  Defaults to the name of the method.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get_set>, which is the default.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a simple get/set accessor method for a "set" object attribute.  A "set" column in a database table contains an unordered group of values.  On the Perl side of the fence, an ordered list (an array) is used to store the values, but keep in mind that the order is not significant, nor is it guaranteed to be preserved.
+
+When setting the attribute, the value is passed through the C<parse_set()> method of the object's C<db> attribute.
+
+When saving to the database, if the attribute value is defined, the method will pass the attribute value through the C<format_set()> method of the object's C<db> attribute before returning it.
+
+When not saving to the database, the method returns the set as a list in list context, or as a reference to the array in scalar context.
+
+=back
+
+=back
+
+Example:
+
+    package Person;
+
+    our @ISA = qw(Rose::DB::Object);
+    ...
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      set => 
+      [
+        'nicknames',
+        'parts' => { default => [ qw(arms legs) ] },
+      ],
+    );
+    ...
+
+    @parts = $person->parts; # ('arms', 'legs')
+    $parts = $person->parts; # [ 'arms', 'legs' ]
+
+    $person->nicknames('Jack', 'Gimpy');   # set with list
+    $person->nicknames([ 'Slim', 'Gip' ]); # set with array ref
+
+=back
+
+=head1 AUTHOR
+
+John C. Siracusa (siracusa@mindspring.com)
+
+=head1 COPYRIGHT
+
+Copyright (c) 2005 by John C. Siracusa.  All rights reserved.  This program is
+free software; you can redistribute it and/or modify it under the same terms
+as Perl itself.
