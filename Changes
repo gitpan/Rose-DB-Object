@@ -47,3 +47,11 @@
 0.04 (04.01.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Refactored column value parsing.  No, really.
+
+0.041 (04.22.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Corrected typo in DatetimeYearToSecond column class.
+      (Still need to add tests for those column types...)
+    * Added skip_first parameter to get_object_iterator().
+    * Added fix to avoid trying to format or truncate undefined 
+      dates in datetime columns.

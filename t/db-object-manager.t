@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 97;
+use Test::More tests => 101;
 
 BEGIN 
 {
@@ -616,7 +616,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 33)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 37)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -740,6 +740,8 @@ SKIP: foreach my $db_type (qw(informix))
 
   is($count, 2, "get_objects_count() 1 - $db_type");
 
+  my $save_o = $o;
+
   my $iterator = 
     Rose::DB::Object::Manager->get_objects_iterator(
       object_class => 'MyInformixObject',
@@ -776,6 +778,38 @@ SKIP: foreach my $db_type (qw(informix))
   $o = $iterator->next;
   is($o, 0, "iterator next() 5 - $db_type");
   is($iterator->total, 2, "iterator total() - $db_type");
+
+  $iterator = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => 'MyInformixObject',
+      share_db     => 1,
+      skip_first   => 1,
+      query        =>
+      [
+        id         => { ge => 2 },
+        name       => { like => '%e%' },
+        flag       => 't',
+        flag2      => 'f',
+        status     => 'active',
+        bits       => '00001',
+        start      => '01/02/2001',
+        save_col   => [ 1, 5 ],
+        nums       => 'SET{1,2,3}',
+        last_modified => { le => $save_o->db->format_timestamp($save_o->db->parse_timestamp('now')) },
+        date_created  => '2004-03-30 12:34:56',
+        status        => { like => 'AC%', field => 'UPPER(status)' },
+      ],
+      clauses => [ "LOWER(status) LIKE 'ac%'" ],
+      limit   => 5,
+      sort_by => 'name');
+
+  $o = $iterator->next;
+  is($o->name, 'Sue', "iterator skip_first next() 1 - $db_type");
+  is($o->id, 3, "iterator skip_first next() 2 - $db_type");
+
+  $o = $iterator->next;
+  is($o, 0, "iterator skip_first next() 3 - $db_type");
+  is($iterator->total, 1, "iterator total() - $db_type");
 
   my $fo = MyInformixOtherObject->new(name => 'Foo 1',
                                       k1   => 1,

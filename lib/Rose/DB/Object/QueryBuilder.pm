@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.03';
+our $VERSION = '0.031';
 
 our $Debug = 0;
 
@@ -490,7 +490,6 @@ sub _format_value
   {
     unless($col_meta->type eq 'set' && ref $store eq 'HASH' && $param =~ /^(?:a(?:ny|all)_)?in_set$/)
     {
-    $DB::single = 1;
       if($col_meta->manager_uses_method)
       {
         $object->$method($value);
@@ -530,7 +529,6 @@ sub _format_value
   }
   else
   {
-    $DB::single = 1;
     if($col_meta->manager_uses_method)
     {
       $object->$method($value);

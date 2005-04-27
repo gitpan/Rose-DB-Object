@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.03';
+our $VERSION = '0.031';
 
 our $Debug = 0;
 
@@ -31,7 +31,7 @@ sub handle_error
 
   return  if($mode eq 'return');
 
-  my $level =  $Carp::CarpLevel;
+  my $level = $Carp::CarpLevel;
   local $Carp::CarpLevel = $level + 1;  
 
   if($mode eq 'croak' || $mode eq 'fatal')
@@ -77,8 +77,8 @@ sub get_objects
   my $return_iterator = delete $args{'return_iterator'};
   my $object_class    = delete $args{'object_class'} or Carp::croak "Missing object class argument";
   my $with_objects    = delete $args{'with_objects'};
-
-  my $count_only = delete $args{'count_only'};
+  my $skip_first      = delete $args{'skip_first'};
+  my $count_only      = delete $args{'count_only'};
 
   my $db  = delete $args{'db'} || $object_class->init_db;
   my $dbh = delete $args{'dbh'};
@@ -270,27 +270,36 @@ sub get_objects
 
         eval
         {
-          unless($sth->fetch)
-          {
-            $self->total($self->{'_count'});
-            $class->handle_error($self);
-            return 0;
-          }
+          my $count = 0;
 
-          $object = $object_class->new(%{$row{$object_class}}, %object_args);
-
-          if($with_objects)
+          ROW: for(;;)
           {
-            foreach my $i (1 .. $num_subtables)
+            unless($sth->fetch)
             {
-              my $method = $with_objects->[$i - 1];
-              my $class  = $classes[$i];
-
-              $object->$method($class->new(%{$row{$class}}, %subobject_args));
+              $self->total($self->{'_count'});
+              $class->handle_error($self);
+              return 0;
             }
-          }
 
-          $self->{'_count'}++;
+            next ROW  if($skip_first && ++$count <= $skip_first);
+  
+            $object = $object_class->new(%{$row{$object_class}}, %object_args);
+  
+            if($with_objects)
+            {
+              foreach my $i (1 .. $num_subtables)
+              {
+                my $method = $with_objects->[$i - 1];
+                my $class  = $classes[$i];
+  
+                $object->$method($class->new(%{$row{$class}}, %subobject_args));
+              }
+            }
+
+            $skip_first = 0;
+            $self->{'_count'}++;
+            last ROW;
+          }
         };
 
         if($@)
@@ -680,7 +689,17 @@ Accepts the same arguments as C<get_objects()>, but just returns the number of r
 
 =item B<get_objects_iterator [PARAMS]>
 
-Accepts the same arguments as C<get_objects()>, but return a C<Rose::DB::Objects::Iterator> object which can be used to fetch the objects one at a time, or undef if there was an error.
+Accepts any valid C<get_objects()> argument, but return a C<Rose::DB::Objects::Iterator> object which can be used to fetch the objects one at a time, or undef if there was an error.
+
+Additional valid parameters are:
+
+=over 4
+
+=item C<skip_first NUM>
+
+Skip the first NUM rows before returning the first object from the iterator.  This is for databases that do not support an offset value in their SQL "LIMIT" clauses (e.g., Informix).
+
+=back
 
 =item B<get_objects_sql [PARAMS]>
 

@@ -40,7 +40,7 @@ sub date
         {
           my $dt = $self->{$key} || $self->{$formatted_key};
 
-          unless(ref $dt)
+          if(defined $dt && !ref $dt)
           {
             my $dt2 = $db->parse_date($dt);
 
@@ -170,7 +170,7 @@ sub datetime
         {
           my $dt = $self->{$key} || $self->{$formatted_key};
 
-          unless(ref $dt)
+          if(defined $dt && !ref $dt)
           {
             my $dt2 = $db->$parse_method($dt);
 
@@ -286,7 +286,7 @@ sub timestamp
         {
           my $dt = $self->{$key} || $self->{$formatted_key};
 
-          unless(ref $dt)
+          if(defined $dt && !ref $dt)
           {
             my $dt2 = $db->parse_timestamp($dt);
 

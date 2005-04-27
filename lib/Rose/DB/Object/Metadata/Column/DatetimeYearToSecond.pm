@@ -5,7 +5,7 @@ use strict;
 use Rose::DB::Object::Metadata::Column::Datetime;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Datetime);
 
-our $VERSION = '0.02';
+our $VERSION = '0.021';
 
 sub type { 'datetime year to second' }
 
@@ -16,7 +16,7 @@ sub should_inline_value
           ($_[1]->driver eq 'Informix' || $_[2] =~ /^\w+\(.*\)$/)) ? 1 : 0;
 }
 
-sub parse_value  { shift; shift->parse_datetime_year_to_second@_)  }
+sub parse_value  { shift; shift->parse_datetime_year_to_second(@_)  }
 sub format_value { shift; shift->format_datetime_year_to_second(@_) }
 
 1;
