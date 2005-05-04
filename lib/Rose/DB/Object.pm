@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.041';
+our $VERSION = '0.042';
 
 our $Debug = 0;
 
@@ -180,7 +180,9 @@ sub load
     else
     {
       $sql = $meta->load_sql(\@key_columns);
-      $sth = $dbh->prepare_cached($sql, $meta->prepare_select_options);
+
+      # Was prepare_cached() but that can't be used across transactions
+      $sth = $dbh->prepare($sql, $meta->prepare_select_options);
     }
 
     $Debug && warn "$sql - bind params: ", join(', ', grep { defined } @key_values), "\n";
@@ -362,11 +364,13 @@ sub update
       #else
       #{
       #  $sql = $meta->update_sql(\@key_columns);
-      #  $sth = $dbh->prepare_cached($sql, $meta->prepare_update_options);
+      #  # Was prepare_cached() but that can't be used across transactions
+      #  $sth = $dbh->prepare($sql, $meta->prepare_update_options);
       #}
 
       my $sql = $meta->update_sql(\@key_columns);
-      my $sth = $dbh->prepare_cached($sql, $meta->prepare_update_options);
+      # Was prepare_cached() but that can't be used across transactions
+      my $sth = $dbh->prepare($sql, $meta->prepare_update_options);
 
       my %key = map { ($_ => 1) } @key_columns;
 
@@ -506,7 +510,8 @@ sub insert
     {
       my $column_names = $meta->column_names;
 
-      $sth = $dbh->prepare_cached($meta->insert_sql, $options);
+      # Was prepare_cached() but that can't be used across transactions
+      $sth = $dbh->prepare($meta->insert_sql, $options);
 
       if($Debug)
       {
@@ -597,7 +602,8 @@ sub delete
     local $self->{STATE_SAVING()} = 1;
     local $dbh->{'RaiseError'} = 1;
 
-    my $sth = $dbh->prepare_cached($meta->delete_sql, $meta->prepare_delete_options);
+    # Was prepare_cached() but that can't be used across transactions
+    my $sth = $dbh->prepare($meta->delete_sql, $meta->prepare_delete_options);
 
     $Debug && warn $meta->delete_sql, " - bind params: ", join(', ', @pk_values), "\n";
     $sth->execute(@pk_values);

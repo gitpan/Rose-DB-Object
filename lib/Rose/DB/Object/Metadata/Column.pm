@@ -10,7 +10,7 @@ our @ISA = qw(Rose::Object);
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.02';
+our $VERSION = '0.021';
 
 use overload
 (
@@ -30,11 +30,19 @@ Rose::Object::MakeMethods::Generic->make_methods
   [
     'name',
     'method_name',
+    'type',
+    'default',
     __PACKAGE__->method_maker_argument_names,
   ],
   
-  boolean => 'manager_uses_method',
+  boolean => 
+  [
+    'manager_uses_method',
+    'not_null',
+  ],
 );
+
+__PACKAGE__->add_method_maker_argument_names(qw(default type));
 
 *accessor_method_name = \&method_name;
 *mutator_method_name  = \&method_name;
@@ -140,6 +148,10 @@ name/value pairs.  Any object method is a valid parameter name.
 
 Get or set the name of the method used to get the column value.  This is currently an alias for the C<method_name> method.
 
+=item B<default [VALUE]>
+
+Get or set the default value of the column.
+
 =item B<format_value DB, VALUE>
 
 Convert VALUE into a string suitable for the database column of this type.  VALUE is expected to be like the return value of the C<parse_value()> method.  DB is a C<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
@@ -204,6 +216,11 @@ Get or set the name of the method used to set the column value.  This is current
 =item B<name [NAME]>
 
 Get or set the name of the column, not including the table name, username, schema, or any other qualifier.
+
+=item B<not_null [BOOL]>
+
+Get or set a boolean flag that indicated whether or not the column 
+value can can be null.
 
 =item B<parse_value DB, VALUE>
 

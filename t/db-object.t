@@ -634,7 +634,7 @@ EOF
     (
       name     => { type => 'varchar', length => 32 },
       code     => { type => 'char', length => 6 },
-      id       => { primary_key => 1 },
+      id       => { primary_key => 1, not_null => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int' },
       k3       => { type => 'int' },
@@ -726,7 +726,7 @@ EOF
     (
       name     => { type => 'varchar', length => 32 },
       code     => { type => 'char', length => 6 },
-      id       => { primary_key => 1 },
+      id       => { primary_key => 1, not_null => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int' },
       k3       => { type => 'int' },
@@ -812,7 +812,7 @@ EOF
     (
       name     => { type => 'varchar', length => 32 },
       code     => { type => 'char', length => 6 },
-      id       => { type => 'serial', primary_key => 1 },
+      id       => { type => 'serial', primary_key => 1, not_null => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int' },
       k3       => { type => 'int' },

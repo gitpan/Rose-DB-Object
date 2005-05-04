@@ -7,11 +7,11 @@ use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.01';
+our $VERSION = '0.011';
 
 __PACKAGE__->add_method_maker_argument_names
 (
-  qw(default type length check_in with_init init_method)
+  qw(length check_in with_init init_method)
 );
 
 Rose::Object::MakeMethods::Generic->make_methods
@@ -45,10 +45,6 @@ This class inherits from C<Rose::DB::Object::Metadata::Column>. Inherited method
 =head1 OBJECT METHODS
 
 =over 4
-
-=item B<default [VALUE]>
-
-Get or set the default value of the column.
 
 =item B<check_in [ARRAYREF]>
 

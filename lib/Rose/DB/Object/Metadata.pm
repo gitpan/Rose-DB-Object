@@ -338,7 +338,6 @@ sub add_columns
         $Class_Loaded{$column_class}++;
       }
 
-
       $Debug && warn $self->class, " - adding $name $column_class\n";
       $self->{'columns'}{$name} = 
         $column_class->new(%$info, name => $name);
