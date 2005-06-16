@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 257;
+use Test::More tests => 337;
 
 BEGIN 
 {
@@ -13,12 +13,33 @@ BEGIN
 our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 #
+# Generic
+#
+
+foreach my $pair ((map { [ "2 $_", 2 ] } qw(s sec secs second seconds)),
+                  (map { [ "2 $_", 2 * 60 ] } qw(m min mins minute minutes)),
+                  (map { [ "2 $_", 2 * 60 * 60 ] } qw(h hr hrs hour hours)),
+                  (map { [ "2 $_", 2 * 60 * 60 * 24 ] } qw(d day days)),
+                  (map { [ "2 $_", 2 * 60 * 60 * 24 * 7 ] } qw(w wk wks week weeks)),
+                  (map { [ "2 $_", 2 * 60 * 60 * 24 * 365 ] } qw(y yr yrs year years)))
+{
+  my($arg, $secs) = @$pair;
+  MyCachedObject->cache_expires_in($arg);
+  is(MyCachedObject->cache_expires_in, $secs, "cache_expires_in($arg) - generic");
+  
+  $arg =~ s/\s+//g;
+
+  MyCachedObject->cache_expires_in($arg);
+  is(MyCachedObject->cache_expires_in, $secs, "cache_expires_in($arg) - generic");
+}
+
+#
 # Postgres
 #
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 139)  unless($HAVE_PG);
+  skip("Postgres tests", 151)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -195,10 +216,41 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   $o->forget_all;
 
-  no warnings;
-  is(scalar keys %MyPgObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
-  is(scalar keys %MyPgObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
-  is(scalar keys %MyPgObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+  FORGET_ALL_PG:
+  {
+    no warnings;
+    is(scalar keys %MyPgObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
+    is(scalar keys %MyPgObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
+    is(scalar keys %MyPgObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+  }
+  
+  # Cache expiration with primary key
+  MyPgObject->cache_expires_in('5 seconds');
+  $o = MyPgObject->new(id => 99);
+  $o->load or die $o->error;
+
+  my $loaded = $MyPgObject::Objects_By_Id_Loaded{99};
+
+  is($MyPgObject::Objects_By_Id_Loaded{99}, $loaded, "cache_expires_in pk 1 - $db_type");
+  $o->load or die $o->error;
+  is($MyPgObject::Objects_By_Id_Loaded{99}, $loaded, "cache_expires_in pk 2 - $db_type");
+  sleep(5);
+  $o->load or die $o->error;
+  ok($MyPgObject::Objects_By_Id_Loaded{99} != $loaded, "cache_expires_in pk 3 - $db_type");
+
+  # Cache expiration with unique key
+  MyPgObject->cache_expires_in('5 seconds');
+  $o = MyPgObject->new(name => 'John');
+  $o->load or die $o->error;
+
+  $loaded = $MyPgObject::Objects_By_Key_Loaded{'name'}{'John'};
+
+  is($MyPgObject::Objects_By_Key_Loaded{'name'}{'John'}, $loaded, "cache_expires_in uk 1 - $db_type");
+  $o->load or die $o->error;
+  is($MyPgObject::Objects_By_Key_Loaded{'name'}{'John'}, $loaded, "cache_expires_in uk 2 - $db_type");
+  sleep(5);
+  $o->load or die $o->error;
+  ok($MyPgObject::Objects_By_Key_Loaded{'name'}{'John'} != $loaded, "cache_expires_in uk 3 - $db_type");
 }
 
 #
@@ -207,7 +259,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 53)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 59)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -325,10 +377,43 @@ SKIP: foreach my $db_type ('mysql')
   
   $o->forget_all;
 
-  no warnings;
-  is(scalar keys %MyMySQLObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
-  is(scalar keys %MyMySQLObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
-  is(scalar keys %MyMySQLObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+  FORGET_ALL_MYSQL:
+  {
+    no warnings;
+    is(scalar keys %MyMySQLObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
+    is(scalar keys %MyMySQLObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
+    is(scalar keys %MyMySQLObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+  }
+  
+  my $id = $o->id;
+
+  # Cache expiration with primary key
+  MyMySQLObject->cache_expires_in('5 seconds');
+  $o = MyMySQLObject->new(id => $id);
+  $o->load or die $o->error;
+
+  my $loaded = $MyMySQLObject::Objects_By_Id_Loaded{$id};
+
+  is($MyMySQLObject::Objects_By_Id_Loaded{$id}, $loaded, "cache_expires_in pk 1 - $db_type");
+  $o->load or die $o->error;
+  is($MyMySQLObject::Objects_By_Id_Loaded{$id}, $loaded, "cache_expires_in pk 2 - $db_type");
+  sleep(5);
+  $o->load or die $o->error;
+  ok($MyMySQLObject::Objects_By_Id_Loaded{$id} != $loaded, "cache_expires_in pk 3 - $db_type");
+
+  # Cache expiration with unique key
+  MyMySQLObject->cache_expires_in('5 seconds');
+  $o = MyMySQLObject->new(name => 'John');
+  $o->load or die $o->error;
+
+  $loaded = $MyMySQLObject::Objects_By_Key_Loaded{'name'}{'John'};
+
+  is($MyMySQLObject::Objects_By_Key_Loaded{'name'}{'John'}, $loaded, "cache_expires_in uk 1 - $db_type");
+  $o->load or die $o->error;
+  is($MyMySQLObject::Objects_By_Key_Loaded{'name'}{'John'}, $loaded, "cache_expires_in uk 2 - $db_type");
+  sleep(5);
+  $o->load or die $o->error;
+  ok($MyMySQLObject::Objects_By_Key_Loaded{'name'}{'John'} != $loaded, "cache_expires_in uk 3 - $db_type");
 }
 
 #
@@ -337,7 +422,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 64)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 70)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -479,14 +564,55 @@ SKIP: foreach my $db_type (qw(informix))
 
   $o->forget_all;
 
-  no warnings;
-  is(scalar keys %MyInformixObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
-  is(scalar keys %MyInformixObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
-  is(scalar keys %MyInformixObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+  FORGET_ALL_INFORMIX:
+  {
+    no warnings;
+    is(scalar keys %MyInformixObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
+    is(scalar keys %MyInformixObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
+    is(scalar keys %MyInformixObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+  }
+  
+  # Cache expiration with primary key
+  MyInformixObject->cache_expires_in('5 seconds');
+  $o = MyInformixObject->new(id => 99);
+  $o->load or die $o->error;
+
+  my $loaded = $MyInformixObject::Objects_By_Id_Loaded{99};
+
+  is($MyInformixObject::Objects_By_Id_Loaded{99}, $loaded, "cache_expires_in pk 1 - $db_type");
+  $o->load or die $o->error;
+  is($MyInformixObject::Objects_By_Id_Loaded{99}, $loaded, "cache_expires_in pk 2 - $db_type");
+  sleep(5);
+  $o->load or die $o->error;
+  ok($MyInformixObject::Objects_By_Id_Loaded{99} != $loaded, "cache_expires_in pk 3 - $db_type");
+
+  # Cache expiration with unique key
+  MyInformixObject->cache_expires_in('5 seconds');
+  $o = MyInformixObject->new(name => 'John');
+  $o->load or die $o->error;
+
+  $loaded = $MyInformixObject::Objects_By_Key_Loaded{'name'}{'John'};
+
+  is($MyInformixObject::Objects_By_Key_Loaded{'name'}{'John'}, $loaded, "cache_expires_in uk 1 - $db_type");
+  $o->load or die $o->error;
+  is($MyInformixObject::Objects_By_Key_Loaded{'name'}{'John'}, $loaded, "cache_expires_in uk 2 - $db_type");
+  sleep(5);
+  $o->load or die $o->error;
+  ok($MyInformixObject::Objects_By_Key_Loaded{'name'}{'John'} != $loaded, "cache_expires_in uk 3 - $db_type");
 }
 
 BEGIN
 {
+  #
+  # Generic
+  #
+  
+  GENERIC:
+  {
+    package MyCachedObject;
+    our @ISA = qw(Rose::DB::Object::Cached);
+  }
+
   #
   # Postgres
   #

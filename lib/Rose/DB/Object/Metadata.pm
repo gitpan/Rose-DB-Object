@@ -79,7 +79,7 @@ __PACKAGE__->column_type_classes
 
 our %Class_Loaded;
 
-our $VERSION = '0.031';
+our $VERSION = '0.032';
 
 our $Debug = 0;
 
@@ -191,6 +191,13 @@ sub table
   return $_[0]->{'table'}  unless(@_ > 1);
   $_[0]->_clear_table_generated_values;
   return $_[0]->{'table'} = $_[1];
+}
+
+sub catalog
+{
+  return $_[0]->{'catalog'}  unless(@_ > 1);
+  $_[0]->_clear_table_generated_values;
+  return $_[0]->{'catalog'} = $_[1];
 }
 
 sub schema
@@ -620,7 +627,7 @@ sub fq_table_sql
 {
   my($self) = shift;
   return $self->{'fq_table_sql'} ||= 
-    join('.', grep { defined } ($self->schema, $self->table));
+    join('.', grep { defined } ($self->catalog, $self->schema, $self->table));
 }
 
 sub load_sql
@@ -1105,6 +1112,10 @@ What you'll end up with is an error like this:
 In other words, DBD::Informix has tried to quote the string "CURRENT", which has special meaning to Informix only when it is not quoted. 
 
 In order to make this work, the value "CURRENT" must be "inlined" rather than bound to a placeholder when it is the value of a "DATETIME YEAR TO SECOND" column in an Informix database.
+
+=item B<catalog [CATALOG]>
+
+Get or set the database catalog name.  This attribute is not applicable to any of the supported databases, as far as I know.
 
 =item B<class [CLASS]>
 

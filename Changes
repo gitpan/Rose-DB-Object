@@ -61,3 +61,8 @@
     * Added not_null attribute to column metadata objects.
     * Removed use of prepare_cached() because it can't be used
       across transactions in Informix.  Duh.
+
+0.043 (06.16.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added time-based expiration to Rose::DB::Object::Cached.
+    * Added catalog attribute to metadata objects.
