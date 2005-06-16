@@ -341,7 +341,7 @@ BEGIN
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
-  id             SERIAL PRIMARY KEY,
+  id             SERIAL NOT NULL PRIMARY KEY,
   @{[ $PG_HAS_CHKPASS ? 'password CHKPASS,' : '' ]}
   name           VARCHAR(32) NOT NULL,
   flag           BOOLEAN NOT NULL,
@@ -372,7 +372,7 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_private.rose_db_object_test
 (
-  id             SERIAL PRIMARY KEY,
+  id             SERIAL NOT NULL PRIMARY KEY,
   @{[ $PG_HAS_CHKPASS ? 'password CHKPASS,' : '' ]}
   name           VARCHAR(32) NOT NULL,
   flag           BOOLEAN NOT NULL,

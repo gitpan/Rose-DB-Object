@@ -30,7 +30,7 @@ sub __xrdbopriv_save_object
 
   no strict 'refs';
 
-  my $ttl_secs = $class->cache_expires_in || 0;
+  my $ttl_secs = $class->meta->cached_objects_expire_in || 0;
   my $loaded = $ttl_secs ? time : 0;
 
   ${"${class}::Objects_By_Id"}{$pk} = $self;
@@ -66,7 +66,7 @@ sub __xrdbopriv_get_object
 {
   my($class) = ref $_[0] || $_[0];
 
-  my $ttl_secs = $class->cache_expires_in;
+  my $ttl_secs = $class->meta->cached_objects_expire_in;
 
   if(@_ == 2)
   {
@@ -193,67 +193,6 @@ sub forget
   return 1;
 }
 
-sub forget_all
-{
-  my($self) = shift;
-
-  my $class = ref $self || $self;
-
-  no strict 'refs';
-  %{"${class}::Objects_By_Id"}  = ();
-  %{"${class}::Objects_By_Key"} = ();
-  %{"${class}::Objects_Keys"}   = ();
-
-  return 1;
-}
-
-# Code borrowed from Cache::Cache
-my %Expiration_Units =
-(
-  map(($_,             1), qw(s sec secs second seconds)),
-  map(($_,            60), qw(m min mins minute minutes)),
-  map(($_,         60*60), qw(h hr hrs hour hours)),
-  map(($_,      60*60*24), qw(d day days)),
-  map(($_,    60*60*24*7), qw(w wk wks week weeks)),
-  map(($_,  60*60*24*365), qw(y yr yrs year years))
-);
-
-sub cache_expires_in
-{
-  my($class) = shift;
-
-  no strict 'refs';
-  return ${"${class}::Cache_Expires"} ||= 0  unless(@_);
-
-  my $arg = shift;
-
-  my $secs;
-
-  if($arg =~ /^now$/i)
-  {
-    $class->forget_all;
-    $secs = 0;
-  }
-  elsif($arg =~ /^never$/)
-  {
-    $secs = 0;
-  }
-  elsif($arg =~ /^\s*([+-]?(?:\d+|\d*\.\d*))\s*$/)
-  {
-    $secs = $arg;
-  }
-  elsif($arg =~ /^\s*([+-]?(?:\d+|\d*\.\d*))\s*(\w*)\s*$/ && exists $Expiration_Units{$2})
-  {
-    $secs = $Expiration_Units{$2} * $1;
-  }
-  else
-  {
-    Carp::croak("Invalid cache expiration time: '$arg'");
-  }
-
-  return ${"${class}::Cache_Expires"} = $secs;
-}
-
 sub remeber
 {
   my($self) = shift;
@@ -314,7 +253,7 @@ Rose::DB::Object::Cached - Memory cached object representation of a single row i
   print $cat2->name; # prints "Blah"
 
   # The object cache supports time-based expiration
-  Category->cache_expires_in('15 minutes');
+  Category->meta->cached_objects_expire_in('15 minutes');
 
   $cat1 = Category->new(id => 123);
   $cat1->save or $cat1->die;
@@ -339,38 +278,9 @@ This means that I<modifications to an object will also modify all other objects 
 
 This class is most useful for encapsulating "read-only" rows, or other data that is updated very infrequently.  In the C<Category> example above, it would be inefficient to repeatedly load category information in a long-running process (such as a mod_perl Apache web server) if that information changes infrequently.
 
-The memory cache can be cleared for an individual object or all objects of the same class.  There is also support for simple time-based cache expiration.
+The memory cache can be cleared for an individual object or all objects of the same class.  There is also support for simple time-based cache expiration.  See the C<clear_object_cache> and C<cached_objects_expire_in> methods in the L<Rose::DB::Object::Metadata> documentation for more information.
 
 Only the methods that are overridden are documented here.  See the L<Rose::DB::Object> documentation for the rest.
-
-=head1 CLASS METHODS
-
-=over 4
-
-=item B<cache_expires_in [DURATION]>
-
-If called with no arguments, the cache expiration limit in seconds is returned.  
-
-If passed a DURATION, the cache expiration is set.  Valid formats for DURATION are in the form "NUMBER UNIT" where NUMBER is a positive number and UNIT is one of the following:
-
-    s sec secs second seconds
-    m min mins minute minutes
-    h hr hrs hour hours
-    d day days
-    w wk wks week weeks
-    y yr yrs year years
-
-All formats of the DURATION argument are converted to seconds.  Days are exactly 24 hours, weeks are 7 days, and years are 365 days.
-
-If an object was read from the database the specified number of seconds ago or earlier, it is purged from the cache and reloaded from the database.
-
-A C<cache_expires_in> value of undef or zero means that nothing will ever expire from the object cache for this class.  This is the default.
-
-=item B<forget_all>
-
-Clear the memory cache for all objects of this class.
-
-=back
 
 =head1 OBJECT METHODS
 
@@ -414,9 +324,7 @@ This method does the same thing as the L<Rose::DB::Object> method of the same na
 
 In addition to the reserved methods listed in the L<Rose::DB::Object> documentation, the following method names are also reserved for objects that inherit from this class:
 
-    cache_expires_in
     forget
-    forget_all
     remember
 
 If you have a column with one of these names, you must alias it.  See the L<Rose::DB::Object> documentation for more information on column aliasing and reserved methods.

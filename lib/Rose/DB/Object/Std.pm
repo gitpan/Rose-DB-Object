@@ -67,7 +67,6 @@ sub meta
 
 1;
 
-
 __END__
 
 =head1 NAME
@@ -181,7 +180,7 @@ Different databases provide for auto-generated column values in different ways. 
 
 C<Rose::DB::Object::Std> (in cooperation with C<Rose::DB> and C<Rose::DB::Object::Std::Metadata>) attempts to hide these details from you.  All you have to do is omit the value for the primary key entirely.  After the object is C<save()>ed, you can retrieve the auto-selected primary key by calling the C<id()> method.
 
-You do have to correctly define the "id" column in the database, however.  Here are examples of auto-generating primary key column definitions in the databases supported by C<Rose::DB>.
+You do have to correctly define the "id" column in the database, however.  Here are examples of primary key column definitions that provide auto-generated values, one for each of the databases supported by L<Rose::DB>.
 
 =over
 
@@ -189,7 +188,7 @@ You do have to correctly define the "id" column in the database, however.  Here 
 
     CREATE TABLE mytable
     (
-      id   SERIAL PRIMARY KEY,
+      id   SERIAL NOT NULL PRIMARY KEY,
       ...
     );
 

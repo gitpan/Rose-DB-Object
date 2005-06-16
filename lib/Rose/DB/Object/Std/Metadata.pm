@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Object::Metadata;
 our @ISA = qw(Rose::DB::Object::Metadata);
 
-our $VERSION = '0.011';
+our $VERSION = '0.012';
 
 sub primary_key_columns { wantarray ? 'id' : [ 'id' ] }
 
@@ -16,61 +16,11 @@ sub add_primary_key_column
   Carp::croak __PACKAGE__, " objects are required to have a single primary key named 'id'"
     unless((ref $_[1] && $_[1][0] eq 'id') || $_[1] eq 'id');
 
-  # No pointin doing this...
+  # No point in doing this...
   #shift->SUPER::add_primary_key(@_);
 }
 
 *add_primary_key_columns = \&add_primary_key_columns;
-
-sub primary_key_sequence_name
-{
-  my($self) = shift;
-
-  return $self->{'primary_key_sequence_name'} = shift  if(@_ == 1);
-
-  my %args = @_;
-
-  my $db = $args{'db'} or
-    die "Cannot generate primary key sequence name without db argument";
-
-  my $table = $self->fq_table_sql or 
-    Carp::croak "Cannot generate primary key sequence name without table name";
-    
-  return $self->{'primary_key_sequence_name'} = 
-    $db->auto_sequence_name(table => $table, column => 'id');    
-}
-
-sub generate_primary_key_values
-{
-  my($self, $db) = @_;
-
-  if(my $code = $self->primary_key_generator)
-  {
-    return $code->($self, $db);
-  }
-
-  my $id;
-  
-  if(my $seq = $self->primary_key_sequence_name(db => $db))
-  {
-    $id = $db->next_value_in_sequence($seq);
-
-    unless($id)
-    {
-      $self->error("Could not generate primary key for ", $self->class, 
-                   " by selecting the next value in the sequence '$seq' - $@");
-      return undef;
-    }
-
-    return $id;
-  }
-  else
-  {
-    return $db->generate_primary_key_values(1); # num primary key columns
-  }
-}
-
-*generate_primary_key_value = \&generate_primary_key_values;
 
 sub generate_primary_key_placeholders { shift; shift->generate_primary_key_placeholders(@_) }
 
@@ -79,7 +29,7 @@ sub initialize
   my($self) = shift;
 
   my $id_column = $self->column('id');
-  
+
   unless($id_column)
   {
     $self->add_column(id => { primary_key => 1 });
@@ -163,16 +113,6 @@ This method is an alias for the C<add_primary_key_columns()> method.
 Since C<Rose::DB::Object::Std> objects must have a single primary key column named "id", calling this method with a COLUMNS argument of anything other than the column name "id" or a reference to an array containing the column name "id" will cause a fatal error.
 
 In general, you do not need to use this method at all since the C<primary_key_columns()> method is hard-coded to always return "id".
-
-=item B<generate_primary_key_value DB>
-
-Given the C<Rose::DB>-derived object DB, generate a new primary key column value for the table described by this metadata object.  If a C<primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value returned.
-
-If no C<primary_key_generator> is defined, a new primary key value will be generated, if possible, using the native facilities of the current database.  Note that this may not be possible for databases that auto-generate such values only after an insertion.  In that case, undef will be returned.
-
-=item B<generate_primary_key_values>
-
-This method is an alias for C<generate_primary_key_value()>.
 
 =item B<initialize [ARGS]>
 

@@ -66,3 +66,9 @@
 
     * Added time-based expiration to Rose::DB::Object::Cached.
     * Added catalog attribute to metadata objects.
+
+0.05 (06.16.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Moved object cache management further into the metadata object.
+    * Enabled auto-generated primary key values for Rose::DB::Object
+      objects used with the PostgreSQL database.

@@ -24,13 +24,13 @@ foreach my $pair ((map { [ "2 $_", 2 ] } qw(s sec secs second seconds)),
                   (map { [ "2 $_", 2 * 60 * 60 * 24 * 365 ] } qw(y yr yrs year years)))
 {
   my($arg, $secs) = @$pair;
-  MyCachedObject->cache_expires_in($arg);
-  is(MyCachedObject->cache_expires_in, $secs, "cache_expires_in($arg) - generic");
+  MyCachedObject->meta->cached_objects_expire_in($arg);
+  is(MyCachedObject->meta->cached_objects_expire_in, $secs, "cache_expires_in($arg) - generic");
   
   $arg =~ s/\s+//g;
 
-  MyCachedObject->cache_expires_in($arg);
-  is(MyCachedObject->cache_expires_in, $secs, "cache_expires_in($arg) - generic");
+  MyCachedObject->meta->cached_objects_expire_in($arg);
+  is(MyCachedObject->meta->cached_objects_expire_in, $secs, "cache_expires_in($arg) - generic");
 }
 
 #
@@ -214,18 +214,18 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   ok($o ne $o2, "load() forget 3 - $db_type");
 
-  $o->forget_all;
+  $o->meta->clear_object_cache;
 
   FORGET_ALL_PG:
   {
     no warnings;
-    is(scalar keys %MyPgObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
-    is(scalar keys %MyPgObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
-    is(scalar keys %MyPgObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+    is(scalar keys %MyPgObject::Objects_By_Id, 0, "clear_object_cache() 1 - $db_type");
+    is(scalar keys %MyPgObject::Objects_By_Key, 0, "clear_object_cache() 2 - $db_type");
+    is(scalar keys %MyPgObject::Objects_Keys, 0, "clear_object_cache() 3 - $db_type");
   }
   
   # Cache expiration with primary key
-  MyPgObject->cache_expires_in('5 seconds');
+  MyPgObject->meta->cached_objects_expire_in('5 seconds');
   $o = MyPgObject->new(id => 99);
   $o->load or die $o->error;
 
@@ -239,7 +239,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   ok($MyPgObject::Objects_By_Id_Loaded{99} != $loaded, "cache_expires_in pk 3 - $db_type");
 
   # Cache expiration with unique key
-  MyPgObject->cache_expires_in('5 seconds');
+  MyPgObject->meta->cached_objects_expire_in('5 seconds');
   $o = MyPgObject->new(name => 'John');
   $o->load or die $o->error;
 
@@ -375,20 +375,20 @@ SKIP: foreach my $db_type ('mysql')
 
   ok($o ne $o2, "load() forget 3 - $db_type");
   
-  $o->forget_all;
+  $o->meta->clear_object_cache;
 
   FORGET_ALL_MYSQL:
   {
     no warnings;
-    is(scalar keys %MyMySQLObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
-    is(scalar keys %MyMySQLObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
-    is(scalar keys %MyMySQLObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+    is(scalar keys %MyMySQLObject::Objects_By_Id, 0, "clear_object_cache() 1 - $db_type");
+    is(scalar keys %MyMySQLObject::Objects_By_Key, 0, "clear_object_cache() 2 - $db_type");
+    is(scalar keys %MyMySQLObject::Objects_Keys, 0, "clear_object_cache() 3 - $db_type");
   }
   
   my $id = $o->id;
 
   # Cache expiration with primary key
-  MyMySQLObject->cache_expires_in('5 seconds');
+  MyMySQLObject->meta->cached_objects_expire_in('5 seconds');
   $o = MyMySQLObject->new(id => $id);
   $o->load or die $o->error;
 
@@ -402,7 +402,7 @@ SKIP: foreach my $db_type ('mysql')
   ok($MyMySQLObject::Objects_By_Id_Loaded{$id} != $loaded, "cache_expires_in pk 3 - $db_type");
 
   # Cache expiration with unique key
-  MyMySQLObject->cache_expires_in('5 seconds');
+  MyMySQLObject->meta->cached_objects_expire_in('5 seconds');
   $o = MyMySQLObject->new(name => 'John');
   $o->load or die $o->error;
 
@@ -562,18 +562,18 @@ SKIP: foreach my $db_type (qw(informix))
 
   ok($o ne $o2, "load() forget 3 - $db_type");
 
-  $o->forget_all;
+  $o->meta->clear_object_cache;
 
   FORGET_ALL_INFORMIX:
   {
     no warnings;
-    is(scalar keys %MyInformixObject::Objects_By_Id, 0, "forget_all() 1 - $db_type");
-    is(scalar keys %MyInformixObject::Objects_By_Key, 0, "forget_all() 2 - $db_type");
-    is(scalar keys %MyInformixObject::Objects_Keys, 0, "forget_all() 3 - $db_type");
+    is(scalar keys %MyInformixObject::Objects_By_Id, 0, "clear_object_cache() 1 - $db_type");
+    is(scalar keys %MyInformixObject::Objects_By_Key, 0, "clear_object_cache() 2 - $db_type");
+    is(scalar keys %MyInformixObject::Objects_Keys, 0, "clear_object_cache() 3 - $db_type");
   }
   
   # Cache expiration with primary key
-  MyInformixObject->cache_expires_in('5 seconds');
+  MyInformixObject->meta->cached_objects_expire_in('5 seconds');
   $o = MyInformixObject->new(id => 99);
   $o->load or die $o->error;
 
@@ -587,7 +587,7 @@ SKIP: foreach my $db_type (qw(informix))
   ok($MyInformixObject::Objects_By_Id_Loaded{99} != $loaded, "cache_expires_in pk 3 - $db_type");
 
   # Cache expiration with unique key
-  MyInformixObject->cache_expires_in('5 seconds');
+  MyInformixObject->meta->cached_objects_expire_in('5 seconds');
   $o = MyInformixObject->new(name => 'John');
   $o->load or die $o->error;
 

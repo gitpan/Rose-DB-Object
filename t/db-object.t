@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 244;
+use Test::More tests => 252;
   
 BEGIN 
 {
@@ -18,20 +18,16 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 126)  unless($HAVE_PG);
+  skip("Postgres tests", 128)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
   my $o = MyPgObject->new(name => 'John', 
-                          id   => 1,
                           k1   => 1,
                           k2   => undef,
                           k3   => 3);
 
   ok(ref $o && $o->isa('MyPgObject'), "new() 1 - $db_type");
-
-  # Not yet supported...
-  #is($o->id, 1, "auto-generated primary key - $db_type");
 
   $o->flag2('TRUE');
   $o->date_created('now');
@@ -39,6 +35,9 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   $o->save_col(7);
 
   ok($o->save, "save() 1 - $db_type");
+
+  is($o->id, 1, "auto-generated primary key - $db_type");
+
   ok($o->load, "load() 1 - $db_type");
 
   $o->name('C' x 50);
@@ -213,7 +212,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 55)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 61)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -357,6 +356,20 @@ SKIP: foreach my $db_type ('mysql')
 
   $o->meta->table($old_table);  
   $o->meta->error_mode('return');
+
+  $o = MyMPKMySQLObject->new(name => 'John');
+  
+  ok($o->save, "save() 1 multi-value primary key with generated values - $db_type");
+
+  is($o->k1, 1, "save() verify 1 multi-value primary key with generated values - $db_type");
+  is($o->k2, 2, "save() verify 2 multi-value primary key with generated values - $db_type");
+
+  $o = MyMPKMySQLObject->new(name => 'Alex');
+
+  ok($o->save, "save() 2 multi-value primary key with generated values - $db_type");
+
+  is($o->k1, 3, "save() verify 3 multi-value primary key with generated values - $db_type");
+  is($o->k2, 4, "save() verify 4 multi-value primary key with generated values - $db_type");
 }
 
 #
@@ -575,7 +588,7 @@ BEGIN
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
-  id             INT NOT NULL PRIMARY KEY,
+  id             SERIAL NOT NULL PRIMARY KEY,
   k1             INT,
   k2             INT,
   k3             INT,
@@ -599,7 +612,7 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_private.rose_db_object_test
 (
-  id             INT NOT NULL PRIMARY KEY,
+  id             SERIAL NOT NULL PRIMARY KEY,
   k1             INT,
   k2             INT,
   k3             INT,
@@ -712,6 +725,17 @@ CREATE TABLE rose_db_object_test
 )
 EOF
 
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_test2
+(
+  k1             INT NOT NULL,
+  k2             INT NOT NULL,
+  name           VARCHAR(32),
+  
+  UNIQUE(k1, k2)
+)
+EOF
+    
     $dbh->disconnect;
 
     # Create test subclass
@@ -753,6 +777,36 @@ EOF
     MyMySQLObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
     MyMySQLObject->meta->initialize(preserve_existing_methods => 1);
+
+    package MyMPKMySQLObject;
+    
+    use Rose::DB::Object;
+    our @ISA = qw(Rose::DB::Object);
+  
+    MyMPKMySQLObject->meta->table('rose_db_object_test2');
+  
+    MyMPKMySQLObject->meta->columns
+    (
+      k1          => { type => 'int', not_null => 1 },
+      k2          => { type => 'int', not_null => 1 },
+      name        => { type => 'varchar', length => 32 },
+    );
+  
+    MyMPKMySQLObject->meta->primary_key_columns('k1', 'k2');
+  
+    MyMPKMySQLObject->meta->initialize;
+    
+    my $i = 1;
+
+    MyMPKMySQLObject->meta->primary_key_generator(sub
+    {
+      my($meta, $db) = @_;
+
+      my $k1 = $i++;
+      my $k2 = $i++;
+      
+      return $k1, $k2;
+    });
   }
 
   #
@@ -869,6 +923,7 @@ END
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE rose_db_object_test');
+    $dbh->do('DROP TABLE rose_db_object_test2');
 
     $dbh->disconnect;
   }

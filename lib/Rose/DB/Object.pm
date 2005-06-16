@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.043';
+our $VERSION = '0.05';
 
 our $Debug = 0;
 
@@ -754,7 +754,7 @@ C<Rose::DB::Object> objects can represent rows in almost any database table, sub
 
 =over 4
 
-=item * The database server must be supported by C<Rose::DB>.
+=item * The database server must be supported by L<Rose::DB>.
 
 =item * The database table must have a primary key, and that key must not allow null values in any of its columns.
 
@@ -762,9 +762,9 @@ C<Rose::DB::Object> objects can represent rows in almost any database table, sub
 
 Although the list above contains the only hard and fast rules, there may be other realities that you'll need to work around.
 
-The most common example is the existence of a column name in the database table that conflicts with the name of a method in the C<Rose::DB::Object> API.  The work-around is to alias the column.  See the C<alias_column()> method in the C<Rose::DB::Object::Metadata> documentation for more details.
+The most common example is the existence of a column name in the database table that conflicts with the name of a method in the C<Rose::DB::Object> API.  The work-around is to alias the column.  See the C<alias_column()> method in the L<Rose::DB::Object::Metadata> documentation for more details.
 
-There are also varying degrees of support for data types in each database server supported by C<Rose::DB>.  If you have a table that uses a data type not supported by an existing C<Rose::DB::Object::Metadata::Column>-derived class, you will have to write your own column class and then map it to a type name using C<Rose::DB::Object::Metadata>'s C<column_type_class()> method, yada yada.  
+There are also varying degrees of support for data types in each database server supported by L<Rose::DB>.  If you have a table that uses a data type not supported by an existing L<Rose::DB::Object::Metadata::Column>-derived class, you will have to write your own column class and then map it to a type name using L<Rose::DB::Object::Metadata>'s C<column_type_class()> method, yada yada.  
 
 The entire framework is meant to be extensible.  I have created simple implementations of the most common column types, but there's certainly mor ethat could be done.  Submissions are welcome.
 
@@ -786,7 +786,7 @@ Objects can be loaded based on either a primary key or a unique key.  Since all 
 
 This is all very straightforward, but the really handy part is C<Rose::DB::Object>'s ability to parse, coerce, "inflate", and "deflate" column values on your behalf, providing the most convenient possible data representations on the Perl side of the fence, while allowing the programmer to largely forget about the ugly details of the data formats required by the database.
 
-To define your own C<Rose::DB::Object>-derived class, you must first describe the table that contains the rows you plan to represent.    This is done through the C<Rose::DB::Object::Metadata> object associated with each C<Rose::DB::Object>-dervied class.  (You can see a simple example of this in the L<synopsis|"SYNOPSIS">.)  The metadata object is accessible via C<Rose::DB::Object>'s C<meta()> method.  See the C<Rose::DB::Object::Metadata> documentation for more information.
+To define your own C<Rose::DB::Object>-derived class, you must first describe the table that contains the rows you plan to represent.    This is done through the L<Rose::DB::Object::Metadata> object associated with each C<Rose::DB::Object>-dervied class.  (You can see a simple example of this in the L<synopsis|"SYNOPSIS">.)  The metadata object is accessible via C<Rose::DB::Object>'s C<meta()> method.  See the L<Rose::DB::Object::Metadata> documentation for more information.
 
 This class inherits from, and follows the conventions of, C<Rose::Object>.
 See the C<Rose::Object> documentation for more information.
@@ -807,9 +807,9 @@ Returns a new C<Rose::DB::Object> constructed according to PARAMS, where PARAMS 
 
 =item B<meta>
 
-Returns the C<Rose::DB::Object::Metadata> object associated with this class.  This object describes the database table whose rows are fronted by this class: the name of the table, its columns, unique keys, foreign keys, etc.
+Returns the L<Rose::DB::Object::Metadata> object associated with this class.  This object describes the database table whose rows are fronted by this class: the name of the table, its columns, unique keys, foreign keys, etc.
 
-See the C<Rose::DB::Object::Metadata> documentation for more information.
+See the L<Rose::DB::Object::Metadata> documentation for more information.
 
 =back
 
@@ -819,9 +819,9 @@ See the C<Rose::DB::Object::Metadata> documentation for more information.
 
 =item B<db [DB]>
 
-Get or set the C<Rose::DB> object used to access the database that contains the table whose rows are fronted by the C<Rose::DB::Object>-derived class.
+Get or set the L<Rose::DB> object used to access the database that contains the table whose rows are fronted by the C<Rose::DB::Object>-derived class.
 
-If it does not already exist, this object is created with a simple, argumentless call to C<Rose::DB-E<gt>new()>.  To override this default in a subclass, override the C<init_db> method and return the C<Rose::DB> to be used as the new default.
+If it does not already exist, this object is created with a simple, argumentless call to C<Rose::DB-E<gt>new()>.  To override this default in a subclass, override the C<init_db> method and return the L<Rose::DB> to be used as the new default.
 
 =item B<dbh>
 
@@ -847,9 +847,9 @@ Returns true if the previous call to C<load()> failed because a row in the datab
 
 =item B<meta>
 
-Returns the C<Rose::DB::Object::Metadata> object associated with this class.  This object describes the database table whose rows are fronted by this class: the name of the table, its columns, unique keys, foreign keys, etc.
+Returns the L<Rose::DB::Object::Metadata> object associated with this class.  This object describes the database table whose rows are fronted by this class: the name of the table, its columns, unique keys, foreign keys, etc.
 
-See the C<Rose::DB::Object::Metadata> documentation for more information.
+See the L<Rose::DB::Object::Metadata> documentation for more information.
 
 =item B<save [PARAMS]>
 
@@ -873,13 +873,79 @@ It is an error to pass both the C<insert> and C<update> parameters in a single c
 
 Returns true if the row was inserted or updated successfully, false otherwise.
 
-If an insert was performed and the primary key is a single column that supports auto-generated values, then the object accessor for the primary key column will contain the auto-generated value.  This currently works for MySQL and Informix.  See C<Rose::DB::Object::Std> for PostgreSQL support for auto-generated primary keys.
+If an insert was performed and the primary key is a single column that supports auto-generated values, then the object accessor for the primary key column will contain the auto-generated value.
+
+Here are examples of primary key column definitions that provide auto-generated  values, one for each of the databases supported by L<Rose::DB>.
+
+=over
+
+=item * PostgreSQL
+
+    CREATE TABLE mytable
+    (
+      id   SERIAL PRIMARY KEY,
+      ...
+    );
+
+=item * MySQL
+
+    CREATE TABLE mytable
+    (
+      id   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      ...
+    );
+
+=item * Informix
+
+    CREATE TABLE mytable
+    (
+      id   SERIAL NOT NULL PRIMARY KEY,
+      ...
+    );
+
+=back
+
+Other data definitions are possible, of course, but the three definitions above are used in the C<Rose::DB::Object> test suite and are therefore guaranteed to work.  If you have success with alternative approaches, patches and/or new tests are welcome.
+
+If your table has a multi-column primary key or does not use a column type that supports auto-generated values, you can define a custom primary key generator function using the C<primary_key_generator()> method of the L<Rose::DB::Object::Metadata>-derived object that contains the metadata for this class.  Example:
+
+    package MyDBObject;
+
+    use Rose::DB::Object;
+    our @ISA = qw(Rose::DB::Object);
+
+    __PACKAGE__->meta->table('mytable');
+
+    __PACKAGE__->meta->columns
+    (
+      k1   => { type => 'int', not_null => 1 },
+      k2   => { type => 'int', not_null => 1 },
+      name => { type => 'varchar', length => 255 },
+      ...
+    );
+
+    __PACKAGE__->meta->primary_key_columns('k1', 'k2');
+
+    __PACKAGE__->meta->initialize;
+
+    __PACKAGE__->meta->primary_key_generator(sub
+    {
+      my($meta, $db) = @_;
+
+      # Generate primary key values somehow
+      my $k1 = ...;
+      my $k2 = ...;
+
+      return $k1, $k2;
+    });
+
+See the L<Rose::DB::Object::Metadata> documentation for more information on custom primary key generators.
 
 =back
 
 =head1 RESERVED METHODS
 
-As described in the C<Rose::DB::Object::Metadata> documentation, each column in the database table has an associated get/set accessor method in the C<Rose::DB::Object>.  Since the C<Rose::DB::Object> API already defines many methods (C<load()>, C<save()>, C<meta()>, etc.), accessor methods for columns that share the name of an existing method pose a problem.  The solution is to alias such columns using C<Rose::DB::Object::Metadata>'s  C<alias_column()> method. 
+As described in the L<Rose::DB::Object::Metadata> documentation, each column in the database table has an associated get/set accessor method in the C<Rose::DB::Object>.  Since the C<Rose::DB::Object> API already defines many methods (C<load()>, C<save()>, C<meta()>, etc.), accessor methods for columns that share the name of an existing method pose a problem.  The solution is to alias such columns using L<Rose::DB::Object::Metadata>'s  C<alias_column()> method. 
 
 Here is a list of method names reserved by the C<Rose::DB::Object> API.  If you have a column with one of these names, you must alias it.
 

@@ -22,7 +22,7 @@ SKIP: foreach my $db_type ('pg')
 
   Rose::DB->default_type($db_type);
 
-  my $o = MyPgObject->new(name => 'John', id => 1);
+  my $o = MyPgObject->new(name => 'John');
 
   ok(ref $o && $o->isa('MyPgObject'), "new() 1 - $db_type");
 
@@ -434,7 +434,7 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
-  id             INT NOT NULL PRIMARY KEY,
+  id             SERIAL PRIMARY KEY,
   @{[ $PG_HAS_CHKPASS ? 'password CHKPASS,' : '' ]}
   name           VARCHAR(32) NOT NULL,
   flag           BOOLEAN NOT NULL,

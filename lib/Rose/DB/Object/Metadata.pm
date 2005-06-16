@@ -79,7 +79,7 @@ __PACKAGE__->column_type_classes
 
 our %Class_Loaded;
 
-our $VERSION = '0.032';
+our $VERSION = '0.033';
 
 our $Debug = 0;
 
@@ -145,6 +145,69 @@ sub handle_error
   {
     Carp::croak "(Invalid error mode set: '$mode') - ", $object->error;
   }
+
+  return 1;
+}
+
+# Code borrowed from Cache::Cache
+my %Expiration_Units =
+(
+  map(($_,             1), qw(s sec secs second seconds)),
+  map(($_,            60), qw(m min mins minute minutes)),
+  map(($_,         60*60), qw(h hr hrs hour hours)),
+  map(($_,      60*60*24), qw(d day days)),
+  map(($_,    60*60*24*7), qw(w wk wks week weeks)),
+  map(($_,  60*60*24*365), qw(y yr yrs year years))
+);
+
+sub cached_objects_expire_in
+{
+  my($self) = shift;
+
+  my $class = $self->class;
+
+  no strict 'refs';
+  return ${"${class}::Cache_Expires"} ||= 0  unless(@_);
+
+  my $arg = shift;
+
+  my $secs;
+
+  if($arg =~ /^now$/i)
+  {
+    $class->forget_all;
+    $secs = 0;
+  }
+  elsif($arg =~ /^never$/)
+  {
+    $secs = 0;
+  }
+  elsif($arg =~ /^\s*([+-]?(?:\d+|\d*\.\d*))\s*$/)
+  {
+    $secs = $arg;
+  }
+  elsif($arg =~ /^\s*([+-]?(?:\d+|\d*\.\d*))\s*(\w*)\s*$/ && exists $Expiration_Units{$2})
+  {
+    $secs = $Expiration_Units{$2} * $1;
+  }
+  else
+  {
+    Carp::croak("Invalid cache expiration time: '$arg'");
+  }
+
+  return ${"${class}::Cache_Expires"} = $secs;
+}
+
+sub clear_object_cache
+{
+  my($self) = shift;
+
+  my $class = $self->class;
+
+  no strict 'refs';
+  %{"${class}::Objects_By_Id"}  = ();
+  %{"${class}::Objects_By_Key"} = ();
+  %{"${class}::Objects_Keys"}   = ();
 
   return 1;
 }
@@ -518,21 +581,80 @@ sub make_methods
   }
 }
 
+# sub generate_primary_key_values
+# {
+#   my($self, $db) = @_;
+# 
+#   my $code = $self->primary_key_generator or 
+#     return $db->generate_primary_key_values(scalar @{$self->{'primary_key_columns'}});
+# 
+#   return $code->($self, $db);
+# }
+
 sub generate_primary_key_values
 {
   my($self, $db) = @_;
 
-  my $code = $self->primary_key_generator or 
-    return $db->generate_primary_key_values(scalar @{$self->{'primary_key_columns'}});
+  if(my $code = $self->primary_key_generator)
+  {
+    return $code->($self, $db);
+  }
 
-  return $code->($self, $db);
+  my $id;
+
+  if(my $seq = $self->primary_key_sequence_name(db => $db))
+  {
+    $id = $db->next_value_in_sequence($seq);
+
+    unless($id)
+    {
+      $self->error("Could not generate primary key for ", $self->class, 
+                   " by selecting the next value in the sequence '$seq' - $@");
+      return undef;
+    }
+
+    return $id;
+  }
+  else
+  {
+    return $db->generate_primary_key_values(scalar @{$self->{'primary_key_columns'}});
+  }
 }
+
+*generate_primary_key_value = \&generate_primary_key_values;
 
 sub generate_primary_key_placeholders
 {
   my($self, $db) = @_;
   return $db->generate_primary_key_placeholders(scalar @{$self->{'primary_key_columns'}});
   #return((undef) x (scalar @{$self->{'primary_key_columns'}}));
+}
+
+sub primary_key_sequence_name
+{
+  my($self) = shift;
+
+  return $self->{'primary_key_sequence_name'} = shift  if(@_ == 1);
+
+  if($self->{'primary_key_sequence_name'})
+  {
+    return $self->{'primary_key_sequence_name'};
+  }
+
+  my @pk_columns = $self->primary_key_columns;
+
+  return undef  if(@pk_columns > 1);
+
+  my %args = @_;
+
+  my $db = $args{'db'} or
+    die "Cannot generate primary key sequence name without db argument";
+
+  my $table = $self->fq_table_sql or 
+    Carp::croak "Cannot generate primary key sequence name without table name";
+
+  return $self->{'primary_key_sequence_name'} = 
+    $db->auto_sequence_name(table => $table, column => $pk_columns[0]);    
 }
 
 sub column_names
@@ -853,6 +975,7 @@ sub _clear_table_generated_values
   $self->{'update_sql'}   = undef;
   $self->{'insert_sql'}   = undef;
   $self->{'delete_sql'}   = undef;
+  $self->{'primary_key_sequence_name'} = undef;
 }
 
 sub _clear_column_generated_values
@@ -1113,6 +1236,27 @@ In other words, DBD::Informix has tried to quote the string "CURRENT", which has
 
 In order to make this work, the value "CURRENT" must be "inlined" rather than bound to a placeholder when it is the value of a "DATETIME YEAR TO SECOND" column in an Informix database.
 
+=item B<cached_objects_expire_in [DURATION]>
+
+This method is only applicable if this metadata object is associated with a L<Rose::DB::Object::Cached>-derived class.  It controls the expiration cached objects.
+
+If called with no arguments, the cache expiration limit in seconds is returned.  
+
+If passed a DURATION, the cache expiration is set.  Valid formats for DURATION are in the form "NUMBER UNIT" where NUMBER is a positive number and UNIT is one of the following:
+
+    s sec secs second seconds
+    m min mins minute minutes
+    h hr hrs hour hours
+    d day days
+    w wk wks week weeks
+    y yr yrs year years
+
+All formats of the DURATION argument are converted to seconds.  Days are exactly 24 hours, weeks are 7 days, and years are 365 days.
+
+If an object was read from the database the specified number of seconds ago or earlier, it is purged from the cache and reloaded from the database the next time it is loaded.
+
+A C<cached_objects_expire_in> value of undef or zero means that nothing will ever expire from the object cache for the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.  This is the default.
+
 =item B<catalog [CATALOG]>
 
 Get or set the database catalog name.  This attribute is not applicable to any of the supported databases, as far as I know.
@@ -1120,6 +1264,10 @@ Get or set the database catalog name.  This attribute is not applicable to any o
 =item B<class [CLASS]>
 
 Get or set the C<Rose::DB::object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by C<make_methods()>).
+
+=item B<clear_object_cache>
+
+Clear the memory cache for all objects of the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.
 
 =item B<column NAME [, COLUMN]>
 
@@ -1272,9 +1420,15 @@ If VALUE is a C<Rose::DB::Object::Metadata::ForeignKey>->derived object, it has 
 
 Returns the fully-qualified table name in a form suitable for use in an SQL statement.
 
+=item B<generate_primary_key_value>
+
+This method is an alias for C<generate_primary_key_values()>.
+
 =item B<generate_primary_key_values DB>
 
-Given the C<Rose::DB>-derived object DB, generate new values for the primary key column(s) of the table described by this metadata object.  If a C<primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value(s) returned.  If not, a list of undef values is returned (one for each primary key column).
+Given the C<Rose::DB>-derived object DB, generate a new primary key column value for the table described by this metadata object.  If a C<primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value returned.
+
+If no C<primary_key_generator> is defined, a new primary key value will be generated, if possible, using the native facilities of the current database.  Note that this may not be possible for databases that auto-generate such values only after an insertion.  In that case, undef will be returned.
 
 =item B<initialize [ARGS]>
 
