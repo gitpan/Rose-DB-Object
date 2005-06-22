@@ -41,9 +41,9 @@ Rose::DB::Object::Metadata::Column::Pg::Chkpass - PostgreSQL CHKPASS column meta
 
 =head1 DESCRIPTION
 
-Objects of this class store and manipulate metadata for CHKPASS columns in a PostgreSQL database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.  See the C<Rose::DB::Object::MakeMethods::Pg> for more information on PostgreSQL's CHKPASS data type.
+Objects of this class store and manipulate metadata for CHKPASS columns in a PostgreSQL database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.  See the L<Rose::DB::Object::MakeMethods::Pg> for more information on PostgreSQL's CHKPASS data type.
 
-This class inherits from C<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the C<Rose::DB::Object::Metadata::Column> documentation for more information.
+This class inherits from L<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column> documentation for more information.
 
 =head1 OBJECT METHODS
 
@@ -51,15 +51,15 @@ This class inherits from C<Rose::DB::Object::Metadata::Column>. Inherited method
 
 =item B<cmp_suffix [STRING]>
 
-Get or set the suffix used to form the name of the comparison method.   See the documentation for the C<chkpass> method type in C<Rose::DB::Object::MakeMethods::Pg> for more information.
+Get or set the suffix used to form the name of the comparison method.   See the documentation for the C<chkpass> method type in L<Rose::DB::Object::MakeMethods::Pg> for more information.
 
 =item B<encrypted_suffix [STRING]>
 
-Get or set the suffix used to form the name of the accessor method for the encrypted version of the column value.   See the documentation for the C<chkpass> method type in C<Rose::DB::Object::MakeMethods::Pg> for more information.
+Get or set the suffix used to form the name of the accessor method for the encrypted version of the column value.   See the documentation for the C<chkpass> method type in L<Rose::DB::Object::MakeMethods::Pg> for more information.
 
 =item B<method_maker_class>
 
-Returns C<Rose::DB::Object::MakeMethods::Pg>.
+Returns L<Rose::DB::Object::MakeMethods::Pg>.
 
 =item B<method_maker_type>
 

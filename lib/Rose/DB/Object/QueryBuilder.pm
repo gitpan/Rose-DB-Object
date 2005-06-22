@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.031';
+our $VERSION = '0.032';
 
 our $Debug = 0;
 
@@ -633,7 +633,7 @@ Rose::DB::Object::QueryBuilder - Build SQL queries on behalf of Rose::DB::Object
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::QueryBuilder> is used to build SQL queries, primarily in service of the C<Rose::DB::Object::Manager> class.  It (optionally) exports two functions: C<build_select()> and C<build_where_clause()>.
+C<Rose::DB::Object::QueryBuilder> is used to build SQL queries, primarily in service of the L<Rose::DB::Object::Manager> class.  It (optionally) exports two functions: C<build_select()> and C<build_where_clause()>.
 
 =head1 FUNCTIONS
 
@@ -664,7 +664,7 @@ This argument is required.
 
 =item B<db DB>
 
-A C<Rose::DB>-derived object.  This argument is required if C<query_is_sql> is false or omitted.
+A L<Rose::DB>-derived object.  This argument is required if C<query_is_sql> is false or omitted.
 
 =item B<dbh DBH>
 
@@ -676,7 +676,7 @@ A fully formed SQL "GROUP BY ..." clause, sans the words "GROUP BY", or a refere
 
 =item B<limit NUMBER>
 
-A string to add to the "LIMIT ..." (or "FIRST ...") clause.
+A number to use in the "LIMIT ..." (or "FIRST ...") clause.
 
 =item B<logic LOGIC>
 
@@ -811,7 +811,7 @@ If C<query_is_sql> is true, then NAME can also take on these additional forms:
 
 =item C<method>
 
-A C<Rose::DB::Object> method name for an object fronting one of the tables being queried.  There may also be ambiguity here if the same method name is defined on more than one of the the objects that front the tables.  In such a case, the method will be mapped to the first C<Rose::DB::Object>-derived object that contains a method by that name, considered in the order that the tables are provided in the C<tables> parameter.
+A L<Rose::DB::Object> method name for an object fronting one of the tables being queried.  There may also be ambiguity here if the same method name is defined on more than one of the the objects that front the tables.  In such a case, the method will be mapped to the first L<Rose::DB::Object>-derived object that contains a method by that name, considered in the order that the tables are provided in the C<tables> parameter.
 
 =item C<!method>
 
@@ -884,9 +884,9 @@ which returns an SQL statement something like this:
 
 If you have a column named "and" or "or", you'll have to use the fully-qualified (table.column) or alias-qualified (tN.column) forms in order to address the column.
 
-If C<query_is_sql> is true, all of the parameter values are passed through the C<parse_value()> and C<format_value()> methods of their corresponding C<Rose::DB::Object::Metadata::Column>-dervied column objects.
+If C<query_is_sql> is true, all of the parameter values are passed through the C<parse_value()> and C<format_value()> methods of their corresponding L<Rose::DB::Object::Metadata::Column>-dervied column objects.
 
-If a column object returns true from its C<manager_uses_method()> method, then its parameter value is passed through the corresponding C<Rose::DB::Object>-derived object method instead.
+If a column object returns true from its C<manager_uses_method()> method, then its parameter value is passed through the corresponding L<Rose::DB::Object>-derived object method instead.
 
 Example:
 
@@ -993,7 +993,7 @@ If omitted, this boolean flag is false.  If true, then the values of the C<query
 
 Here the date value "2003-12-25 20:00:00" must be in the format that the current database expects for columns of that data type.
 
-But if C<query_is_sql> is true, then any query value that can be handled by the C<Rose::DB::Object>-derived object method that services the corresponding database column is valid.  Example:
+But if C<query_is_sql> is true, then any query value that can be handled by the L<Rose::DB::Object>-derived object method that services the corresponding database column is valid.  Example:
 
     $dt = DateTime->new(year => 2001, month => 1, day => 31);
 
@@ -1007,7 +1007,7 @@ But if C<query_is_sql> is true, then any query value that can be handled by the 
       ...
     );
 
-Here a C<DateTime> object and a loosely formatted date are passed as values.  Provided the C<Rose::DB::Object>-derived object method that services the "date" column can handle such values, they will be parsed and formatted as appropriate for the current database.
+Here a C<DateTime> object and a loosely formatted date are passed as values.  Provided the L<Rose::DB::Object>-derived object method that services the "date" column can handle such values, they will be parsed and formatted as appropriate for the current database.
 
 The advantage of this approach is that the query values do not have to be so rigorously specified, nor do they have to be in a database-specific format.
 

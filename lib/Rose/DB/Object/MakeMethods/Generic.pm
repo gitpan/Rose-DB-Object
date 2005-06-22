@@ -1051,11 +1051,11 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
 =head1 DESCRIPTION
 
 C<Rose::DB::Object::MakeMethods::Generic> is a method maker that inherits
-from C<Rose::Object::MakeMethods>.  See the C<Rose::Object::MakeMethods>
+from L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods>
 documentation to learn about the interface.  The method types provided
 by this module are described below.
 
-All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) C<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a C<Rose::DB>-derived object.  See the C<Rose::DB::Object> documentation for more details.
+All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) L<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a L<Rose::DB>-derived object.  See the L<Rose::DB::Object> documentation for more details.
 
 =head1 METHODS TYPES
 
@@ -1266,7 +1266,7 @@ Example:
 
 =item B<objects_by_key>
 
-Create get/set methods for an array of C<Rose::DB::Object>-derived objects fetched based on a key formed from attributes of the current object.
+Create get/set methods for an array of L<Rose::DB::Object>-derived objects fetched based on a key formed from attributes of the current object.
 
 =over 4
 
@@ -1276,7 +1276,7 @@ Create get/set methods for an array of C<Rose::DB::Object>-derived objects fetch
 
 =item C<class>
 
-The name of the C<Rose::DB::Object>-derived class of the objects to be fetched.  This option is required.
+The name of the L<Rose::DB::Object>-derived class of the objects to be fetched.  This option is required.
 
 =item C<hash_key>
 
@@ -1288,11 +1288,11 @@ A reference to a hash that maps column names in the current object to those in t
 
 =item C<manager_args>
 
-A reference to a hash of arguments passed to the C<manager_class> when fetching objects.  If C<manager_class> defaults to C<Rose::DB::Object::Manager>, the following argument is added to the C<manager_args> hash: C<object_class =E<gt> CLASS>, where CLASS is the value of the C<class> option (see above).
+A reference to a hash of arguments passed to the C<manager_class> when fetching objects.  If C<manager_class> defaults to L<Rose::DB::Object::Manager>, the following argument is added to the C<manager_args> hash: C<object_class =E<gt> CLASS>, where CLASS is the value of the C<class> option (see above).
 
 =item C<manager_class>
 
-The name of the C<Rose::DB::Object::Manager>-derived class used to fetch the objects.  The C<manager_method> class method is called on this class.  Defaults to C<Rose::DB::Object::Manager>.
+The name of the L<Rose::DB::Object::Manager>-derived class used to fetch the objects.  The C<manager_method> class method is called on this class.  Defaults to L<Rose::DB::Object::Manager>.
 
 =item C<manager_method>
 
@@ -1318,7 +1318,7 @@ A reference to a hash of arguments added to the value of the C<query> parameter 
 
 =item C<get_set>
 
-Creates a method that will attempt to fetch C<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object.
+Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object.
 
 If passed a single argument of undef, the list of objects is set to undef.  If passed a reference to an array, the list of objects is set to point to that same array.
 
@@ -1377,7 +1377,7 @@ Example:
 
 =item B<object_by_key>
 
-Create a get/set methods for a single C<Rose::DB::Object>-derived object loaded based on a primary key formed from attributes of the current object.
+Create a get/set methods for a single L<Rose::DB::Object>-derived object loaded based on a primary key formed from attributes of the current object.
 
 =over 4
 
@@ -1387,7 +1387,7 @@ Create a get/set methods for a single C<Rose::DB::Object>-derived object loaded 
 
 =item C<class>
 
-The name of the C<Rose::DB::Object>-derived class of the object to be loaded.  This option is required.
+The name of the L<Rose::DB::Object>-derived class of the object to be loaded.  This option is required.
 
 =item C<hash_key>
 
@@ -1413,7 +1413,7 @@ If true, the C<db> attribute of the current object is shared with the object loa
 
 =item C<get_set>
 
-Creates a method that will attempt to create and load a C<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object.
+Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object.
 
 If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument is assumed to be an object of type C<class> and is assigned to C<hash_key> after having its C<key_columns> set to their corresponding values in the current object.
 

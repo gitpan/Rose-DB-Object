@@ -72,3 +72,7 @@
     * Moved object cache management further into the metadata object.
     * Enabled auto-generated primary key values for Rose::DB::Object
       objects used with the PostgreSQL database.
+
+0.051 (06.22.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added abstracted offset parameter to object manager.

@@ -40,7 +40,7 @@ Rose::DB::Object::Metadata::Column::Scalar - Scalar column metadata.
 
 Objects of this class store and manipulate metadata for scalar columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
-This class inherits from C<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the C<Rose::DB::Object::Metadata::Column> documentation for more information.
+This class inherits from L<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column> documentation for more information.
 
 =head1 OBJECT METHODS
 
@@ -52,7 +52,7 @@ Get or set a reference to an array of valid column values.
 
 =item B<init_method [NAME]>
 
-Get or set the name of the "init" method.  See the documentation for the C<scalar> method type in C<Rose::DB::Object::MakeMethods::Generic> for more information.
+Get or set the name of the "init" method.  See the documentation for the C<scalar> method type in L<Rose::DB::Object::MakeMethods::Generic> for more information.
 
 =item B<length [INT]>
 
@@ -60,7 +60,7 @@ Get or set the length of the column in characters.
 
 =item B<method_maker_class>
 
-Returns C<Rose::DB::Object::MakeMethods::Generic>.
+Returns L<Rose::DB::Object::MakeMethods::Generic>.
 
 =item B<method_maker_type>
 
@@ -72,7 +72,7 @@ Returns "scalar".
 
 =item B<with_init [BOOL]>
 
-Get or set the flag that determines whether or not the method created by C<make_method()> will include an "init" method as well.  See the documentation for the C<scalar> method type in C<Rose::DB::Object::MakeMethods::Generic> for more information.
+Get or set the flag that determines whether or not the method created by C<make_method()> will include an "init" method as well.  See the documentation for the C<scalar> method type in L<Rose::DB::Object::MakeMethods::Generic> for more information.
 
 =back
 

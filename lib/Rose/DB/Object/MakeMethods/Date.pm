@@ -428,9 +428,9 @@ Rose::DB::Object::MakeMethods::Date - Create date-related methods for Rose::DB::
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::MakeMethods::Date> creates methods that deal with dates, and inherits from C<Rose::Object::MakeMethods>.  See the C<Rose::Object::MakeMethods> documentation to learn about the interface.  The method types provided by this module are described below.
+C<Rose::DB::Object::MakeMethods::Date> creates methods that deal with dates, and inherits from L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation to learn about the interface.  The method types provided by this module are described below.
 
-All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) C<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a C<Rose::DB>-derived object.  See the C<Rose::DB::Object> documentation for more details.
+All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) L<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a L<Rose::DB>-derived object.  See the L<Rose::DB::Object> documentation for more details.
 
 =head1 METHODS TYPES
 
@@ -467,15 +467,15 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 =item C<get_set>
 
-Creates a get/set accessor method for a date (year, month, day) attribute.  When setting the attribute, the value is passed through the C<parse_date()> method of the object's C<db> attribute.  If that fails, the value is passed to C<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
+Creates a get/set accessor method for a date (year, month, day) attribute.  When setting the attribute, the value is passed through the C<parse_date()> method of the object's C<db> attribute.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
 The time zone of the C<DateTime> object that results from a successful parse is set to the C<server_time_zone> value of the  object's C<db> attribute using C<DateTime>'s C<set_time_zone()> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_date()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
 
-This method is designed to allow date values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_date()> method of the object's C<db> attribute.  If that fails, C<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
+This method is designed to allow date values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_date()> method of the object's C<db> attribute.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
 
-If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to C<Rose::DateTime::Util>'s C<format_date()> function along with the current value of the date attribute.  Example:
+If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to L<Rose::DateTime::Util>'s C<format_date()> function along with the current value of the date attribute.  Example:
 
     $o->start_date('2004-05-22');
     print $o->start_date(format => '%A'); # "Saturday"
@@ -490,7 +490,7 @@ If passed two arguments and the first argument is "truncate", then the second ar
 
 If the date attribute is undefined, then undef is returned (i.e., no clone or call to C<truncate()> is made).
 
-If a valid date keyword is passed as an argument, the value will never be "inflated" but rather passed to the database I<and> returned to other code unmodified.  That means that the "truncate" and "format" calls described above will also return the date keyword unmodified.  See the C<Rose::DB> documentation for more information on date keywords.
+If a valid date keyword is passed as an argument, the value will never be "inflated" but rather passed to the database I<and> returned to other code unmodified.  That means that the "truncate" and "format" calls described above will also return the date keyword unmodified.  See the L<Rose::DB> documentation for more information on date keywords.
 
 =back
 
@@ -557,15 +557,15 @@ Any string that results in a set of method names that are supported by the objec
 
 Creates a get/set accessor method for a "datetime" attribute.  The exact granularity of the "datetime" value is determined by the value of the C<type> option (see above).
 
-When setting the attribute, the value is passed through the C<parse_TYPE()> method of the object's C<db> attribute, where C<TYPE> is the value of the C<type> option.  If that fails, the value is passed to C<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
+When setting the attribute, the value is passed through the C<parse_TYPE()> method of the object's C<db> attribute, where C<TYPE> is the value of the C<type> option.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
 The time zone of the C<DateTime> object that results from a successful parse is set to the C<server_time_zone> value of the  object's C<db> attribute using C<DateTime>'s C<set_time_zone()> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_TYPE()> method of the object's C<db> attribute before returning it, where C<TYPE> is the value of the C<type> option.  Otherwise, the value is returned as-is.
 
-This method is designed to allow datetime values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_TYPE()> method of the object's C<db> attribute, where C<TYPE> is the value of the C<type> option.  If that fails, C<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
+This method is designed to allow datetime values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_TYPE()> method of the object's C<db> attribute, where C<TYPE> is the value of the C<type> option.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
 
-If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to C<Rose::DateTime::Util>'s C<format_datetime()> function along with the current value of the datetime attribute.  Example:
+If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to L<Rose::DateTime::Util>'s C<format_datetime()> function along with the current value of the datetime attribute.  Example:
 
     $o->start_date('2004-05-22 12:34:56');
     print $o->start_date(format => '%A'); # "Saturday"
@@ -580,7 +580,7 @@ If passed two arguments and the first argument is "truncate", then the second ar
 
 If the datetime attribute is undefined, then undef is returned (i.e., no clone or call to C<truncate()> is made).
 
-If a valid datetime keyword is passed as an argument, the value will never be "inflated" but rather passed to the database I<and> returned to other code unmodified.  That means that the "truncate" and "format" calls described above will also return the datetime keyword unmodified.  See the C<Rose::DB> documentation for more information on datetime keywords.
+If a valid datetime keyword is passed as an argument, the value will never be "inflated" but rather passed to the database I<and> returned to other code unmodified.  That means that the "truncate" and "format" calls described above will also return the datetime keyword unmodified.  See the L<Rose::DB> documentation for more information on datetime keywords.
 
 =back
 
@@ -646,15 +646,15 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 =item C<get_set>
 
-Creates a get/set accessor method for a "timestamp" (year, month, day, hour, minute, second, fractional seconds) attribute.  When setting the attribute, the value is passed through the C<parse_timestamp()> method of the object's C<db> attribute.  If that fails, the value is passed to C<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
+Creates a get/set accessor method for a "timestamp" (year, month, day, hour, minute, second, fractional seconds) attribute.  When setting the attribute, the value is passed through the C<parse_timestamp()> method of the object's C<db> attribute.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
 The time zone of the C<DateTime> object that results from a successful parse is set to the C<server_time_zone> value of the  object's C<db> attribute using C<DateTime>'s C<set_time_zone()> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_timestamp()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
 
-This method is designed to allow timestamp values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_timestamp()> method of the object's C<db> attribute.  If that fails, C<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
+This method is designed to allow timestamp values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_timestamp()> method of the object's C<db> attribute.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
 
-If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to C<Rose::DateTime::Util>'s C<format_timestamp()> function along with the current value of the timestamp attribute.  Example:
+If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to L<Rose::DateTime::Util>'s C<format_timestamp()> function along with the current value of the timestamp attribute.  Example:
 
     $o->start_date('2004-05-22 12:34:56.123');
     print $o->start_date(format => '%A'); # "Saturday"
@@ -669,7 +669,7 @@ If passed two arguments and the first argument is "truncate", then the second ar
 
 If the timestamp attribute is undefined, then undef is returned (i.e., no clone or call to C<truncate()> is made).
 
-If a valid timestamp keyword is passed as an argument, the value will never be "inflated" but rather passed to the database I<and> returned to other code unmodified.  That means that the "truncate" and "format" calls described above will also return the timestamp keyword unmodified.  See the C<Rose::DB> documentation for more information on timestamp keywords.
+If a valid timestamp keyword is passed as an argument, the value will never be "inflated" but rather passed to the database I<and> returned to other code unmodified.  That means that the "truncate" and "format" calls described above will also return the timestamp keyword unmodified.  See the L<Rose::DB> documentation for more information on timestamp keywords.
 
 =back
 

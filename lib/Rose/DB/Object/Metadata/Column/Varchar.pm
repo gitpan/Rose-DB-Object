@@ -39,7 +39,7 @@ Rose::DB::Object::Metadata::Column::Varchar - Variable-length character column m
 
 Objects of this class store and manipulate metadata for variable-length character columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
-This class inherits from C<Rose::DB::Object::Metadata::Column::Character>. Inherited methods that are not overridden will not be documented a second time here.  See the C<Rose::DB::Object::Metadata::Column::Character> documentation for more information.
+This class inherits from L<Rose::DB::Object::Metadata::Column::Character>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Character> documentation for more information.
 
 =head1 OBJECT METHODS
 
@@ -47,7 +47,7 @@ This class inherits from C<Rose::DB::Object::Metadata::Column::Character>. Inher
 
 =item B<method_maker_class>
 
-Returns C<Rose::DB::Object::MakeMethods::Generic>.
+Returns L<Rose::DB::Object::MakeMethods::Generic>.
 
 =item B<method_maker_type>
 
@@ -55,7 +55,7 @@ Returns C<varchar>.
 
 =item B<parse_value DB, VALUE>
 
-If C<length> is defined, returns VALUE truncated to a maximum of C<length> characters.  DB is a C<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
+If C<length> is defined, returns VALUE truncated to a maximum of C<length> characters.  DB is a L<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

@@ -41,7 +41,7 @@ Rose::DB::Object::Metadata::Column::DatetimeYearToSecond - Datetime year to seco
 
 Objects of this class store and manipulate metadata for "datetime year to second  columns" in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
-This class inherits from C<Rose::DB::Object::Metadata::Datetime>. Inherited methods that are not overridden will not be documented a second time here.  See the C<Rose::DB::Object::Metadata::Datetime> documentation for more information.
+This class inherits from L<Rose::DB::Object::Metadata::Datetime>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Datetime> documentation for more information.
 
 =head1 OBJECT METHODS
 
@@ -49,7 +49,7 @@ This class inherits from C<Rose::DB::Object::Metadata::Datetime>. Inherited meth
 
 =item B<method_maker_class>
 
-Returns C<Rose::DB::Object::MakeMethods::Date>.
+Returns L<Rose::DB::Object::MakeMethods::Date>.
 
 =item B<method_maker_type>
 
@@ -57,7 +57,7 @@ Returns C<datetime>.
 
 =item B<parse_value DB, VALUE>
 
-Convert VALUE to the equivalent C<DateTime> object suitable for storage in a "datetime year to second" column.  VALUE maybe returned unmodified if it is a valid "datetime year to second" keyword or otherwise has special meaning to the underlying database.  DB is a C<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
+Convert VALUE to the equivalent C<DateTime> object suitable for storage in a "datetime year to second" column.  VALUE maybe returned unmodified if it is a valid "datetime year to second" keyword or otherwise has special meaning to the underlying database.  DB is a L<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

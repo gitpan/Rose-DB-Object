@@ -62,7 +62,7 @@ Rose::DB::Object::Std::Cached - Memory cached standardized object representation
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::Std::Cached> is a subclass of both C<Rose::DB::Object::Std> and C<Rose::DB::Object::Cached>.  It simply combines the features of both classes.  See the C<Rose::DB::Object::Std> and C<Rose::DB::Object::Cached> documentation for more information.
+C<Rose::DB::Object::Std::Cached> is a subclass of both L<Rose::DB::Object::Std> and L<Rose::DB::Object::Cached>.  It simply combines the features of both classes.  See the L<Rose::DB::Object::Std> and L<Rose::DB::Object::Cached> documentation for more information.
 
 =head1 AUTHOR
 

@@ -76,7 +76,7 @@ Rose::DB::Objects::Iterator - Iterate over a series of Rose::DB::Objects.
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Objects::Iterator> is an iterator object that traverses a database query, returning C<Rose::DB::Object>-derived objects for each row.  C<Rose::DB::Objects::Iterator> objects are created by calls to the C<get_objects_iterator()> method of C<Rose::DB::Object::Manager> or one of its subclasses.
+C<Rose::DB::Objects::Iterator> is an iterator object that traverses a database query, returning L<Rose::DB::Object>-derived objects for each row.  C<Rose::DB::Objects::Iterator> objects are created by calls to the C<get_objects_iterator()> method of L<Rose::DB::Object::Manager> or one of its subclasses.
 
 =head1 OBJECT METHODS
 
@@ -92,7 +92,7 @@ Prematurely stop the iteration (i.e., before iterating over all of the available
 
 =item B<next>
 
-Return the next C<Rose::DB::Object>-derived object.  Returns false (but defined) if there are no more objects to iterate over, or undef if there was an error.
+Return the next L<Rose::DB::Object>-derived object.  Returns false (but defined) if there are no more objects to iterate over, or undef if there was an error.
 
 =item B<total>
 

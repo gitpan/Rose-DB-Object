@@ -154,7 +154,7 @@ Get or set the default value of the column.
 
 =item B<format_value DB, VALUE>
 
-Convert VALUE into a string suitable for the database column of this type.  VALUE is expected to be like the return value of the C<parse_value()> method.  DB is a C<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
+Convert VALUE into a string suitable for the database column of this type.  VALUE is expected to be like the return value of the C<parse_value()> method.  DB is a L<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
 
 =item B<make_method PARAMS>
 
@@ -179,17 +179,17 @@ The call to C<make_methods()> looks something like this:
 
 where C<$args{'options'}> is the value of the "options" PARAM.
 
-The C<method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) C<Rose::Object::MakeMethods>.  See the C<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
+The C<method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
 
-I know the call above looks confusing, but it is worth studying if you plan to subclass C< Rose::DB::Object::Metadata::Column>.  The various subclasses that are part of the C<Rose::DB::Object> distribution provide some good examples.
+I know the call above looks confusing, but it is worth studying if you plan to subclass C< Rose::DB::Object::Metadata::Column>.  The various subclasses that are part of the L<Rose::DB::Object> distribution provide some good examples.
 
 More than one method may be created, but there must be at least one get/set accessor method created, and its name must match the return value of C<method_name()>.
 
 =item B<manager_uses_method [BOOL]>
 
-If true, then C<Rose::DB::Object::QueryBuilder> will pass column values through the object method associated with this column when composing SQL queries where C<query_is_sql> is not set.  The default value is false.  See the C<Rose::DB::Object::QueryBuilder> documentation for more information.
+If true, then L<Rose::DB::Object::QueryBuilder> will pass column values through the object method associated with this column when composing SQL queries where C<query_is_sql> is not set.  The default value is false.  See the L<Rose::DB::Object::QueryBuilder> documentation for more information.
 
-Note: the method is named "manager_uses_method" instead of, say, "query_builder_uses_method" because C<Rose::DB::Object::QueryBuilder> is rarely used directly.  Instead, it's mostly used indirectly through the C<Rose::DB::Object::Manager> class.
+Note: the method is named "manager_uses_method" instead of, say, "query_builder_uses_method" because L<Rose::DB::Object::QueryBuilder> is rarely used directly.  Instead, it's mostly used indirectly through the L<Rose::DB::Object::Manager> class.
 
 =item B<method_maker_arguments>
 
@@ -199,7 +199,7 @@ The default implementation populates the hash with the defined return values of 
 
 =item B<method_maker_class>
 
-Returns the C<Rose::Object::MakeMethods>-derived class used to create the object method that will manipulate the column value.  The default implementation returns C<Rose::DB::Object::MakeMethods::Generic>.
+Returns the L<Rose::Object::MakeMethods>-derived class used to create the object method that will manipulate the column value.  The default implementation returns L<Rose::DB::Object::MakeMethods::Generic>.
 
 =item B<method_maker_type>
 
@@ -224,11 +224,11 @@ value can can be null.
 
 =item B<parse_value DB, VALUE>
 
-Parse and return a convenient Perl representation of VALUE.  What form this value will take is up to the column subclass.  If VALUE is a keyword or otherwise has special meaning to the underlying database, it may be returned unmodified.  DB is a C<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
+Parse and return a convenient Perl representation of VALUE.  What form this value will take is up to the column subclass.  If VALUE is a keyword or otherwise has special meaning to the underlying database, it may be returned unmodified.  DB is a L<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
 
 =item B<should_inline_value DB, VALUE>
 
-Given the C<Rose::DB>-derived object DB and the column value VALUE, return true of the value should be "inlined" (i.e., not bound to a "?" placeholder and passed as an argument to C<DBI>'s C<execute()> method), false otherwise.  The default implementation always returns false.
+Given the L<Rose::DB>-derived object DB and the column value VALUE, return true of the value should be "inlined" (i.e., not bound to a "?" placeholder and passed as an argument to C<DBI>'s C<execute()> method), false otherwise.  The default implementation always returns false.
 
 This method is necessary because some C<DBI> drivers do not (or cannot) always do the right thing when binding values to placeholders in SQL statements.  For example, consider the following SQL for the Informix database:
 
@@ -251,7 +251,7 @@ In other words, DBD::Informix has tried to quote the string "CURRENT", which has
 
 In order to make this work, the value "CURRENT" must be "inlined" rather than bound to a placeholder when it is the value of a "DATETIME YEAR TO SECOND" column in an Informix database.
 
-All of the information needed to make this decision is available to the call to C<should_inline_value()>.  It gets passed a C<Rose::DB>-derived object, from which it can determine the database driver, and it gets passed the actual value, which it can check to see if it matches C</^current$/i>.
+All of the information needed to make this decision is available to the call to C<should_inline_value()>.  It gets passed a L<Rose::DB>-derived object, from which it can determine the database driver, and it gets passed the actual value, which it can check to see if it matches C</^current$/i>.
 
 This is just one example.  Each subclass of C<Rose::DB::Object::Metadata::Column> must determine for itself when a value needs to be inlined.
 

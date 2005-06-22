@@ -156,9 +156,9 @@ Rose::DB::Object::MakeMethods::Pg - Create PostgreSQL-specific object methods fo
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::MakeMethods::Pg> creates methods that deal with data types that are specific to the PostgreSQL database server.  It inherits from C<Rose::Object::MakeMethods>.  See the C<Rose::Object::MakeMethods> documentation to learn about the interface.  The method types provided by this module are described below.
+C<Rose::DB::Object::MakeMethods::Pg> creates methods that deal with data types that are specific to the PostgreSQL database server.  It inherits from L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation to learn about the interface.  The method types provided by this module are described below.
 
-All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) C<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a C<Rose::DB>-derived object.  See the C<Rose::DB::Object> documentation for more details.
+All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) L<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a L<Rose::DB>-derived object.  See the L<Rose::DB::Object> documentation for more details.
 
 =head1 METHODS TYPES
 

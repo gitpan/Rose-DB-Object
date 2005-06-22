@@ -34,7 +34,7 @@ Rose::DB::Object::Metadata::Column::Boolean - Boolean column metadata.
 
 Objects of this class store and manipulate metadata for boolean columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
-This class inherits from C<Rose::DB::Object::Metadata::Column::Scalar>. Inherited methods that are not overridden will not be documented a second time here.  See the C<Rose::DB::Object::Metadata::Column::Scalar> documentation for more information.
+This class inherits from L<Rose::DB::Object::Metadata::Column::Scalar>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Scalar> documentation for more information.
 
 =head1 OBJECT METHODS
 
@@ -42,7 +42,7 @@ This class inherits from C<Rose::DB::Object::Metadata::Column::Scalar>. Inherite
 
 =item B<method_maker_class>
 
-Returns C<Rose::DB::Object::MakeMethods::Generic>.
+Returns L<Rose::DB::Object::MakeMethods::Generic>.
 
 =item B<method_maker_type>
 
@@ -50,7 +50,7 @@ Returns C<boolean>.
 
 =item B<parse_value DB, VALUE>
 
-Parse VALUE and return true or false according to how the underlying database would view VALUE as the value for a boolean column.  DB is a C<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
+Parse VALUE and return true or false according to how the underlying database would view VALUE as the value for a boolean column.  DB is a L<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

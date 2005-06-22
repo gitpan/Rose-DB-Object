@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.05';
+our $VERSION = '0.051';
 
 our $Debug = 0;
 
@@ -788,8 +788,8 @@ This is all very straightforward, but the really handy part is C<Rose::DB::Objec
 
 To define your own C<Rose::DB::Object>-derived class, you must first describe the table that contains the rows you plan to represent.    This is done through the L<Rose::DB::Object::Metadata> object associated with each C<Rose::DB::Object>-dervied class.  (You can see a simple example of this in the L<synopsis|"SYNOPSIS">.)  The metadata object is accessible via C<Rose::DB::Object>'s C<meta()> method.  See the L<Rose::DB::Object::Metadata> documentation for more information.
 
-This class inherits from, and follows the conventions of, C<Rose::Object>.
-See the C<Rose::Object> documentation for more information.
+This class inherits from, and follows the conventions of, L<Rose::Object>.
+See the L<Rose::Object> documentation for more information.
 
 =head1 CONSTRUCTOR
 

@@ -1071,11 +1071,11 @@ Rose::DB::Object::Metadata - Database object metadata.
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::Metadata> objects store information about a single table in a database: the name of the table, the names and types of columns, any foreign keys, etc.  These metadata objects are also responsible for supplying information to, and creating object methods for the C<Rose::DB::Object>-derived objects to which they belong.
+C<Rose::DB::Object::Metadata> objects store information about a single table in a database: the name of the table, the names and types of columns, any foreign keys, etc.  These metadata objects are also responsible for supplying information to, and creating object methods for the L<Rose::DB::Object>-derived objects to which they belong.
 
-C<Rose::DB::Object::Metadata> objects also store information about the C<Rose::DB::Object>s that fronts the database tables they describe.  What might normally be thought of as "class data" for the C<Rose::DB::Object> is stored in the metadata object instead, in order to keep the method namespace of the C<Rose::DB::Object>-derived class uncluttered.
+C<Rose::DB::Object::Metadata> objects also store information about the L<Rose::DB::Object>s that fronts the database tables they describe.  What might normally be thought of as "class data" for the L<Rose::DB::Object> is stored in the metadata object instead, in order to keep the method namespace of the L<Rose::DB::Object>-derived class uncluttered.
 
-C<Rose::DB::Object::Metadata> objects objects are per-class singletons; there is one C<Rose::DB::Object::Metadata> object for each C<Rose::DB::Object>-derived class.
+C<Rose::DB::Object::Metadata> objects objects are per-class singletons; there is one C<Rose::DB::Object::Metadata> object for each L<Rose::DB::Object>-derived class.
 
 =head1 CLASS METHODS
 
@@ -1083,7 +1083,7 @@ C<Rose::DB::Object::Metadata> objects objects are per-class singletons; there is
 
 =item B<for_class CLASS>
 
-Returns (or creates, if needed) the single C<Rose::DB::Object::Metadata> object associated with CLASS, where CLASS is the name of a C<Rose::DB::Object>-derived class.
+Returns (or creates, if needed) the single C<Rose::DB::Object::Metadata> object associated with CLASS, where CLASS is the name of a L<Rose::DB::Object>-derived class.
 
 =back
 
@@ -1093,9 +1093,9 @@ Returns (or creates, if needed) the single C<Rose::DB::Object::Metadata> object 
 
 =item B<new PARAMS>
 
-Returns (or creates, if needed) the single C<Rose::DB::Object::Metadata> associated with a particular C<Rose::DB::Object>-derived class, modifying or initializing it according to PARAMS, where PARAMS are name/value pairs.
+Returns (or creates, if needed) the single C<Rose::DB::Object::Metadata> associated with a particular L<Rose::DB::Object>-derived class, modifying or initializing it according to PARAMS, where PARAMS are name/value pairs.
 
-Any object method is a valid parameter name, but PARAMS I<must> include a value for the C<class> parameter, since that's how C<Rose::DB::Object::Metadata> objects are mapped to their corresponding C<Rose::DB::Object>-derived class.
+Any object method is a valid parameter name, but PARAMS I<must> include a value for the C<class> parameter, since that's how C<Rose::DB::Object::Metadata> objects are mapped to their corresponding L<Rose::DB::Object>-derived class.
 
 =back
 
@@ -1111,7 +1111,7 @@ This is an alias for the C<add_columns()> method.
 
 Add the columns specified by ARGS to the list of columns for the table.  Columns can be specified in ARGS in several ways.
 
-If an argument is a subclass of C<Rose::DB::Object::Metadata::Column>, it is added as-is.
+If an argument is a subclass of L<Rose::DB::Object::Metadata::Column>, it is added as-is.
 
 If an argument is a plain scalar, it is taken as the name of a scalar column.  A column object of the class returned by the method call C<column_type_class('scalar')> is constructed and then added.
 
@@ -1156,11 +1156,11 @@ Example:
 
 Add foreign keys as specified by ARGS.  Foreign keys can be specified in ARGS in several ways.
 
-If an argument is a subclass of C<Rose::DB::Object::Metadata::ForeignKey>, it is added as-is.
+If an argument is a subclass of L<Rose::DB::Object::Metadata::ForeignKey>, it is added as-is.
 
 Otherwise, only name/value pairs are considered, where the name is taken as the foreign key name and the value must be a reference to a hash.
 
-A new C<Rose::DB::Object::Metadata::ForeignKey> object is constructed and is passed all the pairs in the hash reference, along with the name of the foreign key as the value of the "name" parameter.  That foreign key object is then added to the list of foreign keys.
+A new L<Rose::DB::Object::Metadata::ForeignKey> object is constructed and is passed all the pairs in the hash reference, along with the name of the foreign key as the value of the "name" parameter.  That foreign key object is then added to the list of foreign keys.
 
 This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
 
@@ -1203,19 +1203,19 @@ Add a new unique key made up of COLUMNS, where COLUMNS is a list or a reference 
 
 Use ALIAS instead of NAME as the accessor method name for column named NAME.  Note that primary key columns cannot be aliased.  If the column NAME is part of the primary key, a fatal error will occur.
 
-It is sometimes necessary to use an alias for a column because the column name  conflicts with an existing C<Rose::DB::Object> method name.
+It is sometimes necessary to use an alias for a column because the column name  conflicts with an existing L<Rose::DB::Object> method name.
 
-For example, imagine a column named "save".  The C<Rose::DB::Object> API already defines a method named C<save()>, so obviously that name can't be used for the accessor method for the "save" column.  To solve this, make an alias:
+For example, imagine a column named "save".  The L<Rose::DB::Object> API already defines a method named C<save()>, so obviously that name can't be used for the accessor method for the "save" column.  To solve this, make an alias:
 
     $meta->alias_column(save => 'save_flag');
 
-See the C<Rose::DB::Object> documentation or call the C<method_name_is_reserved()> method to determine if a method name is reserved.
+See the L<Rose::DB::Object> documentation or call the C<method_name_is_reserved()> method to determine if a method name is reserved.
 
 =item B<allow_inline_column_values [BOOL]>
 
-Get or set the boolean flag that indicates whether or not the associated C<Rose::DB::Object>-derived class should try to inline column values that C<DBI> does not handle correctly when they are bound to placeholders using C<bind_columns()>.  The default value is false.
+Get or set the boolean flag that indicates whether or not the associated L<Rose::DB::Object>-derived class should try to inline column values that C<DBI> does not handle correctly when they are bound to placeholders using C<bind_columns()>.  The default value is false.
 
-Enabling this flag reduces the performance of the C<update()> and C<insert()> operations on the C<Rose::DB::Object>-derived object.  But it is sometimes necessary to enable the flag because some C<DBI> drivers do not (or cannot) always do the right thing when binding values to placeholders in SQL statements.  For example, consider the following SQL for the Informix database:
+Enabling this flag reduces the performance of the C<update()> and C<insert()> operations on the L<Rose::DB::Object>-derived object.  But it is sometimes necessary to enable the flag because some C<DBI> drivers do not (or cannot) always do the right thing when binding values to placeholders in SQL statements.  For example, consider the following SQL for the Informix database:
 
     CREATE TABLE test (d DATETIME YEAR TO SECOND);
     INSERT INTO test (d) VALUES (CURRENT);
@@ -1263,7 +1263,7 @@ Get or set the database catalog name.  This attribute is not applicable to any o
 
 =item B<class [CLASS]>
 
-Get or set the C<Rose::DB::object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by C<make_methods()>).
+Get or set the L<Rose::DB::object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by C<make_methods()>).
 
 =item B<clear_object_cache>
 
@@ -1271,9 +1271,9 @@ Clear the memory cache for all objects of the L<Rose::DB::Object::Cached>-derive
 
 =item B<column NAME [, COLUMN]>
 
-Get or set the column named NAME.  If just NAME is passed, the C<Rose::DB::Object::Metadata::Column>-derived column object for the column of that name is returned.  If no such column exists, undef is returned.
+Get or set the column named NAME.  If just NAME is passed, the L<Rose::DB::Object::Metadata::Column>-derived column object for the column of that name is returned.  If no such column exists, undef is returned.
 
-If both NAME and COLUMN are passed, then COLUMN must be a C<Rose::DB::Object::Metadata::Column>-derived object.  COLUMN has its C<name()> set to NAME, and is then stored as the column metadata object for NAME.
+If both NAME and COLUMN are passed, then COLUMN must be a L<Rose::DB::Object::Metadata::Column>-derived object.  COLUMN has its C<name()> set to NAME, and is then stored as the column metadata object for NAME.
 
 =item B<columns [ARGS]>
 
@@ -1315,11 +1315,11 @@ Returns a list (in list context) or a reference to an array (in scalar context) 
 
 =item B<column_type_class TYPE>
 
-Given the column type string TYPE, return the name of the C<Rose::DB::Object::Metadata::Column>-derived class used to store metadata and create the accessor method(s) for columns of that type.
+Given the column type string TYPE, return the name of the L<Rose::DB::Object::Metadata::Column>-derived class used to store metadata and create the accessor method(s) for columns of that type.
 
 =item B<column_type_classes [MAP]>
 
-Get or set the hash that maps column type strings to the names of the C<Rose::DB::Object::Metadata::Column>-derived classes used to store metadata  and create accessor method(s) for columns of that type.
+Get or set the hash that maps column type strings to the names of the L<Rose::DB::Object::Metadata::Column>-derived classes used to store metadata  and create accessor method(s) for columns of that type.
 
 If passed MAP (a list of type/class pairs or a reference to a hash of the same) then MAP replaces the current column type mapping.  Returns a list of type/class pairs (in list context) or a reference to the hash of type/class mappings (in scalar context).
 
@@ -1372,9 +1372,9 @@ Delete the type/class mapping entry for the column type TYPE.
 
 =item B<error_mode [MODE]>
 
-Get or set the error mode of the C<Rose::DB::Object> that fronts the table described by this C<Rose::DB::Object::Metadata> object.  If the error mode is false, then it defaults to the return value of the C<init_error_mode()> method, which is "return" by default.
+Get or set the error mode of the L<Rose::DB::Object> that fronts the table described by this C<Rose::DB::Object::Metadata> object.  If the error mode is false, then it defaults to the return value of the C<init_error_mode()> method, which is "return" by default.
 
-The error mode determines what happens when a C<Rose::DB::Object> method  encounters an error.  The default mode, "return", causes the methods to behave as described in the documentation for the C<Rose::DB::Object> class.  All other error modes cause an action to be performed before returning as per the documentation.
+The error mode determines what happens when a L<Rose::DB::Object> method  encounters an error.  The default mode, "return", causes the methods to behave as described in the documentation for the L<Rose::DB::Object> class.  All other error modes cause an action to be performed before returning as per the documentation.
 
 Valid values of MODE are:
 
@@ -1412,9 +1412,9 @@ In all cases, the object's C<error> attribute will also contain the error messag
 
 Get or set the foreign key named NAME.  NAME should be the name of the thing being referenced by the foreign key, I<not> the name of any of the columns that make up the foreign key.  If called with just a NAME argument, the foreign key stored under that name is returned.  Undef is returned if there is no such foreign key.
 
-If passed a VALUE that is a reference to a hash, a new C<Rose::DB::Object::Metadata::ForeignKey> object is constructed, with the name/value pairs in the hash passed to the constructor, along with the NAME as the value of the C<name> parameter.
+If passed a VALUE that is a reference to a hash, a new L<Rose::DB::Object::Metadata::ForeignKey> object is constructed, with the name/value pairs in the hash passed to the constructor, along with the NAME as the value of the C<name> parameter.
 
-If VALUE is a C<Rose::DB::Object::Metadata::ForeignKey>->derived object, it has its C<name> set to NAME and then is stored under that name.
+If VALUE is a L<Rose::DB::Object::Metadata::ForeignKey>->derived object, it has its C<name> set to NAME and then is stored under that name.
 
 =item B<fq_table_sql>
 
@@ -1426,13 +1426,13 @@ This method is an alias for C<generate_primary_key_values()>.
 
 =item B<generate_primary_key_values DB>
 
-Given the C<Rose::DB>-derived object DB, generate a new primary key column value for the table described by this metadata object.  If a C<primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value returned.
+Given the L<Rose::DB>-derived object DB, generate a new primary key column value for the table described by this metadata object.  If a C<primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value returned.
 
 If no C<primary_key_generator> is defined, a new primary key value will be generated, if possible, using the native facilities of the current database.  Note that this may not be possible for databases that auto-generate such values only after an insertion.  In that case, undef will be returned.
 
 =item B<initialize [ARGS]>
 
-Initialize the C<Rose::DB::object>-derived class associated with this metadata object by creating accessor methods for each column and foreign key.  The C<table> name and the C<primary_key> must be defined or a fatal error will occur.
+Initialize the L<Rose::DB::object>-derived class associated with this metadata object by creating accessor methods for each column and foreign key.  The C<table> name and the C<primary_key> must be defined or a fatal error will occur.
 
 ARGS, if any, are passed to the call to C<make_methods()> that actually creates the methods.
 
@@ -1472,7 +1472,7 @@ Get or set the list of of columns that make up the primary key.  If COLUMNS are 
 
 =item B<primary_key_generator [CODE]>
 
-Get or set the subroutine used to generate new primary key values for the primary key columns of this table.  The subroutine will be passed two arguments: the current metadata object and the C<Rose::DB>-derived object that points to the current database.
+Get or set the subroutine used to generate new primary key values for the primary key columns of this table.  The subroutine will be passed two arguments: the current metadata object and the L<Rose::DB>-derived object that points to the current database.
 
 The subroutine is expected to return a list of values, one for each primary key column.  The values must be in the same order as the corresponding columns returned by C<primary_key_columns()>. (i.e., the first value belongs to the first column returned by C<primary_key_columns()>, the second value belongs to the second column, and so on.)
 

@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.031';
+our $VERSION = '0.032';
 
 our $Debug = 0;
 
@@ -77,7 +77,7 @@ sub get_objects
   my $return_iterator = delete $args{'return_iterator'};
   my $object_class    = delete $args{'object_class'} or Carp::croak "Missing object class argument";
   my $with_objects    = delete $args{'with_objects'};
-  my $skip_first      = delete $args{'skip_first'};
+  my $skip_first      = delete $args{'skip_first'} || 0;
   my $count_only      = delete $args{'count_only'};
 
   my $db  = delete $args{'db'} || $object_class->init_db;
@@ -170,6 +170,7 @@ sub get_objects
   if($count_only)
   {
     delete $args{'limit'};
+    delete $args{'offset'};
     delete $args{'sort_by'};
 
     my($sql, $bind) =
@@ -211,6 +212,24 @@ sub get_objects
 
     $class->total($count);
     return $count;
+  }
+
+  if($args{'offset'})
+  {
+    Carp::croak "Offset argument is invalid without a limit argument"
+      unless($args{'limit'});
+
+    if($db->supports_limit_with_offset)
+    {
+      $args{'limit'} = $db->format_limit_with_offset($args{'limit'}, $args{'offset'});
+      delete $args{'offset'};
+      $skip_first = 0;
+    }
+    else
+    {
+      $skip_first += delete $args{'offset'};
+      $args{'limit'} += $skip_first;
+    }
   }
 
   my($count, @objects, $iterator);
@@ -262,6 +281,8 @@ sub get_objects
 
       my $num_subtables = $with_objects ? @$with_objects : 0;
 
+      my $count = 0;
+
       $iterator->_next_code(sub
       {
         my($self) = shift;
@@ -270,14 +291,11 @@ sub get_objects
 
         eval
         {
-          my $count = 0;
-
           ROW: for(;;)
           {
             unless($sth->fetch)
             {
               $self->total($self->{'_count'});
-              $class->handle_error($self);
               return 0;
             }
 
@@ -321,9 +339,20 @@ sub get_objects
       return $iterator;
     }
 
+    $count = 0;
+
     if($with_objects)
     {
       my $num_subtables = @$with_objects;
+
+      if($skip_first)
+      {
+        while($sth->fetch)
+        {
+          next  if(++$count < $skip_first);
+          last;
+        }
+      }
 
       while($sth->fetch)
       {
@@ -342,6 +371,15 @@ sub get_objects
     }
     else
     {
+      if($skip_first)
+      {
+        while($sth->fetch)
+        {
+          next  if(++$count < $skip_first);
+          last;
+        }
+      }
+
       while($sth->fetch)
       {
         push(@objects, $object_class->new(%{$row{$object_class}}, %object_args));
@@ -508,7 +546,8 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
         name        => { like => [ '%foo%', '%bar%' ] },
       ],
       sort_by => 'category_id, start_date DESC',
-      limit   => 100
+      limit   => 100,
+      offset  => 80,
     ) 
     or die Product::Manager->error;
 
@@ -532,7 +571,8 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
         name        => { like => [ '%foo%', '%bar%' ] },
       ],
       sort_by => 'category_id, start_date DESC',
-      limit   => 100
+      limit   => 100,
+      offset  => 80,
     )
     or die Product::Manager->error;
 
@@ -557,7 +597,6 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
         start_date  => { lt => '15/12/2005 6:30 p.m.' },
         name        => { like => [ '%foo%', '%bar%' ] },
       ],
-      limit   => 100
     ); 
 
    die Product::Manager->error  unless(defined $count);
@@ -580,7 +619,8 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
         name        => { like => [ '%foo%', '%bar%' ] },
       ],
       sort_by => 'category_id, start_date DESC',
-      limit   => 100
+      limit   => 100,
+      offset  => 80,
     )
     or die Product::Manager->error;
 
@@ -591,7 +631,7 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::Manager> is a base class for classes that select rows from tables fronted by C<Rose::DB::Object>-derived classes.  Each row in the table(s) queried is converted into the equivalent C<Rose::DB::Object>-derived object.
+C<Rose::DB::Object::Manager> is a base class for classes that select rows from tables fronted by L<Rose::DB::Object>-derived classes.  Each row in the table(s) queried is converted into the equivalent L<Rose::DB::Object>-derived object.
 
 Class methods are provided for fetching objects all at once, one at a time through the use of an iterator, or just getting the object count.  Subclasses are expected to create syntactically pleasing wrappers for C<Rose::DB::Object::Manager> class methods.  A very minimal example is shown in the L<synopsis|SYNOPSIS> above.
 
@@ -642,14 +682,14 @@ In all cases, the class's C<error> attribute will also contain the error message
 
 =item B<get_objects [PARAMS]>
 
-Get C<Rose::DB::Object>-derived objects based on PARAMS, where PARAMS are name/value pairs.  Returns a  reference to a (possibly empty) array in scalar context, a list of objects in list context, or undef if there was an error.  
+Get L<Rose::DB::Object>-derived objects based on PARAMS, where PARAMS are name/value pairs.  Returns a  reference to a (possibly empty) array in scalar context, a list of objects in list context, or undef if there was an error.  
 
 Note that naively calling this method in list context may result in a list containing a single undef element if there was an error.  Example:
 
     # If there is an error, you'll get: @objects = (undef)
     @objects = Rose::DB::Object::Manager->get_objects(...);
 
-If you want to avoid this, feel free to change the behavior your wrapper method, or just call it in scalar context (which is more efficient anyway for long lists of objects).
+If you want to avoid this, feel free to change the behavior in your wrapper method, or just call it in scalar context (which is more efficient anyway for long lists of objects).
 
 Valid parameters are:
 
@@ -657,7 +697,9 @@ Valid parameters are:
 
 =item C<db DB>
 
-A C<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the C<init_db()> object method of the C<object_class>.
+A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the C<init_db()> object method of the C<object_class>.
+
+=item C<limit NUM>
 
 =item C<object_args HASHREF>
 
@@ -665,21 +707,27 @@ A reference to a hash of name/value pairs to be passed to the constructor of eac
 
 =item C<object_class CLASS>
 
-The class name of the C<Rose::DB::Object>-derived objects to be fetched.  This parameter is required; a fatal error will occur if it is omitted.
+The class name of the L<Rose::DB::Object>-derived objects to be fetched.  This parameter is required; a fatal error will occur if it is omitted.
+
+=item C<offset NUM>
+
+Skip the first NUM rows.  If the database supports some sort of "limit with offset" syntax (e.g., "LIMIT 10 OFFSET 20") then it will be used.  Otherwise, the first NUM rows will be fetched and then discarded.
+
+This parameter can only be used along with the C<limit> parameter, otherwise a fatal error will occur.
 
 =item C<share_db BOOL>
 
-If true, C<db> will be passed to each C<Rose::DB::Object>-derived object when it is constructed.  Defaults to true.
+If true, C<db> will be passed to each L<Rose::DB::Object>-derived object when it is constructed.  Defaults to true.
 
 =item C<with_object OBJECTS>
 
-Also fetch sub-objects associated with foreign keys in the primary table, where OBJECTS is a reference to an array of foreign key names, as defined by the C<Rose::DB::Object::Metadata> object for C<object_class>.
+Also fetch sub-objects associated with foreign keys in the primary table, where OBJECTS is a reference to an array of foreign key names, as defined by the L<Rose::DB::Object::Metadata> object for C<object_class>.
 
-Another table will be added to the query for each foreign key listed.  The "join" clauses will be added automatically based on the foreign key definitions.  Note that (obviously) each foreign key table has to have a C<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|SYNOPSIS> for a simple example.
+Another table will be added to the query for each foreign key listed.  The "join" clauses will be added automatically based on the foreign key definitions.  Note that (obviously) each foreign key table has to have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|SYNOPSIS> for a simple example.
 
 =item Any valid Rose::DB::Object::QueryBuilder::build_select() parameter
 
-Any parameter that can be passed to the C<build_select()> function of the C<Rose::DB::Object::QueryBuilder> module can also be passed to this method, which will then pass them on to build_select() to create the SQL query string used to fetch the objects.
+Any parameter that can be passed to the C<build_select()> function of the L<Rose::DB::Object::QueryBuilder> module can also be passed to this method, which will then pass them on to build_select() to create the SQL query string used to fetch the objects.
 
 =back
 
@@ -689,17 +737,7 @@ Accepts the same arguments as C<get_objects()>, but just returns the number of r
 
 =item B<get_objects_iterator [PARAMS]>
 
-Accepts any valid C<get_objects()> argument, but return a C<Rose::DB::Objects::Iterator> object which can be used to fetch the objects one at a time, or undef if there was an error.
-
-Additional valid parameters are:
-
-=over 4
-
-=item C<skip_first NUM>
-
-Skip the first NUM rows before returning the first object from the iterator.  This is for databases that do not support an offset value in their SQL "LIMIT" clauses (e.g., Informix).
-
-=back
+Accepts any valid C<get_objects()> argument, but return a L<Rose::DB::Objects::Iterator> object which can be used to fetch the objects one at a time, or undef if there was an error.
 
 =item B<get_objects_sql [PARAMS]>
 

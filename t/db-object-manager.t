@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 101;
+use Test::More tests => 167;
 
 BEGIN 
 {
@@ -19,7 +19,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 {
-  skip("Postgres tests", 31)  unless($HAVE_PG);
+  skip("Postgres tests", 53)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -315,6 +315,77 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyPgOtherObject', "foreign object 6 - $db_type");
   is($objs->[0]->other_obj->k2, 2, "foreign object 7 - $db_type");
+
+  # Test limit with offset
+
+  foreach my $id (6 .. 20)
+  {
+    my $o = $o5->clone;
+    $o->id($id);
+    $o->name("Clone $id");
+
+    ok($o->save, "object save() clone $id - $db_type");
+  }
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MyPgObject',
+      sort_by      => 'id DESC',
+      limit        => 2,
+      offset       => 8);
+
+  ok(ref $objs eq 'ARRAY' && @$objs == 2 && 
+     $objs->[0]->id == 12 && $objs->[1]->id == 11,
+     "get_objects() with offset - $db_type");
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MyPgObject',
+      sort_by      => 'id DESC',
+      with_objects => [ 'other_obj' ],
+      limit        => 2,
+      offset       => 8);
+
+  ok(ref $objs eq 'ARRAY' && @$objs == 2 && 
+     $objs->[0]->id == 12 && $objs->[1]->id == 11,
+     "get_objects() with objects and offset - $db_type");
+
+  $iterator = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => 'MyPgObject',
+      sort_by      => 'id DESC',
+      limit        => 2,
+      offset       => 8);
+
+  $o = $iterator->next;
+  is($o->id, 12, "get_objects_iterator() with offset 1 - $db_type");
+
+  $o = $iterator->next;
+  is($o->id, 11, "get_objects_iterator() with offset 2 - $db_type");
+
+  is($iterator->next, 0, "get_objects_iterator() with offset 3 - $db_type");
+
+  eval
+  {
+    $objs = 
+      Rose::DB::Object::Manager->get_objects(
+        object_class => 'MyPgObject',
+        sort_by      => 'id DESC',
+        offset       => 8)
+  };
+
+  ok($@ =~ /invalid without a limit/, "get_objects() missing offset - $db_type");
+
+  eval
+  {
+    $iterator = 
+      Rose::DB::Object::Manager->get_objects_iterator(
+        object_class => 'MyPgObject',
+        sort_by      => 'id DESC',
+        offset       => 8);
+  };
+
+  ok($@ =~ /invalid without a limit/, "get_objects_iterator() missing offset - $db_type");
 }
 
 #
@@ -323,7 +394,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 31)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 53)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -608,6 +679,77 @@ SKIP: foreach my $db_type ('mysql')
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyMySQLOtherObject', "foreign object 6 - $db_type");
   is($objs->[0]->other_obj->k2, 2, "foreign object 7 - $db_type");
+
+  # Test limit with offset
+
+  foreach my $id (6 .. 20)
+  {
+    my $o = $o5->clone;
+    $o->id($id);
+    $o->name("Clone $id");
+
+    ok($o->save, "object save() clone $id - $db_type");
+  }
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MyMySQLObject',
+      sort_by      => 'id DESC',
+      limit        => 2,
+      offset       => 8);
+
+  ok(ref $objs eq 'ARRAY' && @$objs == 2 && 
+     $objs->[0]->id == 12 && $objs->[1]->id == 11,
+     "get_objects() with offset - $db_type");
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MyMySQLObject',
+      sort_by      => 'id DESC',
+      with_objects => [ 'other_obj' ],
+      limit        => 2,
+      offset       => 8);
+
+  ok(ref $objs eq 'ARRAY' && @$objs == 2 && 
+     $objs->[0]->id == 12 && $objs->[1]->id == 11,
+     "get_objects() with objects and offset - $db_type");
+
+  $iterator = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => 'MyMySQLObject',
+      sort_by      => 'id DESC',
+      limit        => 2,
+      offset       => 8);
+
+  $o = $iterator->next;
+  is($o->id, 12, "get_objects_iterator() with offset 1 - $db_type");
+
+  $o = $iterator->next;
+  is($o->id, 11, "get_objects_iterator() with offset 2 - $db_type");
+
+  is($iterator->next, 0, "get_objects_iterator() with offset 3 - $db_type");
+
+  eval
+  {
+    $objs = 
+      Rose::DB::Object::Manager->get_objects(
+        object_class => 'MyMySQLObject',
+        sort_by      => 'id DESC',
+        offset       => 8)
+  };
+
+  ok($@ =~ /invalid without a limit/, "get_objects() missing offset - $db_type");
+
+  eval
+  {
+    $iterator = 
+      Rose::DB::Object::Manager->get_objects_iterator(
+        object_class => 'MyMySQLObject',
+        sort_by      => 'id DESC',
+        offset       => 8);
+  };
+
+  ok($@ =~ /invalid without a limit/, "get_objects_iterator() missing offset - $db_type");
 }
 
 #
@@ -616,7 +758,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 37)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 59)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -976,6 +1118,77 @@ SKIP: foreach my $db_type (qw(informix))
   is(ref $objs, 'ARRAY', "get_objects() 9 - $db_type");
   $objs ||= [];
   is(scalar @$objs, 1, "get_objects() 10 - $db_type");
+
+  # Test limit with offset
+
+  foreach my $id (6 .. 20)
+  {
+    my $o = $o5->clone;
+    $o->id($id);
+    $o->name("Clone $id");
+
+    ok($o->save, "object save() clone $id - $db_type");
+  }
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MyInformixObject',
+      sort_by      => 'id DESC',
+      limit        => 2,
+      offset       => 8);
+
+  ok(ref $objs eq 'ARRAY' && @$objs == 2 && 
+     $objs->[0]->id == 12 && $objs->[1]->id == 11,
+     "get_objects() with offset - $db_type");
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MyInformixObject',
+      sort_by      => 'id DESC',
+      with_objects => [ 'other_obj' ],
+      limit        => 2,
+      offset       => 8);
+
+  ok(ref $objs eq 'ARRAY' && @$objs == 2 && 
+     $objs->[0]->id == 12 && $objs->[1]->id == 11,
+     "get_objects() with objects and offset - $db_type");
+
+  $iterator = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => 'MyInformixObject',
+      sort_by      => 'id DESC',
+      limit        => 2,
+      offset       => 8);
+
+  $o = $iterator->next;
+  is($o->id, 12, "get_objects_iterator() with offset 1 - $db_type");
+
+  $o = $iterator->next;
+  is($o->id, 11, "get_objects_iterator() with offset 2 - $db_type");
+
+  is($iterator->next, 0, "get_objects_iterator() with offset 3 - $db_type");
+
+  eval
+  {
+    $objs = 
+      Rose::DB::Object::Manager->get_objects(
+        object_class => 'MyInformixObject',
+        sort_by      => 'id DESC',
+        offset       => 8)
+  };
+
+  ok($@ =~ /invalid without a limit/, "get_objects() missing offset - $db_type");
+
+  eval
+  {
+    $iterator = 
+      Rose::DB::Object::Manager->get_objects_iterator(
+        object_class => 'MyInformixObject',
+        sort_by      => 'id DESC',
+        offset       => 8);
+  };
+
+  ok($@ =~ /invalid without a limit/, "get_objects_iterator() missing offset - $db_type");
 }
 
 BEGIN

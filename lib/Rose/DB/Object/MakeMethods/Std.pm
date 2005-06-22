@@ -81,9 +81,9 @@ Rose::DB::Object::MakeMethods::Std - Create object methods related to Rose::DB::
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::MakeMethods::Std> creates methods related to Rose::DB::Object::Std-derived objects.  It inherits from C<Rose::Object::MakeMethods>.  See the C<Rose::Object::MakeMethods> documentation to learn about the interface.  The method types provided by this module are described below.
+C<Rose::DB::Object::MakeMethods::Std> creates methods related to Rose::DB::Object::Std-derived objects.  It inherits from L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation to learn about the interface.  The method types provided by this module are described below.
 
-All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) C<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a C<Rose::DB>-derived object.  See the C<Rose::DB::Object::Std> documentation for more details.
+All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) L<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a L<Rose::DB>-derived object.  See the L<Rose::DB::Object::Std> documentation for more details.
 
 =head1 METHODS TYPES
 
@@ -91,7 +91,7 @@ All method types defined by this module are designed to work with objects that a
 
 =item B<object_by_id>
 
-Create a get/set methods for a single C<Rose::DB::Object::Std>-derived object loaded based on a primary key stored in an attribute of the current object.
+Create a get/set methods for a single L<Rose::DB::Object::Std>-derived object loaded based on a primary key stored in an attribute of the current object.
 
 =over 4
 
@@ -101,7 +101,7 @@ Create a get/set methods for a single C<Rose::DB::Object::Std>-derived object lo
 
 =item C<class>
 
-The name of the C<Rose::DB::Object::Std>-derived class of the object to be loaded.  This option is required.
+The name of the L<Rose::DB::Object::Std>-derived class of the object to be loaded.  This option is required.
 
 =item C<hash_key>
 
@@ -127,7 +127,7 @@ If true, the C<db> attribute of the current object is shared with the object loa
 
 =item C<get_set>
 
-Creates a method that will attempt to create and load a C<Rose::DB::Object::Std>-derived object based on a primary key stored in an attribute of the current object.
+Creates a method that will attempt to create and load a L<Rose::DB::Object::Std>-derived object based on a primary key stored in an attribute of the current object.
 
 If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument is assumed to be an object of type C<class> and is assigned to C<hash_key> after having its primary key set to the corresponding value in the current object.
 

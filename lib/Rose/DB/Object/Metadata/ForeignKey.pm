@@ -53,9 +53,9 @@ Objects of this class store and manipulate metadata for foreign keys in a databa
 
 This class represents (and will create an accessor method for) C<the thing referenced by> the foreign key column(s).  You'll still need accessor method(s) for the foreign key column(s) themselves.
 
-Both the local table and the foreign table will need C<Rose::DB::Object>-derived classes fronting them.
+Both the local table and the foreign table will need L<Rose::DB::Object>-derived classes fronting them.
 
-Since there is a lot of overlap in responsibilities, this class inherits from C<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the C<Rose::DB::Object::Metadata::Column> documentation for more information.
+Since there is a lot of overlap in responsibilities, this class inherits from L<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column> documentation for more information.
 
 =head1 OBJECT METHODS
 
@@ -63,7 +63,7 @@ Since there is a lot of overlap in responsibilities, this class inherits from C<
 
 =item B<class [CLASS]>
 
-Get or set the class name of the C<Rose::DB::Object>-derived object that encapsulates rows from the table referenced by the foreign key column(s).
+Get or set the class name of the L<Rose::DB::Object>-derived object that encapsulates rows from the table referenced by the foreign key column(s).
 
 =item B<key_column LOCAL [, FOREIGN]>
 
@@ -75,7 +75,7 @@ Get or set a reference to a hash that maps local column names to foreign column 
 
 =item B<method_maker_class>
 
-Returns C<Rose::DB::Object::MakeMethods::Generic>.
+Returns L<Rose::DB::Object::MakeMethods::Generic>.
 
 =item B<method_maker_type>
 

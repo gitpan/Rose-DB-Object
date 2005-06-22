@@ -68,7 +68,7 @@ Rose::DB::Object::Metadata::Column::Date - Date column metadata.
 
 Objects of this class store and manipulate metadata for date columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
-This class inherits from C<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the C<Rose::DB::Object::Metadata::Column> documentation for more information.
+This class inherits from L<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column> documentation for more information.
 
 =head1 OBJECT METHODS
 
@@ -80,7 +80,7 @@ Get or set the default value of the column.
 
 =item B<method_maker_class>
 
-Returns C<Rose::DB::Object::MakeMethods::Date>.
+Returns L<Rose::DB::Object::MakeMethods::Date>.
 
 =item B<method_maker_type>
 
@@ -88,7 +88,7 @@ Returns C<date>.
 
 =item B<parse_value DB, VALUE>
 
-Convert VALUE to the equivalent C<DateTime> object.  VALUE maybe returned unmodified if it is a valid date keyword or otherwise has special meaning to the underlying database.  DB is a C<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
+Convert VALUE to the equivalent C<DateTime> object.  VALUE maybe returned unmodified if it is a valid date keyword or otherwise has special meaning to the underlying database.  DB is a L<Rose::DB> object that is used as part of the parsing process.  Both arguments are required.
 
 =item B<type>
 

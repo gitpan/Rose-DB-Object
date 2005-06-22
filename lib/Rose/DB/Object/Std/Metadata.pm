@@ -96,9 +96,9 @@ Rose::DB::Object::Std::Metadata - Standardized database object metadata.
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::Std::Metadata> is a subclass of C<Rose::DB::Object::Metadata> that is designed to serve the needs of C<Rose::DB::Object::Std> objects.  See the C<Rose::DB::Object::Std> documentations for information on what differentiates it from C<Rose::DB::Object>.
+C<Rose::DB::Object::Std::Metadata> is a subclass of L<Rose::DB::Object::Metadata> that is designed to serve the needs of L<Rose::DB::Object::Std> objects.  See the L<Rose::DB::Object::Std> documentations for information on what differentiates it from L<Rose::DB::Object>.
 
-Only the methods that are overridden are documented here.  See the C<Rose::DB::Object::Metadata> documentation for the rest.
+Only the methods that are overridden are documented here.  See the L<Rose::DB::Object::Metadata> documentation for the rest.
 
 =head1 OBJECT METHODS
 
@@ -110,13 +110,13 @@ This method is an alias for the C<add_primary_key_columns()> method.
 
 =item B<add_primary_key_columns COLUMNS>
 
-Since C<Rose::DB::Object::Std> objects must have a single primary key column named "id", calling this method with a COLUMNS argument of anything other than the column name "id" or a reference to an array containing the column name "id" will cause a fatal error.
+Since L<Rose::DB::Object::Std> objects must have a single primary key column named "id", calling this method with a COLUMNS argument of anything other than the column name "id" or a reference to an array containing the column name "id" will cause a fatal error.
 
 In general, you do not need to use this method at all since the C<primary_key_columns()> method is hard-coded to always return "id".
 
 =item B<initialize [ARGS]>
 
-This method does the same thing as the C<Rose::DB::Object::Metadata> method of the same name, with one exception.  If there is no column named "id" in the list of columns, a scalar primary key column named "id" is added to the column list.  Then initialization proceeds as usual.
+This method does the same thing as the L<Rose::DB::Object::Metadata> method of the same name, with one exception.  If there is no column named "id" in the list of columns, a scalar primary key column named "id" is added to the column list.  Then initialization proceeds as usual.
 
 =item B<primary_key_columns>
 
