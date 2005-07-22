@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.032';
+our $VERSION = '0.04';
 
 our $Debug = 0;
 
@@ -56,6 +56,139 @@ sub handle_error
   }
 
   return 1;
+}
+
+sub object_class { }
+
+sub make_manager_methods
+{
+  my($class) = shift;
+
+  if(@_ == 1)
+  {
+    @_ = (methods => { $_[0] => [ qw(objects iterator count) ] });
+  }
+  else
+  {
+    Carp::croak "make_manager_methods() called with an odd number of arguments"  
+      unless(@_ % 2 == 0);
+  }
+
+  my %args = @_;
+
+  my $calling_class  = ($class eq __PACKAGE__) ? (caller)[0] : $class;
+  my $target_class   = $args{'target_class'} || $calling_class;
+  my $object_class   = $args{'object_class'};
+  my $class_invocant = UNIVERSAL::isa($target_class, __PACKAGE__) ? 
+                         $target_class : __PACKAGE__;
+
+  unless($object_class)
+  {
+    if(UNIVERSAL::isa($target_class, 'Rose::DB::Object::Manager'))
+    {
+      $object_class = $target_class->object_class;
+    }
+
+    if(!$object_class && UNIVERSAL::isa($target_class, 'Rose::DB::Object'))
+    {
+      $object_class = $target_class;
+    }
+  }
+
+  unless($object_class)
+  {
+    Carp::croak "Could not determine object class.  Please pass a value for ",
+                "the object_class parameter", 
+                (UNIVERSAL::isa($target_class, 'Rose::DB::Object::Manager') ?
+                 " or override the object_class() method in $target_class" : '');
+  }
+
+  if(!$args{'methods'})
+  {
+    unless($args{'base_name'})
+    {
+      Carp::croak "Missing methods parameter and base_name parameter. ",
+                  "You must supply one or the other";
+    }
+
+    $args{'methods'} = { $args{'base_name'} => [ qw(objects iterator count) ] };
+  }
+  elsif($args{'base_name'})
+  {
+    Carp::croak "Please pass the methods parameter OR the base_name parameter, not both";
+  }
+
+  Carp::croak "Invalid 'methods' parameter - should be a hash ref"
+    unless(ref $args{'methods'} eq 'HASH');
+
+  while(my($name, $types) = each %{$args{'methods'}})
+  {
+    Carp::croak "Invalid value for the '$name' parameter"
+      if(ref $types && ref $types ne 'ARRAY');
+
+    foreach my $type ((ref $types ? @$types : ($types)))
+    {
+      no strict 'refs';
+
+      if($type eq 'objects')
+      {
+        my $method_name = "${target_class}::get_$name";
+
+        foreach my $class ($target_class, $class_invocant)
+        {
+          my $method = "${class}::get_$name";
+          Carp::croak "A $method method already exists"
+            if(defined &{$method});
+        }
+
+        *{$method_name} = sub
+        {
+          shift;
+          $class_invocant->get_objects(@_, object_class => $object_class);
+        };
+      }
+      elsif($type eq 'count')
+      {
+        my $method_name = "${target_class}::get_${name}_count";
+
+        foreach my $class ($target_class, $class_invocant)
+        {
+          my $method = "${class}::get_${name}_count";
+          Carp::croak "A $method method already exists"
+            if(defined &{$method});
+        }
+
+        *{$method_name} = sub
+        {
+          shift;
+          $class_invocant->get_objects(
+            @_, count_only => 1, object_class => $object_class)
+        };
+      }
+      elsif($type eq 'iterator')
+      {
+        my $method_name = "${target_class}::get_${name}_iterator";
+
+        foreach my $class ($target_class, $class_invocant)
+        {
+          my $method = "${class}::get_${name}_iterator";
+          Carp::croak "A $method method already exists"
+            if(defined &{$method});
+        }
+
+        *{$method_name} = sub
+        {
+          shift;
+          $class_invocant->get_objects(
+            @_, return_iterator => 1, object_class => $object_class)
+        };
+      }
+      else
+      {
+        Carp::croak "Invalid method type: $type";
+      }
+    }
+  }
 }
 
 sub get_objects_count
@@ -300,16 +433,16 @@ sub get_objects
             }
 
             next ROW  if($skip_first && ++$count <= $skip_first);
-  
+
             $object = $object_class->new(%{$row{$object_class}}, %object_args);
-  
+
             if($with_objects)
             {
               foreach my $i (1 .. $num_subtables)
               {
                 my $method = $with_objects->[$i - 1];
                 my $class  = $classes[$i];
-  
+
                 $object->$method($class->new(%{$row{$class}}, %subobject_args));
               }
             }
@@ -435,6 +568,10 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
 
 =head1 SYNOPSIS
 
+  ##
+  ## Given the following example Rose::DB::Object-derived classes...
+  ##
+
   package Category;
 
   use Rose::DB::Object;
@@ -500,36 +637,42 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
 
   ...
 
+  ##
+  ## Create a manager class
+  ##
+
   package Product::Manager;
 
   use Rose::DB::Object::Manager;
   our @ISA = qw(Rose::DB::Object::Manager);
 
-  sub get_products
-  {
-    my $class = shift;
+  sub object_class { 'Product' }
 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'Product', @_)
-  }
+  __PACKAGE__->make_manager_methods('products');
 
-  sub get_products_iterator
-  {
-    my $class = shift;
-
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'Product', @_)
-  }
-
-  sub get_products_count
-  {
-    my $class = shift;
-
-    Rose::DB::Object::Manager->get_objects_count(
-      object_class => 'Product', @_)
-  }
+  # The call above creates the methods shown below.  (The actual 
+  # method bodies vary slightly, but this is the gist of it...)
+  #
+  # sub get_products
+  # {
+  #   shift->get_objects(@_, object_class => 'Product');
+  # }
+  #
+  # sub get_products_iterator
+  # {
+  #   shift->get_objects_iterator(@_, object_class => 'Product');
+  # }
+  #
+  # sub get_products_count
+  # {
+  #   shift->get_objects_count(@_, object_class => 'Product');
+  # }
 
   ...
+
+  ##
+  ## Use the manager class
+  ##
 
   #
   # Get a reference to an array of objects
@@ -626,6 +769,7 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
 
   foreach my $product (@$products)
   {
+    # The call to $product->category does not hit the database
     print $product->name, ': ', $product->category->name, "\n";
   }
 
@@ -701,6 +845,8 @@ A L<Rose::DB>-derived object used to access the database.  If omitted, one will 
 
 =item C<limit NUM>
 
+Return a maximum of NUM objects.
+
 =item C<object_args HASHREF>
 
 A reference to a hash of name/value pairs to be passed to the constructor of each C<object_class> object fetched, in addition to the values from the database.
@@ -725,9 +871,11 @@ Also fetch sub-objects associated with foreign keys in the primary table, where 
 
 Another table will be added to the query for each foreign key listed.  The "join" clauses will be added automatically based on the foreign key definitions.  Note that (obviously) each foreign key table has to have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|SYNOPSIS> for a simple example.
 
-=item Any valid Rose::DB::Object::QueryBuilder::build_select() parameter
+=item C<query PARAMS>
 
-Any parameter that can be passed to the C<build_select()> function of the L<Rose::DB::Object::QueryBuilder> module can also be passed to this method, which will then pass them on to build_select() to create the SQL query string used to fetch the objects.
+The query parameters, passed as a reference to an array of name/value pairs.  These PARAMS are used to formulate the "where" clause of the SQL query that, in turn, is used to fetch the objects from the database.  Arbitrarily nested boolean logic is supported.
+
+For the complete list of valid parameter names and values, see the L<build_select()|Rose::DB::Object::QueryBuilder/build_select> function of the L<Rose::DB::Object::QueryBuilder> module.
 
 =back
 
@@ -742,6 +890,217 @@ Accepts any valid C<get_objects()> argument, but return a L<Rose::DB::Objects::I
 =item B<get_objects_sql [PARAMS]>
 
 Accepts the same arguments as C<get_objects()>, but return the SQL query string that would have been used to fetch the objects (in scalar context), or the SQL query string and a reference to an array of bind values (in list context).
+
+=item B<make_manager_methods PARAMS>
+
+Create convenience wrappers for L<Rose::DB::Object::Manager>'s L<get_objects()|get_objects>, L<get_objects_iterator()|get_objects_iterator>, and L<get_objects_count()|get_objects_count> class methods in the target class.  These wrapper methods will not overwrite any existing methods in the target class.  If there is an existing method with the same name, a fatal error will occur.
+
+PARAMS can take several forms, depending on the calling context.  For a call to L<make_manager_methods()|/make_manager_methods> to succeed, the following information must be determined:
+
+=over 4
+
+=item * B<object class>
+
+The class of the L<Rose::DB::Object>-derived objects to be fetched or counted.
+
+=item * B<base name>
+
+The string to be used as the basis of the method names.  For example, the base name "products" would be used to create methods named "get_B<products>", "get_B<products>_count", and "get_B<products>_iterator"
+
+=item * B<method types>
+
+The types of methods that should be generated.  Each method type is a wrapper for a L<Rose::DB::Object::Manager> class method.  The mapping of method type names to actual L<Rose::DB::Object::Manager> class methods is as follows:
+
+    Type        Method
+    --------    ----------------------
+    objects     get_objects()
+    iterator    get_objects_iterator()
+    count       get_objects_count()
+
+=item * B<target class>
+
+The class that the methods should be installed in.
+
+=back
+
+Here are all of the different ways that each of those pieces of information can be provided, either implicitly or explicitly as part of PARAMS.
+
+=over 4
+
+=item * B<object class>
+
+If an C<object_class> parameter is passed in PARAMS, then its value is used as the object class.  Example:
+
+    $class->make_manager_methods(object_class => 'Product', ...);
+
+If the C<object_class> parameter is not passed, and if the B<target class> inherits from L<Rose::DB::Object::Manager> and has also defined an C<object_class> method, then the return value of that method is used as the object class.  Example:
+
+  package Product::Manager;
+
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+
+  sub object_class { 'Product' }
+
+  # Assume object_class parameter is not part of the ... below
+  __PACKAGE__->make_manager_methods(...);
+
+In this case, the object class would be C<Product>.
+
+Finally, if none of the above conditions are met, one final option is considered.  If the B<target class> inherits from L<Rose::DB::Object>, then the object class is set to the B<target class>.
+
+If the object class cannot be determined in one of the ways described above, then a fatal error will occur.
+
+=item * B<base name>
+
+If a C<base_name> parameter is passed in PARAMS, then its value is used as the base name for the generated methods.  Example:
+
+    $class->make_manager_methods(base_name => 'products', ...);
+
+If the C<base_name> parameter is not passed, and if there is only one argument passed to the method, then the lone argument is used as the base name.  Example:
+
+    $class->make_manager_methods('products');
+
+(Note that, since the B<object class> must be derived somehow, this will only work in one of the situations (described above) where the B<object class> can be derived from the calling context or class.)
+
+Finally, if a C<methods> parameter is passed with a hash ref value, then each key of the hash is used as the base name for the method types listed in the corresponding value.  (See B<method types> below for more information.)
+
+If the base name cannot be determined in one of the ways described above, then a fatal error will occur.
+
+=item * B<method types>
+
+If a B<base name> is passed to the method, either as the value of the C<base_name> parameter or as the sole argument to the method call, then all of the method types are created: C<objects>, C<iterator>, and C<count>.  Example:
+
+    # Base name is "products", all method types created
+    $class->make_manager_methods('products');
+
+    # Base name is "products", all method types created
+    $class->make_manager_methods(base_name => products', ...);
+
+(Again, note that the B<object class> must be derived somehow.)
+
+If a C<methods> parameter is passed, then its value must be a reference to a hash whose keys are base names and values are method types or references to arrays of method types.  Example:
+
+    # Make the following methods:
+    #
+    # * Base name: products; method types: objects, iterators
+    #
+    #     get_products()
+    #     get_products_iterator()
+    #
+    # * Base name: product; method type: count
+    #
+    #     get_product_count()
+    #
+    $class->make_manager_methods(...,
+      methods =>
+      {
+        products => [ qw(objects iterator) ],
+        product  => 'count'
+      });
+
+If the value of the C<methods> parameter is not a reference to a hash, or if both (or neither of) the C<methods> and C<base_name> parameters are passed, then a fatal error will occur.
+
+=item * B<target class>
+
+If a C<target_class> parameter is passed in PARAMS, then its value is used as the target class.  Example:
+
+    $class->make_manager_methods(target_class => 'Product', ...);
+
+If a C<target_class> parameter is not passed, and if the calling class is not L<Rose::DB::Object::Manager>, then the calling class is used as the target class.  Otherwise, the class from which the method was called is used as the target class.  Examples:
+
+    # Target class is Product, regardless of the calling
+    # context or the value of $class
+    $class->make_manager_methods(target_class => 'Product', ...);
+
+    package Foo;
+
+    # Target class is Foo: no target_class parameter is passed
+    # and the calling class is Rose::DB::Object::Manager, so 
+    # the class from which the method was called (Foo) is used.
+    Rose::DB::Object::Manager->make_manager_methods(
+      object_class => 'Bar',
+      base_name    => 'Baz');
+
+    package Bar;
+
+    # Target class is Foo: no target_class parameter is passed 
+    # and the calling class is not Rose::DB::Object::Manager,
+    # so the calling class (Foo) is used.
+    Foo->make_manager_methods(object_class => 'Bar',
+                              base_name    => 'Baz');
+
+=back
+
+There's a lot of flexibility in this method's arguments (although some might use the word "confusion" instead), but the examples can be pared down to a few common usage scenarios.
+
+The first is the recommended technique, as seen in the L<synopsis|/SYNOPSIS>. Create a separate manager class that inherits from L<Rose::DB::Object::Manager>, override the C<object_class> method to specify the class of the objects being fetched, and then pass a lone base name argument to the call to L<make_manager_methods()|/make_manager_methods>.
+
+  package Product::Manager;
+
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+
+  sub object_class { 'Product' }
+
+  __PACKAGE__->make_manager_methods('products');
+
+The second example is used to install object manager methods directly into a C<Rose::DB::Object>-derived class.  I do not recommend this practice; I consider it "semantically impure" for the class that represents a single object to also be the class that's used to fetch multiple objects.  Inevitably, classes grow, and I'd like the "object manager" class to be separate from the object class itself so they can grow happily in isolation, with no potential clashes.  Nevertheless, here's how it would be done:
+
+  package Product;
+
+  use Rose::DB::Object:;
+  our @ISA = qw(Rose::DB::Object);
+
+  __PACKAGE__->make_manager_methods('products');
+
+Finally, sometimes you don't want or need to use L<make_manager_methods()|/make_manager_methods> at all.  In fact, this method did not exist in earlier versions of this module.  The formerly recommended way to use this class is  still perfectly valid: subclass it and then call through to the base class methods.
+
+  package Product::Manager;
+
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+
+  sub get_products
+  {
+    shift->get_objects(object_class => 'Product', @_);
+  }
+
+  sub get_products_iterator
+  {
+    shift->get_objects_iterator(object_class => 'Product', @_);
+  }
+
+  sub get_products_count
+  {
+    shift->get_objects_count(object_class => 'Product', @_);
+  }
+
+Of course, these methods will all look very similar in each L<Rose::DB::Object::Manager>-derived class.  Creating these identically structured methods is exactly what L<make_manager_methods()|/make_manager_methods> automates for you.  
+
+But sometimes you want to customize these methods, in which case the "longhand" technique above becomes essential.  For example, imagine that we want to extend the code in the L<synopsis|/SYNOPSIS>, adding support for a C<with_categories> parameter to the C<get_products()> method.  
+
+  Product::Manager->get_products(date_created    => '10/21/2001', 
+                                 with_categories => 1);
+
+  ...
+
+  sub get_products
+  {
+    my($class, %args) @_;
+
+    if(delete $args{'with_categories'}) # boolean flag
+    {
+      push(@{$args{'with_objects'}}, 'category');
+    }
+
+    Rose::DB::Object::Manager->get_objects(
+      %args, object_class => 'Product')
+  }
+
+Here we've coerced the caller-friendly C<with_categories> boolean flag parameter into the C<with_objects =E<gt> [ 'category' ]> pair that L<Rose::DB::Object::Manager>'s L<get_objects()|/get_objects> method can understand.
+
+This is the typical evolution of an object manager method.  It starts out as being auto-generated by L<make_manager_methods()|/make_manager_methods>, then becomes customized as new arguments are added.
 
 =back
 

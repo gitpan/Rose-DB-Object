@@ -47,5 +47,6 @@ t/db-object-std.t
 t/db-object.t
 t/makemethods-db.t
 t/makemethods.t
+t/pod.t
 t/test-lib.pl
 META.yml                                 Module meta-data (added by MakeMaker)

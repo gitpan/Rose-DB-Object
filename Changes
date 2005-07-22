@@ -76,3 +76,8 @@
 0.051 (06.22.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Added abstracted offset parameter to object manager.
+
+0.052 (07.22.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added make_manager_methods() to Rose::DB::Object::Manager.
+    * Corrected Rose::DB::Object::Manager POD.

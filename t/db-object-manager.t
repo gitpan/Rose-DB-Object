@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 167;
+use Test::More tests => 171;
 
 BEGIN 
 {
@@ -19,7 +19,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 {
-  skip("Postgres tests", 53)  unless($HAVE_PG);
+  skip("Postgres tests", 54)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -39,8 +39,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   ok($o->save, "object save() 1 - $db_type");
 
   my $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyPgObject',
+    MyPgObject->get_objectz(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
@@ -87,8 +86,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   ok($o4->save, "object save() 4 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyPgObject',
+    MyPgObjectManager->get_objectz(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
@@ -117,8 +115,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   is($objs->[1]->id, 2, "get_objects() 6 - $db_type");
 
   my $count =
-    Rose::DB::Object::Manager->get_objects_count(
-      object_class => 'MyPgObject',
+    MyPgObjectManager->get_object_count(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
@@ -143,8 +140,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   is($count, 2, "get_objects_count() 1 - $db_type");
 
   my $iterator = 
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyPgObject',
+    MyPgObjectManager->get_objectz_iterator(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
@@ -217,8 +213,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
      "foreign object 1 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyPgObject',
+    MyPgObjectManager->get_objectz(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
@@ -232,8 +227,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
 
   $iterator =
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyPgObject',
+    MyPgObjectManager->get_objectz_iterator(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
@@ -293,8 +287,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   is(scalar @$objs, 1, "get_objects() 8 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyPgObject',
+    MyPgObjectManager->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -328,7 +321,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   }
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
+    MyPgObjectManager->get_objectz(
       object_class => 'MyPgObject',
       sort_by      => 'id DESC',
       limit        => 2,
@@ -339,7 +332,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
      "get_objects() with offset - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
+    MyPgObjectManager->get_objectz(
       object_class => 'MyPgObject',
       sort_by      => 'id DESC',
       with_objects => [ 'other_obj' ],
@@ -351,7 +344,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
      "get_objects() with objects and offset - $db_type");
 
   $iterator = 
-    Rose::DB::Object::Manager->get_objects_iterator(
+    MyPgObjectManager->get_objectz_iterator(
       object_class => 'MyPgObject',
       sort_by      => 'id DESC',
       limit        => 2,
@@ -368,7 +361,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   eval
   {
     $objs = 
-      Rose::DB::Object::Manager->get_objects(
+      MyPgObjectManager->get_objectz(
         object_class => 'MyPgObject',
         sort_by      => 'id DESC',
         offset       => 8)
@@ -379,7 +372,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   eval
   {
     $iterator = 
-      Rose::DB::Object::Manager->get_objects_iterator(
+      MyPgObjectManager->get_objectz_iterator(
         object_class => 'MyPgObject',
         sort_by      => 'id DESC',
         offset       => 8);
@@ -394,7 +387,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 53)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 55)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -414,8 +407,7 @@ SKIP: foreach my $db_type ('mysql')
   ok($o->save, "object save() 1 - $db_type");
 
   my $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyMySQLObject',
+    MyMySQLObject->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -459,8 +451,7 @@ SKIP: foreach my $db_type ('mysql')
   ok($o4->save, "object save() 4 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyMySQLObject',
+    MyMySQLObjectManager->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -487,8 +478,7 @@ SKIP: foreach my $db_type ('mysql')
   is($objs->[1]->id, 2, "get_objects() 6 - $db_type");
 
   my $count =
-    Rose::DB::Object::Manager->get_objects_count(
-      object_class => 'MyMySQLObject',
+    MyMySQLObject->get_objectz_count(
       share_db     => 1,
       query        =>
       [
@@ -511,8 +501,7 @@ SKIP: foreach my $db_type ('mysql')
   is($count, 2, "get_objects_count() 1 - $db_type");
 
   my $iterator = 
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyMySQLObject',
+    MyMySQLObjectManager->get_objectz_iterator(
       share_db     => 1,
       query        =>
       [
@@ -583,7 +572,7 @@ SKIP: foreach my $db_type ('mysql')
      "foreign object 1 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
+    MyMySQLObject->get_objectz(
       object_class => 'MyMySQLObject',
       share_db     => 1,
       query        =>
@@ -597,8 +586,7 @@ SKIP: foreach my $db_type ('mysql')
   is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
 
   $iterator =
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyMySQLObject',
+    MyMySQLObjectManager->get_objectz_iterator(
       share_db     => 1,
       query        =>
       [
@@ -613,8 +601,7 @@ SKIP: foreach my $db_type ('mysql')
   is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyMySQLObject',
+    MyMySQLObjectManager->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -657,8 +644,7 @@ SKIP: foreach my $db_type ('mysql')
   is(scalar @$objs, 1, "get_objects() 8 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyMySQLObject',
+    MyMySQLObject->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -692,8 +678,7 @@ SKIP: foreach my $db_type ('mysql')
   }
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyMySQLObject',
+    MyMySQLObjectManager->get_objectz(
       sort_by      => 'id DESC',
       limit        => 2,
       offset       => 8);
@@ -703,8 +688,7 @@ SKIP: foreach my $db_type ('mysql')
      "get_objects() with offset - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyMySQLObject',
+    MyMySQLObject->get_objectz(
       sort_by      => 'id DESC',
       with_objects => [ 'other_obj' ],
       limit        => 2,
@@ -715,8 +699,7 @@ SKIP: foreach my $db_type ('mysql')
      "get_objects() with objects and offset - $db_type");
 
   $iterator = 
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyMySQLObject',
+    MyMySQLObject->get_objectz_iterator(
       sort_by      => 'id DESC',
       limit        => 2,
       offset       => 8);
@@ -758,7 +741,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 59)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 60)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -780,8 +763,7 @@ SKIP: foreach my $db_type (qw(informix))
   #local $Rose::DB::Object::Manager::Debug = 1;
 
   my $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyInformixObject',
+    MyInformixObject->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -829,8 +811,7 @@ SKIP: foreach my $db_type (qw(informix))
   ok($o4->save, "object save() 4 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyInformixObject',
+    MyInformixObjectManager->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -858,8 +839,7 @@ SKIP: foreach my $db_type (qw(informix))
   is($objs->[1]->id, 2, "get_objects() 6 - $db_type");
 
   my $count =
-    Rose::DB::Object::Manager->get_objects_count(
-      object_class => 'MyInformixObject',
+    MyInformixObject->get_objectz_count(
       share_db     => 1,
       query        =>
       [
@@ -885,8 +865,7 @@ SKIP: foreach my $db_type (qw(informix))
   my $save_o = $o;
 
   my $iterator = 
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyInformixObject',
+    MyInformixObjectManager->get_objectz_iterator(
       share_db     => 1,
       query        =>
       [
@@ -922,8 +901,7 @@ SKIP: foreach my $db_type (qw(informix))
   is($iterator->total, 2, "iterator total() - $db_type");
 
   $iterator = 
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyInformixObject',
+    MyInformixObject->get_objectz_iterator(
       share_db     => 1,
       skip_first   => 1,
       query        =>
@@ -990,8 +968,7 @@ SKIP: foreach my $db_type (qw(informix))
      "foreign object 1 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyInformixObject',
+    MyInformixObjectManager->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -1004,8 +981,7 @@ SKIP: foreach my $db_type (qw(informix))
   is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
 
   $iterator =
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyInformixObject',
+    MyInformixObject->get_objectz_iterator(
       share_db     => 1,
       query        =>
       [
@@ -1020,8 +996,7 @@ SKIP: foreach my $db_type (qw(informix))
   is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyInformixObject',
+    MyInformixObjectManager->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -1073,8 +1048,7 @@ SKIP: foreach my $db_type (qw(informix))
   is(scalar @$objs, 1, "get_objects() 8 - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyInformixObject',
+    MyInformixObject->get_objectz(
       share_db     => 1,
       query        =>
       [
@@ -1099,8 +1073,7 @@ SKIP: foreach my $db_type (qw(informix))
   #local $Rose::DB::Object::Manager::Debug = 1;
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyInformixObject',
+    MyInformixObjectManager->get_objectz(
       share_db     => 1,
       queryis_sql  => 1,
       query        =>
@@ -1131,8 +1104,7 @@ SKIP: foreach my $db_type (qw(informix))
   }
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyInformixObject',
+    MyInformixObject->get_objectz(
       sort_by      => 'id DESC',
       limit        => 2,
       offset       => 8);
@@ -1142,8 +1114,7 @@ SKIP: foreach my $db_type (qw(informix))
      "get_objects() with offset - $db_type");
 
   $objs = 
-    Rose::DB::Object::Manager->get_objects(
-      object_class => 'MyInformixObject',
+    MyInformixObjectManager->get_objectz(
       sort_by      => 'id DESC',
       with_objects => [ 'other_obj' ],
       limit        => 2,
@@ -1154,8 +1125,7 @@ SKIP: foreach my $db_type (qw(informix))
      "get_objects() with objects and offset - $db_type");
 
   $iterator = 
-    Rose::DB::Object::Manager->get_objects_iterator(
-      object_class => 'MyInformixObject',
+    MyInformixObject->get_objectz_iterator(
       sort_by      => 'id DESC',
       limit        => 2,
       offset       => 8);
@@ -1171,7 +1141,7 @@ SKIP: foreach my $db_type (qw(informix))
   eval
   {
     $objs = 
-      Rose::DB::Object::Manager->get_objects(
+      MyInformixObjectManager->get_objectz(
         object_class => 'MyInformixObject',
         sort_by      => 'id DESC',
         offset       => 8)
@@ -1182,7 +1152,7 @@ SKIP: foreach my $db_type (qw(informix))
   eval
   {
     $iterator = 
-      Rose::DB::Object::Manager->get_objects_iterator(
+      MyInformixObject->get_objectz_iterator(
         object_class => 'MyInformixObject',
         sort_by      => 'id DESC',
         offset       => 8);
@@ -1328,10 +1298,25 @@ EOF
     MyPgObject->meta->alias_column(fk1 => 'fkone');
 
     eval { MyPgObject->meta->initialize };
-    Test::More::ok($@, 'meta->initialize() reserved method');
+    Test::More::ok($@, 'meta->initialize() reserved method - pg');
 
     MyPgObject->meta->alias_column(save => 'save_col');
     MyPgObject->meta->initialize(preserve_existing_methods => 1);
+
+    Rose::DB::Object::Manager->make_manager_methods(base_name => 'objectz');
+
+    eval { Rose::DB::Object::Manager->make_manager_methods('objectz') };
+    Test::More::ok($@, 'make_manager_methods clash - pg');
+
+    package MyPgObjectManager;
+    our @ISA = qw(Rose::DB::Object::Manager);
+
+    MyPgObjectManager->make_manager_methods(object_class => 'MyPgObject',
+                                            methods =>
+                                            {
+                                              objectz => [ qw(objects iterator) ],
+                                              object  => 'count'
+                                            });
   }
 
   #
@@ -1453,10 +1438,30 @@ EOF
     MyMySQLObject->meta->alias_column(fk1 => 'fkone');
 
     eval { MyMySQLObject->meta->initialize };
-    Test::More::ok($@, 'meta->initialize() reserved method');
+    Test::More::ok($@, 'meta->initialize() reserved method - mysql');
 
     MyMySQLObject->meta->alias_column(save => 'save_col');
     MyMySQLObject->meta->initialize(preserve_existing_methods => 1);
+
+    Rose::DB::Object::Manager->make_manager_methods('objectz');
+
+    eval { Rose::DB::Object::Manager->make_manager_methods('objectz') };
+    Test::More::ok($@, 'make_manager_methods clash - mysql');
+
+    package MyMySQLObjectManager;
+    our @ISA = qw(Rose::DB::Object::Manager);
+  
+    sub object_class { 'MyMySQLObject' }
+    Rose::DB::Object::Manager->make_manager_methods('objectz');
+
+    eval
+    {
+      Rose::DB::Object::Manager->make_manager_methods(object_class => 'MyMySQLObject',
+                                                      base_name    => 'objectz',
+                                                      methods      => {})
+    };
+
+    Test::More::ok($@ =~ /not both/, 'make_manager_methods params clash - mysql');
   }
 
   #
@@ -1580,10 +1585,21 @@ EOF
     MyInformixObject->meta->alias_column(fk1 => 'fkone');
 
     eval { MyInformixObject->meta->initialize };
-    Test::More::ok($@, 'meta->initialize() reserved method');
+    Test::More::ok($@, 'meta->initialize() reserved method - informix');
 
     MyInformixObject->meta->alias_column(save => 'save_col');
     MyInformixObject->meta->initialize(preserve_existing_methods => 1);
+
+    Rose::DB::Object::Manager->make_manager_methods('objectz');
+
+    eval { Rose::DB::Object::Manager->make_manager_methods('objectz') };
+    Test::More::ok($@, 'make_manager_methods clash - informix');
+
+    package MyInformixObjectManager;
+    our @ISA = qw(Rose::DB::Object::Manager);
+  
+    Rose::DB::Object::Manager->make_manager_methods(object_class => 'MyInformixObject',
+                                                    base_name    => 'objectz');
   }
 }
 
