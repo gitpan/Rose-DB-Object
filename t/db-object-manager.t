@@ -115,7 +115,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   is($objs->[1]->id, 2, "get_objects() 6 - $db_type");
 
   my $count =
-    MyPgObjectManager->get_object_count(
+    MyPgObjectManager->object_count(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
@@ -1179,12 +1179,15 @@ BEGIN
   {
     our $HAVE_PG = 1;
 
+    Rose::DB->default_type('pg');
+
     # Drop existing table and create schema, ignoring errors
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test');
       $dbh->do('DROP TABLE rose_db_object_other');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     }
 
     eval
@@ -1192,7 +1195,7 @@ BEGIN
       local $dbh->{'RaiseError'} = 1;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
-      $dbh->do('DROP TABLE rose_db_object_chkpass_test;');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
 
     our $PG_HAS_CHKPASS = 1  unless($@);
@@ -1301,7 +1304,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() reserved method - pg');
 
     MyPgObject->meta->alias_column(save => 'save_col');
-    MyPgObject->meta->initialize(preserve_existing_methods => 1);
+    MyPgObject->meta->initialize(preserve_existing => 1);
 
     Rose::DB::Object::Manager->make_manager_methods(base_name => 'objectz');
 
@@ -1315,7 +1318,7 @@ EOF
                                             methods =>
                                             {
                                               objectz => [ qw(objects iterator) ],
-                                              object  => 'count'
+                                              'object_count()' => 'count'
                                             });
   }
 
@@ -1332,6 +1335,8 @@ EOF
   if(!$@ && $dbh)
   {
     our $HAVE_MYSQL = 1;
+
+    Rose::DB->default_type('mysql');
 
     # Drop existing table and create schema, ignoring errors
     {
@@ -1441,7 +1446,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() reserved method - mysql');
 
     MyMySQLObject->meta->alias_column(save => 'save_col');
-    MyMySQLObject->meta->initialize(preserve_existing_methods => 1);
+    MyMySQLObject->meta->initialize(preserve_existing => 1);
 
     Rose::DB::Object::Manager->make_manager_methods('objectz');
 
@@ -1477,6 +1482,8 @@ EOF
   if(!$@ && $dbh)
   {
     our $HAVE_INFORMIX = 1;
+
+    Rose::DB->default_type('informix');
 
     # Drop existing table and create schema, ignoring errors
     {
@@ -1588,7 +1595,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() reserved method - informix');
 
     MyInformixObject->meta->alias_column(save => 'save_col');
-    MyInformixObject->meta->initialize(preserve_existing_methods => 1);
+    MyInformixObject->meta->initialize(preserve_existing => 1);
 
     Rose::DB::Object::Manager->make_manager_methods('objectz');
 

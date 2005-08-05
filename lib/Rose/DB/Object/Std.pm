@@ -11,7 +11,7 @@ our @ISA = qw(Rose::DB::Object);
 
 use Rose::DB::Object::Constants qw(META_ATTR_NAME);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 our $Debug = 0;
 
@@ -19,15 +19,7 @@ our $Debug = 0;
 # Class methods
 #
 
-sub meta
-{  
-  if(ref $_[0])
-  {
-    return $_[0]->{META_ATTR_NAME()} ||= Rose::DB::Object::Std::Metadata->for_class(ref $_[0]);
-  }
-
-  return Rose::DB::Object::Std::Metadata->for_class($_[0]);
-}
+sub meta_class { 'Rose::DB::Object::Std::Metadata' }
 
 #
 # Object methods

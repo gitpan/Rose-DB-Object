@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 252;
+use Test::More tests => 264;
   
 BEGIN 
 {
@@ -18,9 +18,15 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 128)  unless($HAVE_PG);
+  skip("Postgres tests", 132)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
+
+  TEST_HACK:
+  {
+    no warnings;
+    *MyPgObject::init_db = sub { Rose::DB->new($db_type) };
+  }
 
   my $o = MyPgObject->new(name => 'John', 
                           k1   => 1,
@@ -110,7 +116,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyPgObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->load, "load() 4 - $db_type");
@@ -212,7 +218,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 61)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 65)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -301,7 +307,7 @@ SKIP: foreach my $db_type ('mysql')
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyMySQLObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   $o->nums([ 4, 5, 6 ]);
@@ -378,7 +384,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 62)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 66)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -470,7 +476,7 @@ SKIP: foreach my $db_type ('informix')
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyInformixObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   $o->nums([ 4, 5, 6 ]);
@@ -572,6 +578,7 @@ BEGIN
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test');
       $dbh->do('DROP TABLE rose_db_object_private.rose_db_object_test');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
       $dbh->do('CREATE SCHEMA rose_db_object_private');
     }
 
@@ -580,7 +587,7 @@ BEGIN
       local $dbh->{'RaiseError'} = 1;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
-      $dbh->do('DROP TABLE rose_db_object_chkpass_test;');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
   
     our $PG_HAS_CHKPASS = 1  unless($@);
@@ -641,8 +648,10 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('pg') }
+
     MyPgObject->meta->table('rose_db_object_test');
-      
+
     MyPgObject->meta->columns
     (
       name     => { type => 'varchar', length => 32 },
@@ -664,6 +673,7 @@ EOF
     );
 
     MyPgObject->meta->add_unique_key('save');
+
     MyPgObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
     MyPgObject->meta->add_columns(
@@ -678,7 +688,13 @@ EOF
     eval { MyPgObject->meta->initialize };
     Test::More::ok($@, 'meta->initialize() no override');
 
-    MyPgObject->meta->initialize(preserve_existing_methods => 1);
+    MyPgObject->meta->initialize(preserve_existing => 1);
+    
+    Test::More::is(MyPgObject->meta->column('id')->is_primary_key_member, 1, 'is_primary_key_member - pg');
+    Test::More::is(MyPgObject->meta->column('id')->primary_key_position, 1, 'primary_key_position 1 - pg');
+    Test::More::ok(!defined MyPgObject->meta->column('k1')->primary_key_position, 'primary_key_position 2 - pg');
+    MyPgObject->meta->column('k1')->primary_key_position(7);
+    Test::More::ok(!defined MyPgObject->meta->column('k1')->primary_key_position, 'primary_key_position 3 - pg');
   }
 
   #
@@ -700,6 +716,7 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test');
+      $dbh->do('DROP TABLE rose_db_object_test2');
     }
 
     $dbh->do(<<"EOF");
@@ -744,6 +761,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('mysql') }
+
     MyMySQLObject->meta->table('rose_db_object_test');
 
     MyMySQLObject->meta->columns
@@ -776,12 +795,21 @@ EOF
     MyMySQLObject->meta->add_unique_key('save');
     MyMySQLObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
-    MyMySQLObject->meta->initialize(preserve_existing_methods => 1);
+    MyMySQLObject->meta->initialize(preserve_existing => 1);
+
+    Test::More::is(MyMySQLObject->meta->column('id')->is_primary_key_member, 1, 'is_primary_key_member - mysql');
+    Test::More::is(MyMySQLObject->meta->column('id')->primary_key_position, 1, 'primary_key_position 1 - mysql');
+    Test::More::ok(!defined MyMySQLObject->meta->column('k1')->primary_key_position, 'primary_key_position 2 - mysql');
+    MyMySQLObject->meta->column('k1')->primary_key_position(7);
+    Test::More::ok(!defined MyMySQLObject->meta->column('k1')->primary_key_position, 'primary_key_position 3 - mysql');
 
     package MyMPKMySQLObject;
     
     use Rose::DB::Object;
+
     our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('mysql') }
   
     MyMPKMySQLObject->meta->table('rose_db_object_test2');
   
@@ -795,7 +823,7 @@ EOF
     MyMPKMySQLObject->meta->primary_key_columns('k1', 'k2');
   
     MyMPKMySQLObject->meta->initialize;
-    
+
     my $i = 1;
 
     MyMPKMySQLObject->meta->primary_key_generator(sub
@@ -860,6 +888,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('informix') }
+
     MyInformixObject->meta->table('rose_db_object_test');
 
     MyInformixObject->meta->columns
@@ -879,7 +909,7 @@ EOF
       bits     => { type => 'bitfield', bits => 5, default => 101 },
       names    => { type => 'set' },
       last_modified => { type => 'timestamp' },
-      date_created  => { type => 'timestamp' },
+      date_created  => { type => 'datetime year to fraction(5)' },
     );
 
     eval { MyInformixObject->meta->initialize };
@@ -895,7 +925,13 @@ EOF
     MyInformixObject->meta->add_unique_key('save');
     MyInformixObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
-    MyInformixObject->meta->initialize(preserve_existing_methods => 1);
+    MyInformixObject->meta->initialize(preserve_existing => 1);
+
+    Test::More::is(MyInformixObject->meta->column('id')->is_primary_key_member, 1, 'is_primary_key_member - informix');
+    Test::More::is(MyInformixObject->meta->column('id')->primary_key_position, 1, 'primary_key_position 1 - informix');
+    Test::More::ok(!defined MyInformixObject->meta->column('k1')->primary_key_position, 'primary_key_position 2 - informix');
+    MyInformixObject->meta->column('k1')->primary_key_position(7);
+    Test::More::ok(!defined MyInformixObject->meta->column('k1')->primary_key_position, 'primary_key_position 3 - informix');
   }
 }
 
@@ -911,7 +947,7 @@ END
 
     $dbh->do('DROP TABLE rose_db_object_test');
     $dbh->do('DROP TABLE rose_db_object_private.rose_db_object_test');
-    $dbh->do('DROP SCHEMA rose_db_object_private');
+    $dbh->do('DROP SCHEMA rose_db_object_private CASCADE');
 
     $dbh->disconnect;
   }

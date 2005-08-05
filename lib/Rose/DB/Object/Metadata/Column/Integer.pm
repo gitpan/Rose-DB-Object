@@ -5,9 +5,14 @@ use strict;
 use Rose::DB::Object::Metadata::Column::Scalar;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub type { 'integer' }
+
+sub perl_column_defintion_attributes
+{
+  grep { $_ ne 'length' } shift->SUPER::perl_column_defintion_attributes;
+}
 
 1;
 

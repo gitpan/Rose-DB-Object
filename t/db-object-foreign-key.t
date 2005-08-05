@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 128;
+use Test::More tests => 129;
   
 BEGIN 
 {
@@ -18,7 +18,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type ('pg')
 {
-  skip("Postgres tests", 53)  unless($HAVE_PG);
+  skip("Postgres tests", 54)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -76,7 +76,7 @@ SKIP: foreach my $db_type ('pg')
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyPgObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->load, "load() 4 - $db_type");
@@ -151,6 +151,7 @@ SKIP: foreach my $db_type ('pg')
 
   is(ref $obj, 'MyPgOtherObject', 'other_obj() 2');
   is($obj->name, 'one', 'other_obj() 3');
+  is($obj->db, $o->db, 'share_db (default true)');
 
   $o->other_obj(undef);
   $o->fkone(11);
@@ -232,7 +233,7 @@ SKIP: foreach my $db_type ('mysql')
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyMySQLObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->delete, "delete() - $db_type");
@@ -305,7 +306,7 @@ SKIP: foreach my $db_type ('informix')
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyInformixObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->load, "load() 4 - $db_type");
@@ -370,7 +371,7 @@ BEGIN
   #
 
   my $dbh;
-  
+
   eval 
   {
     $dbh = Rose::DB->new('pg_admin')->retain_dbh()
@@ -387,6 +388,7 @@ BEGIN
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test');
       $dbh->do('DROP TABLE rose_db_object_other');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     }
 
     eval
@@ -394,7 +396,7 @@ BEGIN
       local $dbh->{'RaiseError'} = 1;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
-      $dbh->do('DROP TABLE rose_db_object_chkpass_test;');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
   
     our $PG_HAS_CHKPASS = 1  unless($@);
@@ -416,6 +418,8 @@ EOF
     package MyPgOtherObject;
 
     our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('pg') }
 
     MyPgOtherObject->meta->table('rose_db_object_other');
       
@@ -462,6 +466,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('pg') }
+
     MyPgObject->meta->table('rose_db_object_test');
       
     MyPgObject->meta->columns
@@ -503,7 +509,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() reserved method');
 
     MyPgObject->meta->alias_column(save => 'save_col');
-    MyPgObject->meta->initialize(preserve_existing_methods => 1);
+    MyPgObject->meta->initialize(preserve_existing => 1);
   }
 
   #
@@ -546,6 +552,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('mysql') }
+
     MyMySQLOtherObject->meta->table('rose_db_object_other');
       
     MyMySQLOtherObject->meta->columns
@@ -584,6 +592,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('mysql') }
+
     MyMySQLObject->meta->table('rose_db_object_test');
 
     MyMySQLObject->meta->columns
@@ -618,7 +628,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() reserved method');
 
     MyMySQLObject->meta->alias_column(save => 'save_col');
-    MyMySQLObject->meta->initialize(preserve_existing_methods => 1);
+    MyMySQLObject->meta->initialize(preserve_existing => 1);
   }
 
   #
@@ -660,6 +670,8 @@ EOF
     package MyInformixOtherObject;
 
     our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('informix') }
 
     MyInformixOtherObject->meta->table('rose_db_object_other');
       
@@ -705,6 +717,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('informix') }
+
     MyInformixObject->meta->table('rose_db_object_test');
       
     MyInformixObject->meta->columns
@@ -745,7 +759,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() reserved method');
 
     MyInformixObject->meta->alias_column(save => 'save_col');
-    MyInformixObject->meta->initialize(preserve_existing_methods => 1);
+    MyInformixObject->meta->initialize(preserve_existing => 1);
   }
 }
 

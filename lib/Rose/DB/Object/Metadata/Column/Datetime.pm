@@ -7,7 +7,18 @@ use Rose::DB::Object::MakeMethods::Date;
 use Rose::DB::Object::Metadata::Column::Date;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Date);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
+
+__PACKAGE__->add_method_maker_argument_names
+(
+  qw(time_zone)
+);
+
+Rose::Object::MakeMethods::Generic->make_methods
+(
+  { preserve_existing => 1 },
+  scalar => [ __PACKAGE__->method_maker_argument_names ]
+);
 
 sub type { 'datetime' }
 

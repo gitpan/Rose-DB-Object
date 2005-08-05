@@ -4,12 +4,19 @@ use strict;
 
 use Carp();
 
+use Rose::DB::Object::Metadata::PrimaryKey;
+
 use Rose::DB::Object::Metadata;
 our @ISA = qw(Rose::DB::Object::Metadata);
 
-our $VERSION = '0.012';
+our $VERSION = '0.02';
 
-sub primary_key_columns { wantarray ? 'id' : [ 'id' ] }
+sub init_primary_key
+{
+  Rose::DB::Object::Metadata::PrimaryKey->new(parent => shift, columns => 'id');
+}
+
+sub primary_key_column_names { wantarray ? 'id' : [ 'id' ] }
 
 sub add_primary_key_column
 {

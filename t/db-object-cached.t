@@ -43,6 +43,12 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   Rose::DB->default_type($db_type);
 
+  TEST_HACK:
+  {
+    no warnings;
+    *MyPgObject::init_db = sub { Rose::DB->new($db_type) };
+  }
+
   my $of = MyPgObject->new(name => 'John', id => 99);
 
   ok(ref $of && $of->isa('MyPgObject'), "cached new() 1 - $db_type");
@@ -138,7 +144,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyPgObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->load, "load() 4 - $db_type");
@@ -357,7 +363,7 @@ SKIP: foreach my $db_type ('mysql')
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyMySQLObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->delete, "delete() - $db_type");
@@ -521,7 +527,7 @@ SKIP: foreach my $db_type (qw(informix))
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
   my $o4 = MyInformixObject->new(id => 999);
-  ok(!$o4->load, "load() nonexistent - $db_type");
+  ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->load, "load() 4 - $db_type");
@@ -635,6 +641,7 @@ BEGIN
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test');
       $dbh->do('DROP TABLE rose_db_object_private.rose_db_object_test');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
       $dbh->do('CREATE SCHEMA rose_db_object_private');
     }
 
@@ -643,7 +650,7 @@ BEGIN
       local $dbh->{'RaiseError'} = 1;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
-      $dbh->do('DROP TABLE rose_db_object_chkpass_test;');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
   
     our $PG_HAS_CHKPASS = 1  unless($@);
@@ -696,6 +703,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object::Cached);
 
+    sub init_db { Rose::DB->new('pg') }
+
     MyPgObject->meta->table('rose_db_object_test');
       
     MyPgObject->meta->columns
@@ -720,7 +729,7 @@ EOF
     MyPgObject->meta->add_unique_key('name');
     
     MyPgObject->meta->alias_column(save => 'save_col');
-    MyPgObject->meta->initialize(override_existing_methods => 1);
+    MyPgObject->meta->initialize(replace_existing => 1);
 
     Test::More::ok(MyPgObject->meta->method_name_is_reserved('remember', 'MyPgObject'), 'reserved method: remember');
     Test::More::ok(MyPgObject->meta->method_name_is_reserved('forget', 'MyPgObject'), 'reserved method: forget');
@@ -773,6 +782,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object::Cached);
 
+    sub init_db { Rose::DB->new('mysql') }
+
     MyMySQLObject->meta->table('rose_db_object_test');
 
     MyMySQLObject->meta->columns
@@ -795,7 +806,7 @@ EOF
     MyMySQLObject->meta->add_unique_key('name');
 
     MyMySQLObject->meta->alias_column(save => 'save_col');
-    MyMySQLObject->meta->initialize(preserve_existing_methods => 1);
+    MyMySQLObject->meta->initialize(preserve_existing => 1);
 
     Test::More::ok(MyMySQLObject->meta->method_name_is_reserved('remember', 'MyMySQLObject'), 'reserved method: remember');
     Test::More::ok(MyMySQLObject->meta->method_name_is_reserved('forget', 'MyMySQLObject'), 'reserved method: forget');
@@ -849,6 +860,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object::Cached);
 
+    sub init_db { Rose::DB->new('informix') }
+
     MyInformixObject->meta->table('rose_db_object_test');
 
     MyInformixObject->meta->columns
@@ -872,7 +885,7 @@ EOF
     MyInformixObject->meta->add_unique_key('name');
 
     MyInformixObject->meta->alias_column(save => 'save_col');
-    MyInformixObject->meta->initialize(preserve_existing_methods => 1);
+    MyInformixObject->meta->initialize(preserve_existing => 1);
 
     Test::More::ok(MyInformixObject->meta->method_name_is_reserved('remember', 'MyInformixObject'), 'reserved method: remember');
     Test::More::ok(MyInformixObject->meta->method_name_is_reserved('forget', 'MyInformixObject'), 'reserved method: forget');

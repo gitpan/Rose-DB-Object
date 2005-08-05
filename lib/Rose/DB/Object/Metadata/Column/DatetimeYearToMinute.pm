@@ -5,7 +5,7 @@ use strict;
 use Rose::DB::Object::Metadata::Column::Datetime;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Datetime);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub type { 'datetime year to minute' }
 
@@ -39,7 +39,7 @@ Rose::DB::Object::Metadata::Column::DatetimeYearToMinute - Datetime year to minu
 
 =head1 DESCRIPTION
 
-Objects of this class store and manipulate metadata for "datetime year to minute  columns" in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
+Objects of this class store and manipulate metadata for "datetime year to minute" columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
 This class inherits from L<Rose::DB::Object::Metadata::Datetime>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Datetime> documentation for more information.
 

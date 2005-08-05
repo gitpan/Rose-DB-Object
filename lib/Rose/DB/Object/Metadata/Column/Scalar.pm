@@ -7,7 +7,7 @@ use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.011';
+our $VERSION = '0.02';
 
 __PACKAGE__->add_method_maker_argument_names
 (
@@ -19,6 +19,17 @@ Rose::Object::MakeMethods::Generic->make_methods
   { preserve_existing => 1 },
   scalar => [ __PACKAGE__->method_maker_argument_names ]
 );
+
+sub init_with_dbi_column_info
+{
+  my($self, $col_info) = @_;
+
+  $self->SUPER::init_with_dbi_column_info($col_info);
+
+  $self->length($col_info->{'COLUMN_SIZE'});
+
+  return;
+}
 
 1;
 

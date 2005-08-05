@@ -2,10 +2,12 @@
 
 use strict;
 
-use Test::More tests => 18;
+use Test::More tests => 19;
   
 BEGIN 
 {
+  require 't/test-lib.pl';
+  use_ok('Rose::DB::Object');
   use_ok('Rose::DB::Object::Metadata');
 }
 
@@ -52,7 +54,7 @@ $meta->add_columns('bar', baz => { type => 'bitfield', bits => 10 });
 ok($meta->column('bar'), 'add_columns() 1');
 ok($meta->column('baz'), 'add_columns() 2');
 
-eval { $meta->initialize(preserve_existing_methods => 1) };
+eval { $meta->initialize(preserve_existing => 1) };
 ok($@, 'initialize() reserved method');
 
 is($meta->column_aliases, undef, 'column_aliases() 1');
@@ -60,7 +62,7 @@ my $aliases = $meta->column_aliases;
 is($aliases, undef, 'column_aliases() 3');
 
 $meta->alias_column(save => 'save_col');
-$meta->initialize(preserve_existing_methods => 1);
+$meta->initialize(preserve_existing => 1);
 
 is(join(',', $meta->column_names), 'bar,baz,bits,date_created,flag,flag2,foo,id,last_modified,name,nums,password,save,start,status', 'column_names');
 
@@ -72,3 +74,10 @@ is($aliases->{'save'}, 'save_col', 'column_aliases() 4');
 my $methods = $meta->column_methods;
 
 is(join(',', sort values %$methods), 'bar,baz,bits,date_created,flag,flag2,foo,id,last_modified,name,nums,password,save_col,start,status', 'column_methods()');
+
+BEGIN
+{
+  package MyDBObject;
+  our @ISA = qw(Rose::DB::Object);
+  sub init_db { Rose::DB->new('pg') }
+}

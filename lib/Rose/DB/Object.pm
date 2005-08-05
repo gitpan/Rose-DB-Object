@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.052';
+our $VERSION = '0.06';
 
 our $Debug = 0;
 
@@ -37,14 +37,16 @@ use Rose::Object::MakeMethods::Generic
 # Class methods
 #
 
+sub meta_class { 'Rose::DB::Object::Metadata' }
+
 sub meta
 {  
   if(ref $_[0])
   {
-    return $_[0]->{META_ATTR_NAME()} ||= Rose::DB::Object::Metadata->for_class(ref $_[0]);
+    return $_[0]->{META_ATTR_NAME()} ||= $_[0]->meta_class->for_class(ref $_[0]);
   }
 
-  return Rose::DB::Object::Metadata->for_class($_[0]);
+  return $_[0]->meta_class->for_class($_[0]);
 }
 
 #
@@ -60,7 +62,7 @@ sub db
     $self->{FLAG_DB_IS_PRIVATE()} = 0;
     $self->{'db'}  = shift;
     $self->{'dbh'} = undef;
-    $self->meta->schema($self->{'db'}->schema);
+    $self->meta->init_with_db($self->{'db'});
 
     return $self->{'db'};
   }
@@ -79,7 +81,7 @@ sub _init_db
   if($db->init_db_info)
   {
     $self->{FLAG_DB_IS_PRIVATE()} = 1;
-    $self->meta->schema($db->schema);
+    $self->meta->init_with_db($db);
     return $db;
   }
 
@@ -120,7 +122,7 @@ sub load
 
   my $meta = $self->meta;
 
-  my @key_columns = $meta->primary_key_columns;
+  my @key_columns = $meta->primary_key_column_names;
   my @key_methods = map { $meta->column_method($_) } @key_columns;
   my @key_values  = grep { defined } map { $self->$_() } @key_methods;
   my $null_key  = 0;
@@ -128,7 +130,7 @@ sub load
 
   unless(@key_values == @key_columns)
   {
-    foreach my $cols ($meta->unique_keys)
+    foreach my $cols ($meta->unique_keys_column_names)
     {
       my $defined = 0;
       @key_columns = @$cols;
@@ -146,7 +148,7 @@ sub load
 
     unless($found_key)
     {
-      @key_columns = $meta->primary_key_columns;
+      @key_columns = $meta->primary_key_column_names;
 
       $self->error("Cannot load " . ref($self) . " without a primary key (" .
                    join(', ', @key_columns) . ') with ' .
@@ -236,7 +238,11 @@ sub load
 
   unless($rows > 0)
   {
-    $self->meta->handle_error($self);
+    unless($args{'speculative'})
+    {
+      $self->meta->handle_error($self);
+    }
+
     return 0;
   }
 
@@ -265,7 +271,7 @@ sub update
 
   my $meta = $self->meta;
 
-  my @key_columns = $meta->primary_key_columns;
+  my @key_columns = $meta->primary_key_column_names;
   my @key_methods = map { $meta->column_method($_) } @key_columns;
   my @key_values  = grep { defined } map { $self->$_() } @key_columns;
 
@@ -279,7 +285,7 @@ sub update
     # always has to be non-null, and any update will use the 
     # primary key instead of a unique key.  But I'll leave the
     # code here (commented out) just in case.
-    #foreach my $cols ($meta->unique_keys)
+    #foreach my $cols ($meta->unique_keys_column_names)
     #{
     #  my $defined = 0;
     #  @key_columns = @$cols;
@@ -297,7 +303,7 @@ sub update
     #
     #unless($found_key)
     #{
-    #  @key_columns = $meta->primary_key_columns;
+    #  @key_columns = $meta->primary_key_column_names;
     #
     #  $self->error("Cannot update " . ref($self) . " without a primary key (" .
     #               join(', ', @key_columns) . ') with ' .
@@ -431,7 +437,7 @@ sub insert
 
   my $meta = $self->meta;
 
-  my @pk_columns = map { $meta->column_method($_) } $meta->primary_key_columns;
+  my @pk_columns = map { $meta->column_method($_) } $meta->primary_key_column_names;
   my @pk_values  = grep { defined } map { $self->$_() } @pk_columns;
 
   #my $ret = $db->begin_work;
@@ -586,7 +592,7 @@ sub delete
 
   my $meta = $self->meta;
 
-  my @pk_columns = map { $meta->column_method($_) } $meta->primary_key_columns;
+  my @pk_columns = map { $meta->column_method($_) } $meta->primary_key_column_names;
   my @pk_values  = grep { defined } map { $self->$_() } @pk_columns;
 
   unless(@pk_values == @pk_columns)
@@ -658,6 +664,41 @@ Rose::DB::Object - Object representation of a single row in a database table.
 
 =head1 SYNOPSIS
 
+  ## Step 0: Set up your Rose::DB data sources, otherwise you
+  ## won't be able to connect to the database at all!
+
+  ##
+  ## Create classes - two possible approaches:
+  ##
+
+  #
+  # 1. Automatic configuration
+  #
+
+  package Category;
+
+  use Rose::DB::Object;
+  our @ISA = qw(Rose::DB::Object);
+
+  __PACKAGE__->meta->table('categories');
+
+  __PACKAGE__->meta->auto_initialize;
+
+  ...
+
+  package Product;
+
+  use Rose::DB::Object;
+  our @ISA = qw(Rose::DB::Object);
+
+  __PACKAGE__->meta->table('products');
+
+  __PACKAGE__->meta->auto_initialize;
+
+  #
+  # 2. Manual configuration
+  #
+
   package Category;
 
   use Rose::DB::Object;
@@ -724,6 +765,10 @@ Rose::DB::Object - Object representation of a single row in a database table.
 
   ...
 
+  #
+  # Example usage
+  #
+
   $product = Product->new(id          => 123,
                           name        => 'GameCube',
                           status      => 'active',
@@ -731,44 +776,52 @@ Rose::DB::Object - Object representation of a single row in a database table.
                           end_date    => '12/1/2007',
                           category_id => 5);
 
-  $product->save or die $product->error;
+  $product->save;
 
   ...
 
   $product = Product->new(id => 123);
-  $product->load or die $product->error;
+  $product->load;
 
   print $product->category->name;
 
   $product->end_date->add(days => 45);
 
-  $product->save or die $product->error;
+  $product->save;
 
   ...
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object> is a base class for objects that encapsulate a single row in a database table.  C<Rose::DB::Object>-derived objects are sometimes simply called "C<Rose::DB::Object> objects" in this documentation for the sake of brevity, but be assured that derivation is the only reasonable way to use this class.
+L<Rose::DB::Object> is a base class for objects that encapsulate a single row in a database table.  L<Rose::DB::Object>-derived objects are sometimes simply called "L<Rose::DB::Object> objects" in this documentation for the sake of brevity, but be assured that derivation is the only reasonable way to use this class.
 
-C<Rose::DB::Object> objects can represent rows in almost any database table, subject to the following constraints.
+L<Rose::DB::Object> inherits from, and follows the conventions of, L<Rose::Object>.  See the L<Rose::Object> documentation for more information.
+
+=head2 Restrictions
+
+L<Rose::DB::Object> objects can represent rows in almost any database table, subject to the following constraints.
 
 =over 4
 
 =item * The database server must be supported by L<Rose::DB>.
 
-=item * The database table must have a primary key, and that key must not allow null values in any of its columns.
+=item * The database table must have a primary key.
+
+=item * The primary key must not allow null values in any of its columns.
 
 =back
 
 Although the list above contains the only hard and fast rules, there may be other realities that you'll need to work around.
 
-The most common example is the existence of a column name in the database table that conflicts with the name of a method in the C<Rose::DB::Object> API.  The work-around is to alias the column.  See the C<alias_column()> method in the L<Rose::DB::Object::Metadata> documentation for more details.
+The most common example is the existence of a column name in the database table that conflicts with the name of a method in the L<Rose::DB::Object> API.  There are two possible work-arounds: either explicitly alias the column, or define a L<mapping function|Rose::DB::Object::Metadata/column_name_to_method_name_mapper>.  See the L<alias_column|Rose::DB::Object::Metadata/alias_column> and L<column_name_to_method_name_mapper|Rose::DB::Object::Metadata/column_name_to_method_name_mapper> methods in the L<Rose::DB::Object::Metadata> documentation for more details.
 
-There are also varying degrees of support for data types in each database server supported by L<Rose::DB>.  If you have a table that uses a data type not supported by an existing L<Rose::DB::Object::Metadata::Column>-derived class, you will have to write your own column class and then map it to a type name using L<Rose::DB::Object::Metadata>'s C<column_type_class()> method, yada yada.  
+There are also varying degrees of support for data types in each database server supported by L<Rose::DB>.  If you have a table that uses a data type not supported by an existing L<Rose::DB::Object::Metadata::Column>-derived class, you will have to write your own column class and then map it to a type name using L<Rose::DB::Object::Metadata>'s L<column_type_class|Rose::DB::Object::Metadata/column_type_class> method, yada yada.  (Or, of course, you can map the new type to an existing column class.)
 
-The entire framework is meant to be extensible.  I have created simple implementations of the most common column types, but there's certainly mor ethat could be done.  Submissions are welcome.
+The entire framework is extensible.  This module distribution contains straight-forward implementations of the most common column types, but there's certainly more that can be done.  Submissions are welcome.
 
-C<Rose::DB::Object> provides the following functions:
+=head2 Features
+
+L<Rose::DB::Object> provides the following functions:
 
 =over 4
 
@@ -780,16 +833,45 @@ C<Rose::DB::Object> provides the following functions:
 
 =item * Delete a row from the database.
 
+=item * Fetch an object referred to by a foreign key in the current object. (The "has a" relationship.)
+
+=item * Fetch multiple a objects that refer to the current object.  (The "has many" relationship.)
+
 =back
 
-Objects can be loaded based on either a primary key or a unique key.  Since all tables fronted by C<Rose::DB::Object>s must have non-null primary keys, insert, update, and delete operations are done based on the primary key.
+Objects can be loaded based on either a primary key or a unique key.  Since all tables fronted by L<Rose::DB::Object>s must have non-null primary keys, insert, update, and delete operations are done based on the primary key.
 
-This is all very straightforward, but the really handy part is C<Rose::DB::Object>'s ability to parse, coerce, "inflate", and "deflate" column values on your behalf, providing the most convenient possible data representations on the Perl side of the fence, while allowing the programmer to largely forget about the ugly details of the data formats required by the database.
+In addition, its sibling class, L<Rose::DB::Object::Manager>, can do the following:
 
-To define your own C<Rose::DB::Object>-derived class, you must first describe the table that contains the rows you plan to represent.    This is done through the L<Rose::DB::Object::Metadata> object associated with each C<Rose::DB::Object>-dervied class.  (You can see a simple example of this in the L<synopsis|"SYNOPSIS">.)  The metadata object is accessible via C<Rose::DB::Object>'s C<meta()> method.  See the L<Rose::DB::Object::Metadata> documentation for more information.
+=over 4
 
-This class inherits from, and follows the conventions of, L<Rose::Object>.
-See the L<Rose::Object> documentation for more information.
+=item * Fetch multiple objects from the database using arbitrary query conditions, limits, and offsets.
+
+=item * Iterate over a list of objects, fetching from the database in response to each step of the iterator.
+
+=item * Fetch objects along with "foreign objects" (referred to by foreign keys) in a single query by automatically generating the appropriate SQL join(s).
+
+=item * Count the number of objects that match a given query.
+
+=back
+
+L<Rose::DB::Object::Manager> can be subclassed and used separately (the recommended approach), or it can create object manager methods within a L<Rose::DB::Object> subclass.  See the L<Rose::DB::Object::Manager> documentation for more information.
+
+L<Rose::DB::Object> can parse, coerce, inflate, and deflate column values on your behalf, providing the most convenient possible data representations on the Perl side of the fence, while allowing the programmer to completely forget about the ugly details of the data formats required by the database.  Default implementations are included for most common column types, and the framework is completely extensible.
+
+=head2 Configuration
+
+Before L<Rose::DB::Object> can do any useful work, you must register at least one L<Rose::DB> data source.  By default, L<Rose::DB::Object> instantiates a L<Rose::DB> object by passing no arguments to its constructor.  (See the L<db> method.)  If you register a L<Rose::DB> data source using the default type and domain, this will work fine.  Otherwise, you must override the L<init_db> method in your L<Rose::DB::Object> subclass and have it return the appropriate L<Rose::DB>-derived object.
+
+To define your own L<Rose::DB::Object>-derived class, you must describe the table that your class will act as a front-end for.    This is done through the L<Rose::DB::Object::Metadata> object associated with each L<Rose::DB::Object>-dervied class.  The metadata object is accessible via L<Rose::DB::Object>'s L<meta> method.
+
+Metadata objects can be populated manually or automatically.  Both techniques are shown in the L<synopsis|SYNOPSIS> above.  The automatic mode works by asking the database itself for the information.  There are some caveats to this approach.  See the L<auto-initialization|Rose::DB::Object::Metadata/"AUTO-INITIALIZATION"> section of the L<Rose::DB::Object::Metadata> documentation for more information.
+
+=head2 Error Handling
+
+Error handling for L<Rose::DB::Object>-derived objects is controlled by the L<error_mode|Rose::DB::Object::Metadata/error_mode> method of the L<Rose::DB::Object::Metadata> object associated with the class (accessible via the L<meta> method).  The default setting is "fatal", which means that L<Rose::DB::Object> methods will L<croak|Carp/croak> if then encounter an error.
+
+B<PLEASE NOTE:> The return values described in the method documentation below are only relevant when the error mode is set to something "non-fatal."  In other words, you'll never see any of those return values if the selected error mode L<die|perlfunc/die>s or L<croak|Carp/croak>s or otherwise throws an exception when an error occurs.
 
 =head1 CONSTRUCTOR
 
@@ -797,7 +879,7 @@ See the L<Rose::Object> documentation for more information.
 
 =item B<new PARAMS>
 
-Returns a new C<Rose::DB::Object> constructed according to PARAMS, where PARAMS are name/value pairs.  Any object method is a valid parameter name.
+Returns a new L<Rose::DB::Object> constructed according to PARAMS, where PARAMS are name/value pairs.  Any object method is a valid parameter name.
 
 =back
 
@@ -807,9 +889,13 @@ Returns a new C<Rose::DB::Object> constructed according to PARAMS, where PARAMS 
 
 =item B<meta>
 
-Returns the L<Rose::DB::Object::Metadata> object associated with this class.  This object describes the database table whose rows are fronted by this class: the name of the table, its columns, unique keys, foreign keys, etc.
+Returns the L<Rose::DB::Object::Metadata>-derived object associated with this class.  This object describes the database table whose rows are fronted by this class: the name of the table, its columns, unique keys, foreign keys, etc.
 
 See the L<Rose::DB::Object::Metadata> documentation for more information.
+
+=item B<meta_class>
+
+Return the name of the L<Rose::DB::Object::Metadata>-derived class used to store this object's metadata.  Subclasses should override this method if they want to use a custom L<Rose::DB::Object::Metadata> subclass.  (See the source code for L<Rose::DB::Object::Std> for an example of this.)
 
 =back
 
@@ -819,13 +905,19 @@ See the L<Rose::DB::Object::Metadata> documentation for more information.
 
 =item B<db [DB]>
 
-Get or set the L<Rose::DB> object used to access the database that contains the table whose rows are fronted by the C<Rose::DB::Object>-derived class.
+Get or set the L<Rose::DB> object used to access the database that contains the table whose rows are fronted by the L<Rose::DB::Object>-derived class.
 
-If it does not already exist, this object is created with a simple, argumentless call to C<Rose::DB-E<gt>new()>.  To override this default in a subclass, override the C<init_db> method and return the L<Rose::DB> to be used as the new default.
+If it does not already exist, this object is created with a simple, argument-less call to C<Rose::DB-E<gt>new()>.  To override this default in a subclass, override the L<init_db> method and return the L<Rose::DB> to be used as the new default.
+
+=item B<init_db>
+
+Returns the L<Rose::DB>-derived object used to access the database in the absence of an explicit L<db> value.  The default implementation simply calls C<Rose::DB-E<gt>new()> with no arguments.
+
+Override this method in your subclass in order to use a different default data source.
 
 =item B<dbh>
 
-Returns the C<DBI> database handle contained in C<db>.
+Returns the L<DBI> database handle contained in L<db>.
 
 =item B<delete>
 
@@ -835,15 +927,17 @@ Delete the row represented by the current object.  The object must have been pre
 
 Returns the text message associated with the last error that occurred.
 
-=item B<load>
+=item B<load [PARAMS]>
 
 Load a row from the database table, initializing the object with the values from that row.  An object can be loaded based on either a primary key or a unique key.
 
-Returns true if the row was loaded successfully, false if the row could not be loaded or did not exist.
+Returns true if the row was loaded successfully, undef if the row could not be loaded due to an error, or zero (0) if the row does not exist.
+
+PARAMS are optional name/value pairs.  If the parameter C<speculative> is passed with a true value, and if the load failed because the row was L<not found|not_found>, then the L<error_mode|Rose::DB::Object::Metadata/error_mode> setting is ignored and zero (0) is returned.
 
 =item B<not_found>
 
-Returns true if the previous call to C<load()> failed because a row in the database table with the specified primary or unique key did not exist, false otherwise.
+Returns true if the previous call to L<load> failed because a row in the database table with the specified primary or unique key did not exist, false otherwise.
 
 =item B<meta>
 
@@ -853,7 +947,7 @@ See the L<Rose::DB::Object::Metadata> documentation for more information.
 
 =item B<save [PARAMS]>
 
-Save the current object to the database table.  In the absence of PARAMS, if the object was previously C<load()>ed from the database, the row will be updated.  Otherwise, a new row will be created.
+Save the current object to the database table.  In the absence of PARAMS, if the object was previously L<load>ed from the database, the row will be updated.  Otherwise, a new row will be created.
 
 PARAMS are name/value pairs.  Valid parameters are:
 
@@ -861,11 +955,11 @@ PARAMS are name/value pairs.  Valid parameters are:
 
 =item * C<insert>
 
-If set to a true value, then an insert is attempted, regardless of whether or not the object was previously C<load()>ed from the database.
+If set to a true value, then an insert is attempted, regardless of whether or not the object was previously L<load>ed from the database.
 
 =item * C<update>
 
-If set to a true value, then an update is attempted, regardless of whether or not the object was previously C<load()>ed from the database.
+If set to a true value, then an update is attempted, regardless of whether or not the object was previously L<load>ed from the database.
 
 =back
 
@@ -905,9 +999,9 @@ Here are examples of primary key column definitions that provide auto-generated 
 
 =back
 
-Other data definitions are possible, of course, but the three definitions above are used in the C<Rose::DB::Object> test suite and are therefore guaranteed to work.  If you have success with alternative approaches, patches and/or new tests are welcome.
+Other data definitions are possible, of course, but the three definitions above are used in the L<Rose::DB::Object> test suite and are therefore guaranteed to work.  If you have success with alternative approaches, patches and/or new tests are welcome.
 
-If your table has a multi-column primary key or does not use a column type that supports auto-generated values, you can define a custom primary key generator function using the C<primary_key_generator()> method of the L<Rose::DB::Object::Metadata>-derived object that contains the metadata for this class.  Example:
+If your table has a multi-column primary key or does not use a column type that supports auto-generated values, you can define a custom primary key generator function using the L<primary_key_generator> method of the L<Rose::DB::Object::Metadata>-derived object that contains the metadata for this class.  Example:
 
     package MyDBObject;
 
@@ -945,9 +1039,9 @@ See the L<Rose::DB::Object::Metadata> documentation for more information on cust
 
 =head1 RESERVED METHODS
 
-As described in the L<Rose::DB::Object::Metadata> documentation, each column in the database table has an associated get/set accessor method in the C<Rose::DB::Object>.  Since the C<Rose::DB::Object> API already defines many methods (C<load()>, C<save()>, C<meta()>, etc.), accessor methods for columns that share the name of an existing method pose a problem.  The solution is to alias such columns using L<Rose::DB::Object::Metadata>'s  C<alias_column()> method. 
+As described in the L<Rose::DB::Object::Metadata> documentation, each column in the database table has an associated get/set accessor method in the L<Rose::DB::Object>.  Since the L<Rose::DB::Object> API already defines many methods (L<load>, L<save>, L<meta>, etc.), accessor methods for columns that share the name of an existing method pose a problem.  The solution is to alias such columns using L<Rose::DB::Object::Metadata>'s  L<alias_column> method. 
 
-Here is a list of method names reserved by the C<Rose::DB::Object> API.  If you have a column with one of these names, you must alias it.
+Here is a list of method names reserved by the L<Rose::DB::Object> API.  If you have a column with one of these names, you must alias it.
 
     db
     dbh
@@ -959,11 +1053,12 @@ Here is a list of method names reserved by the C<Rose::DB::Object> API.  If you 
     insert
     load
     meta
+    meta_class
     not_found
     save
     update
 
-Note that not all of these methods are public.  These methods do not suddently become public just because you now know their names!  Remember the stated policy of the C<Rose> web application framework: if a method is not documented, it does not exist.  (And no, the above list of method names does not constitute "documentation")
+Note that not all of these methods are public.  These methods do not suddently become public just because you now know their names!  Remember the stated policy of the L<Rose> web application framework: if a method is not documented, it does not exist.  (And no, the list of method names above does not constitute "documentation")
 
 =head1 AUTHOR
 

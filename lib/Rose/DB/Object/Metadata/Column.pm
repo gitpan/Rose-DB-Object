@@ -3,14 +3,17 @@ package Rose::DB::Object::Metadata::Column;
 use strict;
 
 use Carp();
+use Scalar::Util();
 
-use Rose::Object;
-our @ISA = qw(Rose::Object);
+use Rose::DB::Object::Metadata::Util qw(:all);
+
+use Rose::DB::Object::Metadata::Object;
+our @ISA = qw(Rose::DB::Object::Metadata::Object);
 
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.021';
+our $VERSION = '0.03';
 
 use overload
 (
@@ -38,11 +41,14 @@ Rose::Object::MakeMethods::Generic->make_methods
   boolean => 
   [
     'manager_uses_method',
+    'is_primary_key_member',
     'not_null',
   ],
 );
 
 __PACKAGE__->add_method_maker_argument_names(qw(default type));
+
+*primary_key = \&is_primary_key_member;
 
 *accessor_method_name = \&method_name;
 *mutator_method_name  = \&method_name;
@@ -53,6 +59,121 @@ sub should_inline_value { 0 }
 
 sub parse_value  { $_[2] }
 sub format_value { $_[2] }
+
+sub primary_key_position
+{
+  my($self) = shift;
+
+  $self->{'primary_key_position'} = shift  if(@_);
+
+  unless($self->is_primary_key_member)
+  {
+    return $self->{'primary_key_position'} = undef;
+  }
+
+  return $self->{'primary_key_position'};
+}
+
+# These constants are from the DBI documentation.  Is there somewhere 
+# I can load these from?
+use constant SQL_NO_NULLS => 0;
+use constant SQL_NULLABLE => 1;
+
+sub init_with_dbi_column_info
+{
+  my($self, $col_info) = @_;
+
+  # We're doing this in Rose::DB::Object::Metadata::Auto now
+  #$self->parent->db->refine_dbi_column_info($col_info);
+
+  $self->default($col_info->{'COLUMN_DEF'});
+
+  if($col_info->{'NULLABLE'} == SQL_NO_NULLS)
+  {
+    $self->not_null(1);
+  }
+  elsif($col_info->{'NULLABLE'} == SQL_NULLABLE)
+  {
+    $self->not_null(0);
+  }
+
+  return;
+}
+
+sub perl_column_defintion_attributes
+{
+  my($self) = shift;
+
+  my @attrs;
+
+  foreach my $attr ('type', sort keys %$self)
+  {
+    my $val = $self->can($attr) ? $self->$attr() : next;
+
+    if((!defined $val || ref $val || $attr eq 'name') ||
+       ($attr eq 'method_name' && $self->method_name eq $self->name) ||
+       ($attr eq 'not_null' && !$self->not_null))
+    {
+      next;
+    }
+
+    push(@attrs, $attr);
+  }
+
+  return @attrs;
+}
+
+sub perl_hash_definition
+{
+  my($self, %args) = @_;
+
+  my $meta = $self->parent;
+
+  my $name_padding = $args{'name_padding'};
+
+  my $indent = defined $args{'indent'} ? $args{'indent'} : 
+                 ($meta ? $meta->default_perl_indent : undef);
+
+  my $inline = defined $args{'inline'} ? $args{'inline'} : 1;
+
+  my %hash;
+
+  foreach my $attr ($self->perl_column_defintion_attributes)
+  {
+    $hash{$attr} = $self->$attr();
+  }
+
+  if($name_padding > 0)
+  {
+    return sprintf('%-*s => ', $name_padding, perl_quote_key($self->name)) .
+           perl_hashref(hash      => \%hash, 
+                        inline    => $inline, 
+                        indent    => $indent, 
+                        sort_keys => \&_sort_keys);
+  }
+  else
+  {
+    return perl_quote_key($self->name) . ' => ' .
+           perl_hashref(hash      => \%hash, 
+                        inline    => $inline, 
+                        indent    => $indent, 
+                        sort_keys => \&_sort_keys);
+  }
+}
+
+sub _sort_keys 
+{
+  if($_[0] eq 'type')
+  {
+    return -1;
+  }
+  elsif($_[1] eq 'type')
+  {
+    return 1;
+  }
+
+  return lc $_[0] cmp lc $_[1];
+}
 
 # sub foreign_key
 # {
@@ -80,7 +201,7 @@ sub method_maker_arguments
 {
   my($self) = shift;
 
-  my %opts = map { $_ => $self->$_() } grep { defined $self->$_() }
+  my %opts = map { $_ => scalar $self->$_() } grep { defined scalar $self->$_() }
     $self->method_maker_argument_names;
 
   return wantarray ? %opts : \%opts;
@@ -156,6 +277,10 @@ Get or set the default value of the column.
 
 Convert VALUE into a string suitable for the database column of this type.  VALUE is expected to be like the return value of the C<parse_value()> method.  DB is a L<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
 
+=item B<is_primary_key_member [BOOL]>
+
+Get or set the boolean flag that indicates whether or not this column is part of the primary key for its table.
+
 =item B<make_method PARAMS>
 
 Create an object method used to manipulate column values.  To do this, the C<make_methods()> class method of the C<method_maker_class> is called.  PARAMS are name/value pairs.  Valid PARAMS are:
@@ -225,6 +350,10 @@ value can can be null.
 =item B<parse_value DB, VALUE>
 
 Parse and return a convenient Perl representation of VALUE.  What form this value will take is up to the column subclass.  If VALUE is a keyword or otherwise has special meaning to the underlying database, it may be returned unmodified.  DB is a L<Rose::DB> object that may be used as part of the parsing process.  Both arguments are required.
+
+=item B<primary_key_position [INT]>
+
+Get or set the column's ordinal position in the primary key.  Returns undef if the column is not part of the primary key.  Position numbering starts from 1.
 
 =item B<should_inline_value DB, VALUE>
 

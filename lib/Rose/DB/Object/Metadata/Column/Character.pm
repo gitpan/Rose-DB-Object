@@ -8,7 +8,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column::Scalar;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 __PACKAGE__->add_method_maker_argument_names
 (
@@ -32,6 +32,20 @@ sub parse_value
 }
 
 *format_value = \&parse_value;
+
+sub init_with_dbi_column_info
+{
+  my($self, $col_info) = @_;
+
+  $self->SUPER::init_with_dbi_column_info($col_info);
+
+  if(defined $col_info->{'CHAR_OCTET_LENGTH'})
+  {
+    $self->length($col_info->{'CHAR_OCTET_LENGTH'});
+  }
+
+  return;
+}
 
 1;
 

@@ -8,6 +8,10 @@ lib/Rose/DB/Object/MakeMethods/Pg.pm
 lib/Rose/DB/Object/MakeMethods/Std.pm
 lib/Rose/DB/Object/Manager.pm
 lib/Rose/DB/Object/Metadata.pm
+lib/Rose/DB/Object/Metadata/Auto.pm
+lib/Rose/DB/Object/Metadata/Auto/Informix.pm
+lib/Rose/DB/Object/Metadata/Auto/MySQL.pm
+lib/Rose/DB/Object/Metadata/Auto/Pg.pm
 lib/Rose/DB/Object/Metadata/Column.pm
 lib/Rose/DB/Object/Metadata/Column/Array.pm
 lib/Rose/DB/Object/Metadata/Column/Bitfield.pm
@@ -16,6 +20,12 @@ lib/Rose/DB/Object/Metadata/Column/Boolean.pm
 lib/Rose/DB/Object/Metadata/Column/Character.pm
 lib/Rose/DB/Object/Metadata/Column/Date.pm
 lib/Rose/DB/Object/Metadata/Column/Datetime.pm
+lib/Rose/DB/Object/Metadata/Column/DatetimeYearToFraction.pm
+lib/Rose/DB/Object/Metadata/Column/DatetimeYearToFraction1.pm
+lib/Rose/DB/Object/Metadata/Column/DatetimeYearToFraction2.pm
+lib/Rose/DB/Object/Metadata/Column/DatetimeYearToFraction3.pm
+lib/Rose/DB/Object/Metadata/Column/DatetimeYearToFraction4.pm
+lib/Rose/DB/Object/Metadata/Column/DatetimeYearToFraction5.pm
 lib/Rose/DB/Object/Metadata/Column/DatetimeYearToMinute.pm
 lib/Rose/DB/Object/Metadata/Column/DatetimeYearToSecond.pm
 lib/Rose/DB/Object/Metadata/Column/Decimal.pm
@@ -29,7 +39,12 @@ lib/Rose/DB/Object/Metadata/Column/Set.pm
 lib/Rose/DB/Object/Metadata/Column/Text.pm
 lib/Rose/DB/Object/Metadata/Column/Timestamp.pm
 lib/Rose/DB/Object/Metadata/Column/Varchar.pm
+lib/Rose/DB/Object/Metadata/ColumnList.pm
 lib/Rose/DB/Object/Metadata/ForeignKey.pm
+lib/Rose/DB/Object/Metadata/Object.pm
+lib/Rose/DB/Object/Metadata/PrimaryKey.pm
+lib/Rose/DB/Object/Metadata/UniqueKey.pm
+lib/Rose/DB/Object/Metadata/Util.pm
 lib/Rose/DB/Object/QueryBuilder.pm
 lib/Rose/DB/Object/Std.pm
 lib/Rose/DB/Object/Std/Cached.pm
@@ -37,8 +52,11 @@ lib/Rose/DB/Object/Std/Metadata.pm
 lib/Rose/DB/Objects/Iterator.pm
 Makefile.PL
 MANIFEST
+META.yml			Module meta-data (added by MakeMaker)
 t/00-warning.t
+t/db-object-auto.t
 t/db-object-cached.t
+t/db-object-foreign-key-auto.t
 t/db-object-foreign-key.t
 t/db-object-manager.t
 t/db-object-metadata.t
@@ -49,4 +67,3 @@ t/makemethods-db.t
 t/makemethods.t
 t/pod.t
 t/test-lib.pl
-META.yml                                 Module meta-data (added by MakeMaker)

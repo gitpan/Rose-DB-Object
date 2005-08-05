@@ -294,6 +294,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('pg') }
+
     MyPgOtherObject->meta->table('rose_db_object_other');
 
     MyPgOtherObject->meta->columns
@@ -327,6 +329,8 @@ EOF
     package MyPgObject;
 
     our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('pg') }
 
     MyPgObject->meta->table('rose_db_object_test');
       
@@ -401,6 +405,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('mysql') }
+
     MyMySQLOtherObject->meta->table('rose_db_object_other');
       
     MyMySQLOtherObject->meta->columns
@@ -434,6 +440,8 @@ EOF
     package MyMySQLObject;
 
     our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('mysql') }
 
     MyMySQLObject->meta->table('rose_db_object_test');
 
@@ -507,6 +515,8 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
+    sub init_db { Rose::DB->new('informix') }
+
     MyInformixOtherObject->meta->table('rose_db_object_other');
 
     MyInformixOtherObject->meta->columns
@@ -540,6 +550,8 @@ EOF
     package MyInformixObject;
 
     our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('informix') }
 
     MyInformixObject->meta->table('rose_db_object_test');
       

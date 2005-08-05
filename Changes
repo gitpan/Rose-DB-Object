@@ -1,52 +1,40 @@
-0.01 (03.09.2005) - John Siracusa <siracusa@mindspring.com>
+0.06 (08.05.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Initial release.
+    * Added auto-initialization (finally).
+    * Plumped-up unique and primary keys into objects.
+    * Changed default error mode to "fatal"
+    * Made substantial additions to the documentation.
 
-0.011 (03.09.2005) - John Siracusa <siracusa@mindspring.com>
+0.052 (07.22.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Well that was quick.  Fixed copy and paste error that caused
-      a failure to load using an aliased unique key column.  Deleted
-      version 0.10.
+    * Added make_manager_methods() to Rose::DB::Object::Manager.
+    * Corrected Rose::DB::Object::Manager POD.
 
-0.012 (03.10.2005) - John Siracusa <siracusa@mindspring.com>
+0.052 (07.22.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Add tests for aliased unique key fix and primary key aliasing.
-      Documented constraints on column aliasing.  Fixed version
-      numbers in this file.  Deleted version 0.011.
+    * Added make_manager_methods() to Rose::DB::Object::Manager.
+    * Corrected Rose::DB::Object::Manager POD.
 
-0.013 (03.11.2005) - John Siracusa <siracusa@mindspring.com>
+0.051 (06.22.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Fixed bug in Rose::DB::Object::Std::Metadata that caused the
-      number of primary key columns to appear to be zero.
+    * Added abstracted offset parameter to object manager.
 
-0.02 (03.17.2005) - John Siracusa <siracusa@mindspring.com>
+0.05 (06.16.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Added support for nested boolean logic in queries.
+    * Moved object cache management further into the metadata object.
+    * Enabled auto-generated primary key values for Rose::DB::Object
+      objects used with the PostgreSQL database.
 
-0.021 (03.17.2005) - John Siracusa <siracusa@mindspring.com>
+0.043 (06.16.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Added documentation for the "pretty" parameter to build_select()
-    * Added support for column value inlining in build_select()
+    * Added time-based expiration to Rose::DB::Object::Cached.
+    * Added catalog attribute to metadata objects.
 
-0.022 (03.18.2005) - John Siracusa <siracusa@mindspring.com>
+0.042 (05.04.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Fixed POD error that was throwing off search.cpan.org.
-
-0.023 (03.25.2005) - John Siracusa <siracusa@mindspring.com>
-
-    * Added prepare_*_options (undocumented for now).
-
-0.03 (03.27.2005) - John Siracusa <siracusa@mindspring.com>
-
-    * Added error_mode methods.
-
-0.031 (03.27.2005) - John Siracusa <siracusa@mindspring.com>
-
-    * Corrected typos and errors in the documentation.
-
-0.04 (04.01.2005) - John Siracusa <siracusa@mindspring.com>
-
-    * Refactored column value parsing.  No, really.
+    * Added not_null attribute to column metadata objects.
+    * Removed use of prepare_cached() because it can't be used
+      across transactions in Informix.  Duh.
 
 0.041 (04.22.2005) - John Siracusa <siracusa@mindspring.com>
 
@@ -56,28 +44,51 @@
     * Added fix to avoid trying to format or truncate undefined 
       dates in datetime columns.
 
-0.042 (05.04.2005) - John Siracusa <siracusa@mindspring.com>
+0.04 (04.01.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Added not_null attribute to column metadata objects.
-    * Removed use of prepare_cached() because it can't be used
-      across transactions in Informix.  Duh.
+    * Refactored column value parsing.  No, really.
 
-0.043 (06.16.2005) - John Siracusa <siracusa@mindspring.com>
+0.031 (03.27.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Added time-based expiration to Rose::DB::Object::Cached.
-    * Added catalog attribute to metadata objects.
+    * Corrected typos and errors in the documentation.
 
-0.05 (06.16.2005) - John Siracusa <siracusa@mindspring.com>
+0.03 (03.27.2005) - John Siracusa <siracusa@mindspring.com>
 
-    * Moved object cache management further into the metadata object.
-    * Enabled auto-generated primary key values for Rose::DB::Object
-      objects used with the PostgreSQL database.
+    * Added error_mode methods.
+0.023 (03.25.2005) - John Siracusa <siracusa@mindspring.com>
 
-0.051 (06.22.2005) - John Siracusa <siracusa@mindspring.com>
+    * Added prepare_*_options (undocumented for now).
 
-    * Added abstracted offset parameter to object manager.
+0.022 (03.18.2005) - John Siracusa <siracusa@mindspring.com>
 
-0.052 (07.22.2005) - John Siracusa <siracusa@mindspring.com>
+    * Fixed POD error that was throwing off search.cpan.org.
 
-    * Added make_manager_methods() to Rose::DB::Object::Manager.
-    * Corrected Rose::DB::Object::Manager POD.
+0.021 (03.17.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added documentation for the "pretty" parameter to build_select()
+    * Added support for column value inlining in build_select()
+
+0.02 (03.17.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added support for nested boolean logic in queries.
+
+0.013 (03.11.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Fixed bug in Rose::DB::Object::Std::Metadata that caused the
+      number of primary key columns to appear to be zero.
+
+0.012 (03.10.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Add tests for aliased unique key fix and primary key aliasing.
+      Documented constraints on column aliasing.  Fixed version
+      numbers in this file.  Deleted version 0.011.
+
+0.011 (03.09.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Well that was quick.  Fixed copy and paste error that caused
+      a failure to load using an aliased unique key column.  Deleted
+      version 0.10.
+
+0.01 (03.09.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Initial release.

@@ -8,7 +8,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 __PACKAGE__->add_method_maker_argument_names
 (
@@ -44,6 +44,17 @@ sub format_value
   my $bits  = shift || $self->bits;
 
   return $db->format_bitfield($value, $bits);
+}
+
+sub init_with_dbi_column_info
+{
+  my($self, $col_info) = @_;
+
+  $self->SUPER::init_with_dbi_column_info($col_info);
+
+  $self->bits($col_info->{'COLUMN_SIZE'});
+
+  return;
 }
 
 1;

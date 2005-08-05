@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub scalar
 {
@@ -300,6 +300,7 @@ sub varchar
         {
           if(@_ > 1)
           {
+            no warnings; # substr on undef is ok here
             return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
           }
           return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
@@ -313,6 +314,7 @@ sub varchar
         {
           if(@_ > 1)
           {
+            no warnings; # substr on undef is ok here
             return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
           }
           return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
@@ -325,6 +327,7 @@ sub varchar
         {
           if(@_ > 1)
           {
+            no warnings; # substr on undef is ok here
             return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
           }
           return $_[0]->{$key};
@@ -701,11 +704,11 @@ sub object_by_key
   my $target_class = $options->{'target_class'} or die "Missing target class";
 
   my $fk_class   = $args->{'class'} or die "Missing foreign object class";
-  my $fk_meta    = $fk_class->meta; 
+  my $fk_meta    = $fk_class->meta;
   my $meta       = $target_class->meta;
 
   my $fk_columns = $args->{'key_columns'} or die "Missing key columns hash";
-  my $share_db   = $args->{'share_db'} || 1;
+  my $share_db   = $args->{'share_db'};
 
   $methods{$name} = sub
   {

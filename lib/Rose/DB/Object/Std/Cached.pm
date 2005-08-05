@@ -6,9 +6,9 @@ use Rose::DB::Object::Std;
 use Rose::DB::Object::Cached;
 our @ISA = qw(Rose::DB::Object::Cached Rose::DB::Object::Std);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
-*meta = \&Rose::DB::Object::Std::meta;
+*meta_class = \&Rose::DB::Object::Std::meta_class;
 
 1;
 

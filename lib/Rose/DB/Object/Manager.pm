@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.04';
+our $VERSION = '0.041';
 
 our $Debug = 0;
 
@@ -81,7 +81,6 @@ sub make_manager_methods
   my $object_class   = $args{'object_class'};
   my $class_invocant = UNIVERSAL::isa($target_class, __PACKAGE__) ? 
                          $target_class : __PACKAGE__;
-
   unless($object_class)
   {
     if(UNIVERSAL::isa($target_class, 'Rose::DB::Object::Manager'))
@@ -123,8 +122,16 @@ sub make_manager_methods
 
   while(my($name, $types) = each %{$args{'methods'}})
   {
+    my $have_full_name = ($name =~ s/\(\)$//) ? 1 : 0;
+
     Carp::croak "Invalid value for the '$name' parameter"
       if(ref $types && ref $types ne 'ARRAY');
+
+    if($have_full_name && ref $types && @$types > 1)
+    {
+      Carp::croak "Cannot use explicit method name $name() with more ",
+                  "than one method type";
+    }
 
     foreach my $type ((ref $types ? @$types : ($types)))
     {
@@ -132,7 +139,8 @@ sub make_manager_methods
 
       if($type eq 'objects')
       {
-        my $method_name = "${target_class}::get_$name";
+        my $method_name = 
+          $have_full_name ? $name : "${target_class}::get_$name";
 
         foreach my $class ($target_class, $class_invocant)
         {
@@ -149,7 +157,8 @@ sub make_manager_methods
       }
       elsif($type eq 'count')
       {
-        my $method_name = "${target_class}::get_${name}_count";
+        my $method_name =
+          $have_full_name ? $name : "${target_class}::get_${name}_count";
 
         foreach my $class ($target_class, $class_invocant)
         {
@@ -167,7 +176,8 @@ sub make_manager_methods
       }
       elsif($type eq 'iterator')
       {
-        my $method_name = "${target_class}::get_${name}_iterator";
+        my $method_name =
+          $have_full_name ? $name : "${target_class}::get_${name}_iterator";
 
         foreach my $class ($target_class, $class_invocant)
         {
@@ -903,9 +913,11 @@ PARAMS can take several forms, depending on the calling context.  For a call to 
 
 The class of the L<Rose::DB::Object>-derived objects to be fetched or counted.
 
-=item * B<base name>
+=item * B<base name> or B<method name>
 
-The string to be used as the basis of the method names.  For example, the base name "products" would be used to create methods named "get_B<products>", "get_B<products>_count", and "get_B<products>_iterator"
+The base name is a string used as the basis of the method names.  For example, the base name "products" would be used to create methods named "get_B<products>", "get_B<products>_count", and "get_B<products>_iterator"
+
+In the absence of a base name, an explicit method name may be provided instead.  The method name will be used as is.
 
 =item * B<method types>
 
@@ -951,7 +963,7 @@ Finally, if none of the above conditions are met, one final option is considered
 
 If the object class cannot be determined in one of the ways described above, then a fatal error will occur.
 
-=item * B<base name>
+=item * B<base name> or B<method name>
 
 If a C<base_name> parameter is passed in PARAMS, then its value is used as the base name for the generated methods.  Example:
 
@@ -963,7 +975,9 @@ If the C<base_name> parameter is not passed, and if there is only one argument p
 
 (Note that, since the B<object class> must be derived somehow, this will only work in one of the situations (described above) where the B<object class> can be derived from the calling context or class.)
 
-Finally, if a C<methods> parameter is passed with a hash ref value, then each key of the hash is used as the base name for the method types listed in the corresponding value.  (See B<method types> below for more information.)
+If a C<methods> parameter is passed with a hash ref value, then each key of the hash is used as the base name for the method types listed in the corresponding value.  (See B<method types> below for more information.)
+
+If a key of the C<methods> hash ends in "()", then it is taken as the method name and is used as is.  For example, the key "foo" will be used as a base name, but the key "foo()" will be used as a method name.
 
 If the base name cannot be determined in one of the ways described above, then a fatal error will occur.
 
@@ -979,7 +993,13 @@ If a B<base name> is passed to the method, either as the value of the C<base_nam
 
 (Again, note that the B<object class> must be derived somehow.)
 
-If a C<methods> parameter is passed, then its value must be a reference to a hash whose keys are base names and values are method types or references to arrays of method types.  Example:
+If a C<methods> parameter is passed, then its value must be a reference to a hash whose keys are base names or method names, and whose values are method types or references to arrays of method types.
+
+If a key ends in "()", then it is taken as a method name and is used as is.  Otherwise, it is used as a base name.  For example, the key "foo" will be used as a base name, but the key "foo()" will be used as a method name.
+
+If a key is a method name and its value specifies more than one method type, then a fatal error will occur.  (It's impossible to have more than one method with the same name.)
+
+Example:
 
     # Make the following methods:
     #
@@ -988,15 +1008,15 @@ If a C<methods> parameter is passed, then its value must be a reference to a has
     #     get_products()
     #     get_products_iterator()
     #
-    # * Base name: product; method type: count
+    # * Method name: product_count; method type: count
     #
-    #     get_product_count()
+    #     product_count()
     #
     $class->make_manager_methods(...,
       methods =>
       {
-        products => [ qw(objects iterator) ],
-        product  => 'count'
+        'products'        => [ qw(objects iterator) ],
+        'product_count()' => 'count'
       });
 
 If the value of the C<methods> parameter is not a reference to a hash, or if both (or neither of) the C<methods> and C<base_name> parameters are passed, then a fatal error will occur.

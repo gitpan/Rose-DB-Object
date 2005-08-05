@@ -11,7 +11,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub date
 {
@@ -19,6 +19,7 @@ sub date
 
   my $key = $args->{'hash_key'} || $name;
   my $interface = $args->{'interface'} || 'get_set';
+  my $tz = $args->{'time_zone'} || 0;
 
   my %methods;
 
@@ -46,7 +47,7 @@ sub date
 
             unless($dt2)
             {
-              $dt2 = Rose::DateTime::Util::parse_date($dt, $db->server_time_zone) or
+              $dt2 = Rose::DateTime::Util::parse_date($dt, $tz || $db->server_time_zone) or
                 Carp::croak "Could not parse date '$dt'";
             }
 
@@ -79,13 +80,13 @@ sub date
 
             unless($dt)
             {
-              $dt = Rose::DateTime::Util::parse_date($_[0], $db->server_time_zone) or
+              $dt = Rose::DateTime::Util::parse_date($_[0], $tz || $db->server_time_zone) or
                 Carp::croak "Invalid date: '$_[0]'";
             }
 
             if(ref $dt)
             {
-              $dt->set_time_zone($db->server_time_zone);
+              $dt->set_time_zone($tz || $db->server_time_zone);
               $self->{$key} = $dt;
               $self->{$formatted_key} = undef;
             }
@@ -106,13 +107,13 @@ sub date
 
         unless($dt)
         {
-          $dt = Rose::DateTime::Util::parse_date($default, $db->server_time_zone) or
+          $dt = Rose::DateTime::Util::parse_date($default, $tz || $db->server_time_zone) or
             Carp::croak "Invalid default date: '$default'";
         }
 
         if(ref $dt)
         {
-          $dt->set_time_zone($db->server_time_zone);
+          $dt->set_time_zone($tz || $db->server_time_zone);
           $self->{$key} = $dt;
           $self->{$formatted_key} = undef;
         }
@@ -145,8 +146,14 @@ sub datetime
   my $key = $args->{'hash_key'} || $name;
   my $interface = $args->{'interface'} || 'get_set';
   my $type = $args->{'type'} || 'datetime';
+  my $tz = $args->{'time_zone'} || 0;
 
-  $type =~ tr/ /_/;
+  for($type)
+  {
+    # "datetime year to fraction(5)" -> datetime_year_to_fraction_5
+    tr/ /_/;
+    s/\(([1-5])\)$/_$1/; 
+  }
 
   my $format_method = "format_$type";
   my $parse_method  = "parse_$type";
@@ -176,7 +183,7 @@ sub datetime
 
             unless($dt2)
             {
-              $dt2 = Rose::DateTime::Util::parse_date($dt, $db->server_time_zone);
+              $dt2 = Rose::DateTime::Util::parse_date($dt, $tz || $db->server_time_zone);
                 Carp::croak "Could not parse datetime '$dt'";
             }
 
@@ -205,15 +212,15 @@ sub datetime
           }
           else
           {
-            my $dt = $db->parse_datetime($_[0]);
+            my $dt = $db->$parse_method($_[0]);
 
             unless($dt)
             {
-              $dt = Rose::DateTime::Util::parse_date($_[0], $db->server_time_zone) or
+              $dt = Rose::DateTime::Util::parse_date($_[0], $tz || $db->server_time_zone) or
                 Carp::croak "Invalid datetime: '$_[0]'";
             }
 
-            $dt->set_time_zone($db->server_time_zone)  if(ref $dt);
+            $dt->set_time_zone($tz || $db->server_time_zone)  if(ref $dt);
             $self->{$key} = $dt;
             $self->{$formatted_key} = undef;
           }
@@ -228,13 +235,13 @@ sub datetime
 
         unless($dt)
         {
-          $dt = Rose::DateTime::Util::parse_date($default, $db->server_time_zone) or
+          $dt = Rose::DateTime::Util::parse_date($default, $tz || $db->server_time_zone) or
             Carp::croak "Invalid default datetime: '$default'";
         }
 
         if(ref $dt)
         {
-          $dt->set_time_zone($db->server_time_zone);
+          $dt->set_time_zone($tz || $db->server_time_zone);
           $self->{$key} = $dt;
           $self->{$formatted_key} = undef;
         }
@@ -260,12 +267,27 @@ sub datetime
   return \%methods;
 }
 
+sub timestamp_without_time_zone
+{
+  my($class, $name, $args) = @_;
+
+  if(exists $args->{'time_zone'})
+  {
+    Carp::croak "time_zone parameter is invalid for timestamp_without_time_zone methods";
+  }
+  
+  $args->{'time_zone'} = 'floating';
+
+  return $class->timestamp($name, $args);
+}
+
 sub timestamp
 {
   my($class, $name, $args) = @_;
 
   my $key = $args->{'hash_key'} || $name;
   my $interface = $args->{'interface'} || 'get_set';
+  my $tz = $args->{'time_zone'} || 0;
 
   my %methods;
 
@@ -292,7 +314,7 @@ sub timestamp
 
             unless($dt2)
             {
-              $dt2 = Rose::DateTime::Util::parse_date($dt, $db->server_time_zone) or
+              $dt2 = Rose::DateTime::Util::parse_date($dt, $tz || $db->server_time_zone) or
                 Carp::croak "Could not parse timestamp '$dt'";
             }
 
@@ -325,11 +347,11 @@ sub timestamp
 
             unless($dt)
             {
-              $dt = Rose::DateTime::Util::parse_date($_[0], $db->server_time_zone) or
+              $dt = Rose::DateTime::Util::parse_date($_[0], $tz || $db->server_time_zone) or
                 Carp::croak "Invalid timestamp: '$_[0]'";
             }
 
-            $dt->set_time_zone($db->server_time_zone)  if(ref $dt);
+            $dt->set_time_zone($tz || $db->server_time_zone)  if(ref $dt);
             $self->{$key} = $dt;
             $self->{$formatted_key} = undef;
           }
@@ -344,13 +366,13 @@ sub timestamp
 
         unless($dt)
         {
-          $dt = Rose::DateTime::Util::parse_date($default, $db->server_time_zone) or
+          $dt = Rose::DateTime::Util::parse_date($default, $tz || $db->server_time_zone) or
             Carp::croak "Invalid default timestamp: '$default'";
         }
 
         if(ref $dt)
         {
-          $dt->set_time_zone($db->server_time_zone);
+          $dt->set_time_zone($tz || $db->server_time_zone);
           $self->{$key} = $dt;
           $self->{$formatted_key} = undef;
         }
@@ -375,6 +397,8 @@ sub timestamp
 
   return \%methods;
 }
+
+*timestamp_with_time_zone = \&timestamp;
 
 1;
 
@@ -459,6 +483,10 @@ attribute.  Defaults to the name of the method.
 
 Choose the interface.  The only current interface is C<get_set>, which is the default.
 
+=item C<time_zone>
+
+The time zone name, which must be in a format that is understood by L<DateTime::TimeZone>.
+
 =back
 
 =item Interfaces
@@ -469,18 +497,18 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 Creates a get/set accessor method for a date (year, month, day) attribute.  When setting the attribute, the value is passed through the C<parse_date()> method of the object's C<db> attribute.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
-The time zone of the C<DateTime> object that results from a successful parse is set to the C<server_time_zone> value of the  object's C<db> attribute using C<DateTime>'s C<set_time_zone()> method.
+The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone()|DateTime/set_time_zone> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_date()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
 
-This method is designed to allow date values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_date()> method of the object's C<db> attribute.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
+This method is designed to allow date values to make a round trip from and back into the database without ever being "inflated" into L<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_date()> method of the object's C<db> attribute.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
 
 If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to L<Rose::DateTime::Util>'s C<format_date()> function along with the current value of the date attribute.  Example:
 
     $o->start_date('2004-05-22');
     print $o->start_date(format => '%A'); # "Saturday"
 
-If passed two arguments and the first argument is "truncate", then the second argument is taken as the value of the C<to> argument to C<DateTime>'s C<truncate()> method, which is applied to a clone of the current value of the date attribute, which is then returned.  Example:
+If passed two arguments and the first argument is "truncate", then the second argument is taken as the value of the C<to> argument to L<DateTime>'s C<truncate()> method, which is applied to a clone of the current value of the date attribute, which is then returned.  Example:
 
     $o->start_date('2004-05-22');
 
@@ -541,6 +569,10 @@ attribute.  Defaults to the name of the method.
 
 Choose the interface.  The only current interface is C<get_set>, which is the default.
 
+=item C<time_zone>
+
+The time zone name, which must be in a format that is understood by L<DateTime::TimeZone>.
+
 =item C<type>
 
 The datetime variant as a string.  Each space in the string is replaced with an underscore "_", then the string is appended to "format_" and "parse_" in order to form the names of the methods called on the object's C<db> attribute to format and parse datetime values.  The default is "datetime", which means that the C<format_datetime()> and C<parse_datetime()> methods will be used.
@@ -559,18 +591,18 @@ Creates a get/set accessor method for a "datetime" attribute.  The exact granula
 
 When setting the attribute, the value is passed through the C<parse_TYPE()> method of the object's C<db> attribute, where C<TYPE> is the value of the C<type> option.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
-The time zone of the C<DateTime> object that results from a successful parse is set to the C<server_time_zone> value of the  object's C<db> attribute using C<DateTime>'s C<set_time_zone()> method.
+The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone()|DateTime/set_time_zone> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_TYPE()> method of the object's C<db> attribute before returning it, where C<TYPE> is the value of the C<type> option.  Otherwise, the value is returned as-is.
 
-This method is designed to allow datetime values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_TYPE()> method of the object's C<db> attribute, where C<TYPE> is the value of the C<type> option.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
+This method is designed to allow datetime values to make a round trip from and back into the database without ever being "inflated" into L<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_TYPE()> method of the object's C<db> attribute, where C<TYPE> is the value of the C<type> option.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
 
 If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to L<Rose::DateTime::Util>'s C<format_datetime()> function along with the current value of the datetime attribute.  Example:
 
     $o->start_date('2004-05-22 12:34:56');
     print $o->start_date(format => '%A'); # "Saturday"
 
-If passed two arguments and the first argument is "truncate", then the second argument is taken as the value of the C<to> argument to C<DateTime>'s C<truncate()> method, which is applied to a clone of the current value of the datetime attribute, which is then returned.  Example:
+If passed two arguments and the first argument is "truncate", then the second argument is taken as the value of the C<to> argument to L<DateTime>'s C<truncate()> method, which is applied to a clone of the current value of the datetime attribute, which is then returned.  Example:
 
     $o->start_date('2004-05-22 04:32:01');
 
@@ -638,6 +670,10 @@ attribute.  Defaults to the name of the method.
 
 Choose the interface.  The only current interface is C<get_set>, which is the default.
 
+=item C<time_zone>
+
+The time zone name, which must be in a format that is understood by L<DateTime::TimeZone>.
+
 =back
 
 =item Interfaces
@@ -648,18 +684,18 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 Creates a get/set accessor method for a "timestamp" (year, month, day, hour, minute, second, fractional seconds) attribute.  When setting the attribute, the value is passed through the C<parse_timestamp()> method of the object's C<db> attribute.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
-The time zone of the C<DateTime> object that results from a successful parse is set to the C<server_time_zone> value of the  object's C<db> attribute using C<DateTime>'s C<set_time_zone()> method.
+The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone()|DateTime/set_time_zone> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_timestamp()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
 
-This method is designed to allow timestamp values to make a round trip from and back into the database without ever being "inflated" into C<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_timestamp()> method of the object's C<db> attribute.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
+This method is designed to allow timestamp values to make a round trip from and back into the database without ever being "inflated" into L<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_timestamp()> method of the object's C<db> attribute.  If that fails, L<Rose::DateTime::Util>'s C<parse_date()> function is tried.  If that fails, a fatal error will occur.
 
 If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to L<Rose::DateTime::Util>'s C<format_timestamp()> function along with the current value of the timestamp attribute.  Example:
 
     $o->start_date('2004-05-22 12:34:56.123');
     print $o->start_date(format => '%A'); # "Saturday"
 
-If passed two arguments and the first argument is "truncate", then the second argument is taken as the value of the C<to> argument to C<DateTime>'s C<truncate()> method, which is applied to a clone of the current value of the timestamp attribute, which is then returned.  Example:
+If passed two arguments and the first argument is "truncate", then the second argument is taken as the value of the C<to> argument to L<DateTime>'s C<truncate()> method, which is applied to a clone of the current value of the timestamp attribute, which is then returned.  Example:
 
     $o->start_date('2004-05-22 04:32:01.456');
 
@@ -697,6 +733,14 @@ Example:
 
     # 01/30/2005 12:34:56.12300
     print $o->end_date(format => '%m/%d/%Y %H:%M:%S.%5N'); 
+
+=item B<timestamp_with_time_zone>
+
+This is identical to the L<timestamp> method described above.
+
+=item B<timestamp_without_time_zone>
+
+This is identical to the L<timestamp> method described above, but with the C<time_zone> parameter always set to the value "floating".  Any attempt to set the C<time_zone> parameter explicitly will cause a fatal error.
 
 =back
 

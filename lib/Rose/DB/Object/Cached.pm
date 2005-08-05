@@ -26,7 +26,7 @@ sub __xrdbopriv_save_object
   my($self) = shift;
 
   my $class = ref $self;
-  my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_columns);
+  my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_column_names);
 
   no strict 'refs';
 
@@ -40,7 +40,7 @@ sub __xrdbopriv_save_object
     ${"${class}::Objects_By_Id_Loaded"}{$pk} = $loaded;
   }
 
-  foreach my $cols ($self->meta->unique_keys)
+  foreach my $cols ($self->meta->unique_keys_column_names)
   {
     no warnings;
     my $key_name  = join(UK_SEP, @$cols);
@@ -117,7 +117,7 @@ sub load
 
   unless(delete $args{'refresh'})
   {
-    my $pk = join(PK_SEP, grep { defined } map { $_[0]->$_() } $_[0]->meta->primary_key_columns);
+    my $pk = join(PK_SEP, grep { defined } map { $_[0]->$_() } $_[0]->meta->primary_key_column_names);
 
     my $object = __xrdbopriv_get_object($_[0], $pk);
 
@@ -129,7 +129,7 @@ sub load
     }
     elsif(!(defined $object && $object == CACHE_EXPIRED))
     {
-      foreach my $cols ($_[0]->meta->unique_keys)
+      foreach my $cols ($_[0]->meta->unique_keys_column_names)
       {
         no warnings;
         my $key_name  = join(UK_SEP, @$cols);
@@ -163,7 +163,7 @@ sub save
 
   my $class = ref $self;
 
-  my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_columns);
+  my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_column_names);
 
   __xrdbopriv_save_object($self);
 
@@ -175,12 +175,12 @@ sub forget
   my($self) = shift;
 
   my $class = ref $self;
-  my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_columns);
+  my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_column_names);
 
   no strict 'refs';
   delete ${"${class}::Objects_By_Id"}{$pk};
 
-  foreach my $cols ($self->meta->unique_keys)
+  foreach my $cols ($self->meta->unique_keys_column_names)
   {
     no warnings;
     my $key_name  = join(UK_SEP, @$cols);
@@ -198,7 +198,7 @@ sub remeber
   my($self) = shift;
 
   my $class = ref $self;
-  my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_columns);
+  my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_column_names);
 
   no strict 'refs';
   ${"${class}::Objects_By_Id"}{$pk} = $self;

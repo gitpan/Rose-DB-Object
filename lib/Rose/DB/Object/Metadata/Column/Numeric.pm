@@ -7,7 +7,7 @@ use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column::Scalar;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 __PACKAGE__->delete_method_maker_argument_names('length');
 
@@ -23,6 +23,23 @@ Rose::Object::MakeMethods::Generic->make_methods
 );
 
 sub type { 'numeric' }
+
+sub init_with_dbi_column_info
+{
+  my($self, $col_info) = @_;
+
+  $self->SUPER::init_with_dbi_column_info($col_info);
+
+  $self->scale($col_info->{'DECIMAL_DIGITS'});
+  $self->precision($col_info->{'COLUMN_SIZE'});
+
+  return;
+}
+
+sub perl_column_defintion_attributes
+{
+  grep { $_ ne 'length' } shift->SUPER::perl_column_defintion_attributes;
+}
 
 1;
 
@@ -64,11 +81,11 @@ Returns C<scalar>.
 
 =item B<precision [INT]>
 
-Get or set the precision of the numeric value.
+Get or set the precision of the numeric value.  The precision is the total count of significant digits in the whole number. That is, the number of digits to both sides of the decimal point. For example, the number 23.5141 has a precision of 6.
 
 =item B<scale [INT]>
 
-Get or set the scale of the numeric value.
+Get or set the scale of the numeric value.  The scale is the count of decimal digits in the fractional part, to the right of the decimal point.  For example, the number 23.5141 has a scale of 4.  Integers can be considered to have a scale of zero.
 
 =item B<type>
 

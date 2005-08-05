@@ -2,22 +2,24 @@ package Rose::DB::Object::Metadata::ForeignKey;
 
 use strict;
 
-use Rose::Object::MakeMethods::Generic;
+use Rose::DB::Object::Metadata::Util qw(:all);
 
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 __PACKAGE__->add_method_maker_argument_names
 (
   qw(share_db class key_columns)
 );
 
-Rose::Object::MakeMethods::Generic->make_methods
+use Rose::Object::MakeMethods::Generic
 (
-  { preserve_existing => 1 },
-  scalar => [ __PACKAGE__->method_maker_argument_names ],
+  boolean =>
+  [
+    'share_db' => { default => 1 },
+  ],
 
   hash =>
   [
@@ -26,10 +28,62 @@ Rose::Object::MakeMethods::Generic->make_methods
   ],
 );
 
+Rose::Object::MakeMethods::Generic->make_methods
+(
+  { preserve_existing => 1 },
+  scalar => [ __PACKAGE__->method_maker_argument_names ],
+);
+
 sub method_maker_class { 'Rose::DB::Object::MakeMethods::Generic' }
 sub method_maker_type  { 'object_by_key' }
 
 sub type { 'foreign key' }
+
+sub perl_hash_definition
+{
+  my($self, %args) = @_;
+
+  my $meta = $self->parent;
+
+  my $indent = defined $args{'indent'} ? $args{'indent'} : 
+                 ($meta ? $meta->default_perl_indent : undef);
+
+  my $braces = defined $args{'braces'} ? $args{'braces'} : 
+                 ($meta ? $meta->default_perl_braces : undef);
+
+  my $indent_txt = ' ' x $indent;
+
+  my $def = perl_quote_key($self->name) . ' => ' .
+            ($braces eq 'bsd' ? "\n{\n" : "{\n") .
+            $indent_txt . 'class => ' . perl_quote_value($self->class) . ",\n";
+
+  my $key_columns = $self->key_columns;
+
+  my $max_len = 0;
+  my $min_len = -1;
+
+  foreach my $name (keys %$key_columns)
+  {
+    $max_len = length($name)  if(length $name > $max_len);
+    $min_len = length($name)  if(length $name < $min_len || $min_len < 0);
+  }
+
+  $def .= $indent_txt . 'key_columns => ' . ($braces eq 'bsd' ? "\n" : '');
+  
+  my $hash = perl_hashref(hash => $key_columns, indent => $indent * 2, inline => 0);
+
+  for($hash)
+  {
+    s/^/$indent_txt/g;
+    s/\A$indent_txt//;
+    s/\}\Z/$indent_txt}/;
+    s/\A(\s*\{)/$indent_txt$1/  if($braces eq 'bsd');
+  }
+
+  $def .= $hash . ",\n}";
+
+  return $def;
+}
 
 1;
 
@@ -83,7 +137,7 @@ Returns C<object_by_key>.
 
 =item B<share_db [BOOL]>
 
-Get or set the boolean flag that determines whether the C<db> attribute of the current object is shared with the foreign object to be fetched.  If undefined, it is assumed to be true.
+Get or set the boolean flag that determines whether the C<db> attribute of the current object is shared with the foreign object to be fetched.  The default value is true.
 
 =item B<type>
 
