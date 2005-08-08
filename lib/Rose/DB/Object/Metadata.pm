@@ -109,7 +109,7 @@ __PACKAGE__->column_type_classes
   'chkpass'   => 'Rose::DB::Object::Metadata::Column::Pg::Chkpass',
 );
 
-our $VERSION = '0.041';
+our $VERSION = '0.042';
 
 our $Debug = 0;
 
@@ -1918,7 +1918,7 @@ Delete all of the unique key definitions.
 
 =item B<error_mode [MODE]>
 
-Get or set the error mode of the L<Rose::DB::Object> that fronts the table described by this L<Rose::DB::Object::Metadata> object.  If the error mode is false, then it defaults to the return value of the L<init_error_mode> method, which is "fatal" by default.
+Get or set the error mode of the L<Rose::DB::Object> that fronts the table described by this L<Rose::DB::Object::Metadata> object.  If the error mode is false, then it defaults to the return value of the L<init_error_mode> object method, which is "fatal" by default.
 
 The error mode determines what happens when a L<Rose::DB::Object> method encounters an error.  The "return" error mode causes the methods to behave as described in the L<Rose::DB::Object> documentation.  All other error modes cause an action to be performed before (possibly) returning as per the documentation (depending on whether or not the "action" is some variation on "throw an exception.")
 

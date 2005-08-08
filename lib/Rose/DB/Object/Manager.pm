@@ -7,7 +7,7 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.041';
+our $VERSION = '0.042';
 
 our $Debug = 0;
 
@@ -17,11 +17,10 @@ our $Debug = 0;
 
 use Rose::Class::MakeMethods::Generic
 (
-  inheritable_scalar => [ 'error', 'total' ],
-  'scalar --get_set_init' => [ 'error_mode' ],
+  inheritable_scalar => [ 'error', 'total', 'error_mode' ],
 );
 
-sub init_error_mode { 'return' }
+__PACKAGE__->error_mode('fatal');
 
 sub handle_error
 {
@@ -81,6 +80,7 @@ sub make_manager_methods
   my $object_class   = $args{'object_class'};
   my $class_invocant = UNIVERSAL::isa($target_class, __PACKAGE__) ? 
                          $target_class : __PACKAGE__;
+
   unless($object_class)
   {
     if(UNIVERSAL::isa($target_class, 'Rose::DB::Object::Manager'))
@@ -701,8 +701,7 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
       sort_by => 'category_id, start_date DESC',
       limit   => 100,
       offset  => 80,
-    ) 
-    or die Product::Manager->error;
+    );
 
   foreach my $product (@$products)
   {
@@ -726,8 +725,7 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
       sort_by => 'category_id, start_date DESC',
       limit   => 100,
       offset  => 80,
-    )
-    or die Product::Manager->error;
+    );
 
   while($product = $iterator->next)
   {
@@ -774,8 +772,7 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
       sort_by => 'category_id, start_date DESC',
       limit   => 100,
       offset  => 80,
-    )
-    or die Product::Manager->error;
+    );
 
   foreach my $product (@$products)
   {
@@ -799,9 +796,9 @@ Returns the text message associated with the last error, or false if there was n
 
 =item B<error_mode [MODE]>
 
-Get or set the error mode for this class.  If the error mode is false, then it defaults to the return value of the C<init_error_mode()> class method, which is "return" by default.
+Get or set the error mode for this class.  The error mode determines what happens when a method of this class encounters an error.  The default setting is "fatal", which means that methods will L<croak|Carp/croak> if they encounter an error.
 
-The error mode determines what happens when a method of this class encounters an error.  The default mode, "return", causes the methods to behave as described in this documentation.  All other error modes cause an action to be performed before returning as per the documentation.
+B<PLEASE NOTE:> The error return values described in the method documentation in the rest of this document are only relevant when the error mode is set to something "non-fatal."  In other words, if an error occurs, you'll never see any of those return values if the selected error mode L<die|perlfunc/die>s or L<croak|Carp/croak>s or otherwise throws an exception when an error occurs.
 
 Valid values of MODE are:
 
@@ -809,18 +806,19 @@ Valid values of MODE are:
 
 =item carp
 
-Call C<Carp::carp()> with the value of the C<error()> class method as an argument.
+Call L<Carp::carp|Carp/carp> with the value of the object L<error|Rose::DB::Object/error> as an argument.
 
 =item cluck
 
-Call C<Carp::cluck()> with the value of the C<error()> class method as an argument.
+Call L<Carp::cluck|Carp/cluck> with the value of the object L<error|Rose::DB::Object/error> as an argument.
 
 =item confess
 
-Call C<Carp::confess()> with the value of the C<error()> class method as an argument.
+Call L<Carp::confess|Carp/confess> with the value of the object L<error|Rose::DB::Object/error> as an argument.
+
 =item croak
 
-Call C<Carp::croak()> with the value of the C<error()> class method as an argument.
+Call L<Carp::croak|Carp/croak> with the value of the object L<error|Rose::DB::Object/error> as an argument.
 
 =item fatal
 
@@ -1065,7 +1063,11 @@ The first is the recommended technique, as seen in the L<synopsis|/SYNOPSIS>. Cr
 
   __PACKAGE__->make_manager_methods('products');
 
-The second example is used to install object manager methods directly into a C<Rose::DB::Object>-derived class.  I do not recommend this practice; I consider it "semantically impure" for the class that represents a single object to also be the class that's used to fetch multiple objects.  Inevitably, classes grow, and I'd like the "object manager" class to be separate from the object class itself so they can grow happily in isolation, with no potential clashes.  Nevertheless, here's how it would be done:
+The second example is used to install object manager methods directly into a L<Rose::DB::Object>-derived class.  I do not recommend this practice; I consider it "semantically impure" for the class that represents a single object to also be the class that's used to fetch multiple objects.  Inevitably, classes grow, and I'd like the "object manager" class to be separate from the object class itself so they can grow happily in isolation, with no potential clashes.
+
+Also, keep in mind that L<Rose::DB::Object> and L<Rose::DB::Object::Manager> have separate L<error_mode> settings which must be synchronized or otherwise dealt with.  Another advantage of using a separate L<Rose::DB::Object::Manager> subclass (as described earlier) is that you can override the L<error_mode|Rose::DB::Object::Manager/error_mode> in your L<Rose::DB::Object::Manager> subclass only, rather than overriding the base class L<Rose::DB::Object::Manager error_mode|Rose::DB::Object::Manager/error_mode>, which may affect other classes.
+
+If none of that dissuades you, here's how to do it:
 
   package Product;
 

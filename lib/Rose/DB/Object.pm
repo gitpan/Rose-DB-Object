@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.061';
+our $VERSION = '0.062';
 
 our $Debug = 0;
 
@@ -665,7 +665,8 @@ Rose::DB::Object - Object representation of a single row in a database table.
 =head1 SYNOPSIS
 
   ## Step 0: Set up your Rose::DB data sources, otherwise you
-  ## won't be able to connect to the database at all!
+  ## won't be able to connect to the database at all!  See thee
+  ## Rose::DB documentation for more information.
 
   ##
   ## Create classes - two possible approaches:
@@ -869,9 +870,9 @@ Metadata objects can be populated manually or automatically.  Both techniques ar
 
 =head2 Error Handling
 
-Error handling for L<Rose::DB::Object>-derived objects is controlled by the L<error_mode|Rose::DB::Object::Metadata/error_mode> method of the L<Rose::DB::Object::Metadata> object associated with the class (accessible via the L<meta> method).  The default setting is "fatal", which means that L<Rose::DB::Object> methods will L<croak|Carp/croak> if then encounter an error.
+Error handling for L<Rose::DB::Object>-derived objects is controlled by the L<error_mode|Rose::DB::Object::Metadata/error_mode> method of the L<Rose::DB::Object::Metadata> object associated with the class (accessible via the L<meta> method).  The default setting is "fatal", which means that L<Rose::DB::Object> methods will L<croak|Carp/croak> if they encounter an error.
 
-B<PLEASE NOTE:> The return values described in the method documentation below are only relevant when the error mode is set to something "non-fatal."  In other words, you'll never see any of those return values if the selected error mode L<die|perlfunc/die>s or L<croak|Carp/croak>s or otherwise throws an exception when an error occurs.
+B<PLEASE NOTE:> The error return values described in the L<object method|/"OBJECT METHODS"> documentation are only relevant when the error mode is set to something "non-fatal."  In other words, if an error occurs, you'll never see any of those return values if the selected error mode L<die|perlfunc/die>s or L<croak|Carp/croak>s or otherwise throws an exception when an error occurs.
 
 =head1 CONSTRUCTOR
 
