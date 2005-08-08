@@ -115,6 +115,10 @@ sub auto_generate_unique_keys
     Carp::croak "Could not auto-retrieve unique keys for class $class - $@";
   }
 
+  # This sort order is part of the API, and is essential to make the
+  # test suite work.
+  @unique_keys = sort { lc $a->name cmp lc $b->name } @unique_keys;
+  
   return wantarray ? @unique_keys : \@unique_keys;
 }
 

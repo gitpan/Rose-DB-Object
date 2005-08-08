@@ -110,7 +110,7 @@ sub perl_column_defintion_attributes
   {
     my $val = $self->can($attr) ? $self->$attr() : next;
 
-    if((!defined $val || ref $val || $attr eq 'name') ||
+    if((!defined $val || ref $val || $attr =~ /^(?:name|is_primary_key_member|primary_key_position)$/) ||
        ($attr eq 'method_name' && $self->method_name eq $self->name) ||
        ($attr eq 'not_null' && !$self->not_null))
     {

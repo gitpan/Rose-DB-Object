@@ -132,6 +132,7 @@ DEFAULT_FK_NAME_GEN:
   {
     my($meta, $fk) = @_;
     
+    my $class       = $meta->class;
     my $key_columns = $fk->key_columns;
     
     my $name;
@@ -174,12 +175,12 @@ DEFAULT_FK_NAME_GEN:
     # Make sure the name's not taken, appending numbers until it's unique.
     # See, this is why you shouldn't rely on auto_init_* all the time.
     # You end up with lame method names.
-    if($Seen_FK_Name{$name})
+    if($Seen_FK_Name{$class}{$name})
     {
       my $num = 2;
       my $new_name = $name;
 
-      while($Seen_FK_Name{$new_name})
+      while($Seen_FK_Name{$class}{$new_name})
       {
         $new_name = $name . $num++;
       }
@@ -187,7 +188,7 @@ DEFAULT_FK_NAME_GEN:
       $name = $new_name;
     }
 
-    $Seen_FK_Name{$name}++;
+    $Seen_FK_Name{$class}{$name}++;
 
     return $name;
   }
@@ -319,7 +320,7 @@ sub auto_generate_foreign_keys
       push(@fk_info, $fk_info);
     }
     
-    # This step is important!  It ensures that foreign keys willbe created
+    # This step is important!  It ensures that foreign keys will be created
     # in a deterministic order, which in turn allows the "auto-naming" of
     # foreign keys to work in a predictible manner.  This exact sort order
     # (lowercase table name comparisons) is part of the API for foreign
@@ -400,7 +401,7 @@ sub auto_init_columns
       $self->add_column($column);
     }
   }
-  else
+  elsif($args{'replace_existing'} || !@$existing_columns)
   {
     $self->columns(values %$auto_columns);
   }
@@ -657,7 +658,7 @@ sub auto_init_unique_keys
       $self->add_unique_key($key);
     }
   }
-  else
+  elsif($args{'replace_existing'} || !@$existing_unique_keys)
   {
     $self->unique_keys(@$auto_unique_keys);
   }
@@ -686,7 +687,7 @@ sub auto_init_foreign_keys
       $self->add_foreign_key($key);
     }
   }
-  elsif($args{'replace_existing'} && @$auto_foreign_keys != @$existing_foreign_keys)
+  elsif($args{'replace_existing'} || !@$existing_foreign_keys)
   {
     $self->foreign_keys(@$auto_foreign_keys);
   }

@@ -654,7 +654,11 @@ EOF
     Carp::croak "Could not auto-retrieve unique keys for class $class - $@";
   }
 
-  return wantarray ? values %unique_keys : [ values %unique_keys ];
+  # This sort order is part of the API, and is essential to make the
+  # test suite work.
+  my @uk = map { $unique_keys{$_} } sort map { lc } keys(%unique_keys);
+
+  return wantarray ? @uk : \@uk;
 }
 
 #

@@ -109,7 +109,7 @@ __PACKAGE__->column_type_classes
   'chkpass'   => 'Rose::DB::Object::Metadata::Column::Pg::Chkpass',
 );
 
-our $VERSION = '0.04';
+our $VERSION = '0.041';
 
 our $Debug = 0;
 
@@ -2132,15 +2132,19 @@ If you do not want to modify the auto-generated columns, you should use the L<au
 
 A fatal error will occur unless at least one column was auto-generated.
 
-=item B<auto_generate_foreign_keys>
+=item B<auto_generate_foreign_keys [PARAMS]>
 
-Auto-generate L<Rose::DB::Object::Metadata::ForeignKey> objects for each foreign key in the table.  Note that this method does not modify the metadata object's list of L<foreign_keys>.  It simply returns a list of foreign key objects.  Calling this method in void context will cause a fatal error.
+Auto-generate L<Rose::DB::Object::Metadata::ForeignKey> objects for each foreign key in the table.  Note that this method does not modify the metadata object's list of L<foreign_keys>.  It simply returns a list of foreign key objects.  Calling this method in void context will cause a fatal error.  A warning will be issued if a foreign key could not be generated because no L<Rose::DB::Object>-derived class was found for the foreign table.
+
+PARAMS are optional name/value pairs.  If a C<no_warnings> parameter is passed with a true value, then the warning described above will not be issued.
 
 Returns a list of foreign key objects (in list context) or a reference to an array of foreign key objects (in scalar context).
 
 If you do not want to inspect or modify the auto-generated foreign keys, but just want them to populate the metadata object's L<foreign_keys> list, you should use the L<auto_init_foreign_keys> method instead.
 
-This method is currently a non-functional when working with Informix and MySQL databases.  (I'm working on it...)
+B<Note:> This method works with MySQL only when using the InnoDB storage type.
+
+This method is currently a non-functional when working with Informix databases, but support is planned for the near future.
 
 =item B<auto_generate_unique_keys>
 

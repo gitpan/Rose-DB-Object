@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 146;
+use Test::More tests => 172;
 
 BEGIN 
 {
@@ -10,7 +10,7 @@ BEGIN
   use_ok('Rose::DB::Object');
 }
 
-our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
+our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL_WITH_INNODB, $HAVE_INFORMIX);
 
 #
 # Postgres
@@ -427,7 +427,7 @@ EOF
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 28)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 54)  unless($HAVE_MYSQL_WITH_INNODB);
 
   Rose::DB->default_type($db_type);
 
@@ -488,10 +488,287 @@ SKIP: foreach my $db_type ('mysql')
   ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
+  my $oo1 = MyMySQLOtherObject->new(k1 => 1, k2 => 2, k3 => 3, name => 'one');
+  ok($oo1->save, 'other object save() 1');
+
+  my $oo2 = MyMySQLOtherObject->new(k1 => 11, k2 => 12, k3 => 13, name => 'two');
+  ok($oo2->save, 'other object save() 2');
+
+  my $other2 = MyMySQLOtherObject2->new(id2 => 12, name => 'twelve');
+  ok($other2->save, 'other 2 object save() 1');
+
+  my $other3 = MyMySQLOtherObject3->new(id3 => 13, name => 'thirteen');
+  ok($other3->save, 'other 3 object save() 1');
+
+  my $other4 = MyMySQLOtherObject4->new(id4 => 14, name => 'fourteen');
+  ok($other4->save, 'other 4 object save() 1');
+
+  is($o->fother, undef, 'fother() 1');
+  is($o->fother2, undef, 'fother2() 1');
+  is($o->fother3, undef, 'fother3() 1');
+  is($o->my_my_sqlother_object, undef, 'my_my_sqlother_object() 1');
+
+  $o->fother_id2(12);
+  $o->fother_id3(13);
+  $o->fother_id4(14);
+  $o->fkone(1);
+  $o->fk2(2);
+  $o->fk3(3);
+
+  my $obj = $o->my_my_sqlother_object or warn "# ", $o->error, "\n";
+  is(ref $obj, 'MyMySQLOtherObject', 'my_my_sqlother_object() 2');
+  is($obj->name, 'one', 'my_my_sqlother_object() 3');
+
+  $obj = $o->fother or warn "# ", $o->error, "\n";
+  is(ref $obj, 'MyMySQLOtherObject2', 'fother() 2');
+  is($obj->name, 'twelve', 'fother() 3');
+
+  $obj = $o->fother2 or warn "# ", $o->error, "\n";
+  is(ref $obj, 'MyMySQLOtherObject3', 'fother2() 2');
+  is($obj->name, 'thirteen', 'fother2() 3');
+
+  $obj = $o->fother3 or warn "# ", $o->error, "\n";
+  is(ref $obj, 'MyMySQLOtherObject4', 'fother3() 2');
+  is($obj->name, 'fourteen', 'fother3() 3');
+
+  $o->my_my_sqlother_object(undef);
+  $o->fkone(11);
+  $o->fk2(12);
+  $o->fk3(13);
+
+  $obj = $o->my_my_sqlother_object or warn "# ", $o->error, "\n";
+
+  is(ref $obj, 'MyMySQLOtherObject', 'my_my_sqlother_object() 4');
+  is($obj->name, 'two', 'my_my_sqlother_object() 5');
+
+
   ok($o->delete, "delete() - $db_type");
   
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, 'alias_column() nonesuch');
+
+  #
+  # Test code generation
+  #
+
+  is(MyMySQLObject->meta->perl_foreign_keys_definition,
+     <<'EOF', "perl_foreign_keys_definition 1 - $db_type");
+__PACKAGE__->meta->foreign_keys(
+    fother => {
+        class => 'MyMySQLOtherObject2',
+        key_columns => {
+            fother_id2 => 'id2',
+        },
+    },
+
+    fother2 => {
+        class => 'MyMySQLOtherObject3',
+        key_columns => {
+            fother_id3 => 'id3',
+        },
+    },
+
+    fother3 => {
+        class => 'MyMySQLOtherObject4',
+        key_columns => {
+            fother_id4 => 'id4',
+        },
+    },
+
+    my_my_sqlother_object => {
+        class => 'MyMySQLOtherObject',
+        key_columns => {
+            fk1 => 'k1',
+            fk2 => 'k2',
+            fk3 => 'k3',
+        },
+    },
+);
+EOF
+
+  is(MyMySQLObject->meta->perl_foreign_keys_definition(braces => 'bsd', indent => 2),
+     <<'EOF', "perl_foreign_keys_definition 2 - $db_type");
+__PACKAGE__->meta->foreign_keys
+(
+  fother => 
+  {
+    class => 'MyMySQLOtherObject2',
+    key_columns => 
+    {
+      fother_id2 => 'id2',
+    },
+  },
+
+  fother2 => 
+  {
+    class => 'MyMySQLOtherObject3',
+    key_columns => 
+    {
+      fother_id3 => 'id3',
+    },
+  },
+
+  fother3 => 
+  {
+    class => 'MyMySQLOtherObject4',
+    key_columns => 
+    {
+      fother_id4 => 'id4',
+    },
+  },
+
+  my_my_sqlother_object => 
+  {
+    class => 'MyMySQLOtherObject',
+    key_columns => 
+    {
+      fk1 => 'k1',
+      fk2 => 'k2',
+      fk3 => 'k3',
+    },
+  },
+);
+EOF
+
+  is(MyMySQLObject->meta->perl_class_definition,
+     <<'EOF', "perl_class_definition 1 - $db_type");
+package MyMySQLObject;
+
+use strict;
+
+use Rose::DB::Object
+our @ISA = qw(Rose::DB::Object);
+
+__PACKAGE__->meta->columns(
+    bits          => { type => 'bitfield', bits => 5, default => 101 },
+    date_created  => { type => 'timestamp' },
+    fk1           => { type => 'integer', method_name => 'fkone' },
+    fk2           => { type => 'integer' },
+    fk3           => { type => 'integer' },
+    flag          => { type => 'boolean', default => 1 },
+    flag2         => { type => 'boolean' },
+    fother_id2    => { type => 'integer' },
+    fother_id3    => { type => 'integer' },
+    fother_id4    => { type => 'integer' },
+    id            => { type => 'integer', not_null => 1 },
+    last_modified => { type => 'timestamp', default => 'now' },
+    name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
+    save          => { type => 'integer', method_name => 'save_col' },
+    start         => { type => 'date', default => '1980-12-24' },
+    status        => { type => 'varchar', default => 'active', length => 32 },
+);
+
+__PACKAGE__->meta->primary_key_columns([ 'id' ]);
+
+__PACKAGE__->meta->foreign_keys(
+    fother => {
+        class => 'MyMySQLOtherObject2',
+        key_columns => {
+            fother_id2 => 'id2',
+        },
+    },
+
+    fother2 => {
+        class => 'MyMySQLOtherObject3',
+        key_columns => {
+            fother_id3 => 'id3',
+        },
+    },
+
+    fother3 => {
+        class => 'MyMySQLOtherObject4',
+        key_columns => {
+            fother_id4 => 'id4',
+        },
+    },
+
+    my_my_sqlother_object => {
+        class => 'MyMySQLOtherObject',
+        key_columns => {
+            fk1 => 'k1',
+            fk2 => 'k2',
+            fk3 => 'k3',
+        },
+    },
+);
+
+1;
+EOF
+
+  is(MyMySQLObject->meta->perl_class_definition(braces => 'bsd', indent => 2),
+     <<'EOF', "perl_class_definition 2 - $db_type");
+package MyMySQLObject;
+
+use strict;
+
+use Rose::DB::Object
+our @ISA = qw(Rose::DB::Object);
+
+__PACKAGE__->meta->columns
+(
+  bits          => { type => 'bitfield', bits => 5, default => 101 },
+  date_created  => { type => 'timestamp' },
+  fk1           => { type => 'integer', method_name => 'fkone' },
+  fk2           => { type => 'integer' },
+  fk3           => { type => 'integer' },
+  flag          => { type => 'boolean', default => 1 },
+  flag2         => { type => 'boolean' },
+  fother_id2    => { type => 'integer' },
+  fother_id3    => { type => 'integer' },
+  fother_id4    => { type => 'integer' },
+  id            => { type => 'integer', not_null => 1 },
+  last_modified => { type => 'timestamp', default => 'now' },
+  name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
+  save          => { type => 'integer', method_name => 'save_col' },
+  start         => { type => 'date', default => '1980-12-24' },
+  status        => { type => 'varchar', default => 'active', length => 32 },
+);
+
+__PACKAGE__->meta->primary_key_columns([ 'id' ]);
+
+__PACKAGE__->meta->foreign_keys
+(
+  fother => 
+  {
+    class => 'MyMySQLOtherObject2',
+    key_columns => 
+    {
+      fother_id2 => 'id2',
+    },
+  },
+
+  fother2 => 
+  {
+    class => 'MyMySQLOtherObject3',
+    key_columns => 
+    {
+      fother_id3 => 'id3',
+    },
+  },
+
+  fother3 => 
+  {
+    class => 'MyMySQLOtherObject4',
+    key_columns => 
+    {
+      fother_id4 => 'id4',
+    },
+  },
+
+  my_my_sqlother_object => 
+  {
+    class => 'MyMySQLOtherObject',
+    key_columns => 
+    {
+      fk1 => 'k1',
+      fk2 => 'k2',
+      fk3 => 'k3',
+    },
+  },
+);
+
+1;
+EOF
 }
 
 #
@@ -761,7 +1038,6 @@ EOF
 
     MyPgObject->meta->table('rose_db_object_test');
 
-
     MyPgObject->meta->column_name_to_method_name_mapper(sub
     {
       return ($_ eq 'fk1') ? 'fkone' : $_
@@ -785,24 +1061,20 @@ EOF
   # MySQL
   #
 
-  eval 
+  eval
   {
     $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
       or die Rose::DB->error;
-  };
 
-  if(!$@ && $dbh)
-  {
-    our $HAVE_MYSQL = 1;
-
-    # Drop existing table and create schema, ignoring errors
+    CLEAR:
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
-      $dbh->do('DROP TABLE rose_db_object_test');
+      $dbh->do('DROP TABLE rose_db_object_test CASCADE');
       $dbh->do('DROP TABLE rose_db_object_other');
     }
 
+    # Foreign key stuff requires InnoDB support
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_other
 (
@@ -811,11 +1083,68 @@ CREATE TABLE rose_db_object_other
   k3    INT NOT NULL,
   name  VARCHAR(32),
 
-  KEY(k1, k2, k3)
+  PRIMARY KEY(k1, k2, k3)
 )
+TYPE=InnoDB
+EOF
+  };
+
+  if(!$@ && $dbh)
+  {
+    our $HAVE_MYSQL_WITH_INNODB = 1;
+
+    # Drop existing table and create schema, ignoring errors
+    {
+      local $dbh->{'RaiseError'} = 0;
+      local $dbh->{'PrintError'} = 0;
+      $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_other');
+      $dbh->do('DROP TABLE rose_db_object_other2');
+      $dbh->do('DROP TABLE rose_db_object_other3');
+      $dbh->do('DROP TABLE rose_db_object_other4');
+    }
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_other
+(
+  k1    INT UNSIGNED NOT NULL,
+  k2    INT UNSIGNED NOT NULL,
+  k3    INT UNSIGNED NOT NULL,
+  name  VARCHAR(32),
+
+  PRIMARY KEY(k1, k2, k3)
+)
+TYPE=InnoDB
 EOF
 
-    # Create test foreign subclass
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_other2
+(
+  id2   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name  VARCHAR(32)
+)
+TYPE=InnoDB
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_other3
+(
+  id3   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name  VARCHAR(32)
+)
+TYPE=InnoDB
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_other4
+(
+  id4   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name  VARCHAR(32)
+)
+TYPE=InnoDB
+EOF
+
+    # Create test foreign subclass 1
 
     package MyMySQLOtherObject;
 
@@ -824,33 +1153,56 @@ EOF
     sub init_db { Rose::DB->new('mysql') }
 
     MyMySQLOtherObject->meta->table('rose_db_object_other');
-      
-    MyMySQLOtherObject->meta->columns
-    (
-      name => { type => 'varchar'},
-      k1   => { type => 'int' },
-      k2   => { type => 'int' },
-      k3   => { type => 'int' },
-    );
 
-    MyMySQLOtherObject->meta->primary_key_columns([ qw(k1 k2 k3) ]);
+    MyMySQLOtherObject->meta->auto_initialize;
 
-    MyMySQLOtherObject->meta->initialize;
-    
+    # Create test foreign subclasses 2-4
+
+    package MyMySQLOtherObject2;
+    our @ISA = qw(Rose::DB::Object);
+    sub init_db { Rose::DB->new('mysql') }
+    MyMySQLOtherObject2->meta->table('rose_db_object_other2');
+    MyMySQLOtherObject2->meta->auto_initialize;
+
+    package MyMySQLOtherObject3;
+    our @ISA = qw(Rose::DB::Object);
+    sub init_db { Rose::DB->new('mysql') }
+    MyMySQLOtherObject3->meta->table('rose_db_object_other3');
+    MyMySQLOtherObject3->meta->auto_initialize;
+
+    package MyMySQLOtherObject4;
+    our @ISA = qw(Rose::DB::Object);
+    sub init_db { Rose::DB->new('mysql') }
+    MyMySQLOtherObject4->meta->table('rose_db_object_other4');
+    MyMySQLOtherObject4->meta->auto_initialize;    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
-  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  id             INT AUTO_INCREMENT PRIMARY KEY,
   name           VARCHAR(32) NOT NULL,
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
   bits           BIT(5) NOT NULL DEFAULT '00101',
-  start          DATE,
+  start          DATE DEFAULT '1980-12-24',
   save           INT,
+  fk1            INT UNSIGNED,
+  fk2            INT UNSIGNED,
+  fk3            INT UNSIGNED,
+  fother_id2     INT UNSIGNED,
+  fother_id3     INT UNSIGNED,
+  fother_id4     INT UNSIGNED,
   last_modified  TIMESTAMP,
-  date_created   TIMESTAMP
+  date_created   TIMESTAMP,
+
+  FOREIGN KEY (fother_id2) REFERENCES rose_db_object_other2 (id2),
+  FOREIGN KEY (fother_id3) REFERENCES rose_db_object_other3 (id3),
+  FOREIGN KEY (fother_id4) REFERENCES rose_db_object_other4 (id4),
+  
+  FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
 )
+TYPE=InnoDB
 EOF
 
     $dbh->disconnect;
@@ -865,39 +1217,34 @@ EOF
 
     MyMySQLObject->meta->table('rose_db_object_test');
 
-    MyMySQLObject->meta->columns
-    (
-      'name',
-      id       => { primary_key => 1 },
-      flag     => { type => 'boolean', default => 1 },
-      flag2    => { type => 'boolean' },
-      status   => { default => 'active' },
-      start    => { type => 'date', default => '12/24/1980' },
-      save     => { type => 'scalar' },
-      bits     => { type => 'bitfield', bits => 5, default => 101 },
-      last_modified => { type => 'datetime' },
-      date_created  => { type => 'datetime' },
-    );
+    MyMySQLObject->meta->column_name_to_method_name_mapper(sub
+    {
+      return ($_ eq 'fk1') ? 'fkone' : $_
+    });
 
-    MyMySQLObject->meta->foreign_keys
-    (
-      other_obj =>
-      {
-        class => 'MyMySQLOtherObject',
-        key_columns =>
-        {
-          fk1 => 'k1',
-          fk2 => 'k2',
-          fk3 => 'k3',
-        }
-      },
-    );
+    MyMySQLObject->meta->auto_init_columns;
 
-    eval { MyMySQLObject->meta->initialize };
-    Test::More::ok($@, 'meta->initialize() reserved method');
+    # Account for bugs in DBD::mysql's column_info implementation
 
-    MyMySQLObject->meta->alias_column(save => 'save_col');
-    MyMySQLObject->meta->initialize(preserve_existing => 1);
+    # BIT(5) column shows up as TINYINT(1)
+    MyMySQLObject->meta->column(bits => { type => 'bitfield', bits => 5, default => 101 });
+    
+    # BOOLEAN column shows up as TINYINT(1)
+    MyMySQLObject->meta->column(flag  => { type => 'boolean', default => 1 });
+    MyMySQLObject->meta->column(flag2 => { type => 'boolean' });
+
+    MyMySQLObject->meta->auto_initialize;
+
+    Test::More::ok(MyMySQLObject->can('fother'),  'fother() check - mysql');
+    Test::More::ok(MyMySQLObject->can('fother2'), 'fother2() check - mysql');
+    Test::More::ok(MyMySQLObject->can('fother3'), 'fother3() check - mysql');
+
+    package MyMySQLObjectEvalTest;
+    our @ISA = qw(Rose::DB::Object);
+    sub init_db { Rose::DB->new('mysql') }
+
+    eval 'package MyMySQLObjectEvalTest; ' . MyMySQLObject->meta->perl_foreign_keys_definition;
+    Test::More::ok(!$@, 'perl_foreign_keys_definition eval - mysql');
   }
 
   #
@@ -1093,14 +1440,17 @@ END
     $dbh->disconnect;
   }
   
-  if($HAVE_MYSQL)
+  if($HAVE_MYSQL_WITH_INNODB)
   {
     # MySQL
     my $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE rose_db_object_test');
+    $dbh->do('DROP TABLE rose_db_object_test CASCADE');
     $dbh->do('DROP TABLE rose_db_object_other');
+    $dbh->do('DROP TABLE rose_db_object_other2');
+    $dbh->do('DROP TABLE rose_db_object_other3');
+    $dbh->do('DROP TABLE rose_db_object_other4');
 
     $dbh->disconnect;
   }

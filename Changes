@@ -1,3 +1,7 @@
+0.061 (08.07.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added foreign key auto-initialization for MySQL.
+
 0.06 (08.05.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Added auto-initialization (finally).
