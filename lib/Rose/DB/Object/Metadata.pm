@@ -109,7 +109,7 @@ __PACKAGE__->column_type_classes
   'chkpass'   => 'Rose::DB::Object::Metadata::Column::Pg::Chkpass',
 );
 
-our $VERSION = '0.043';
+our $VERSION = '0.044';
 
 our $Debug = 0;
 
@@ -2322,6 +2322,8 @@ The output looks like this:
  use Rose::DB::Object
  our @ISA = qw(Rose::DB::Object);
 
+ __PACKAGE__->meta->table('products');
+
  __PACKAGE__->meta->columns
  (
    category_id   => { type => 'integer' },
@@ -2360,6 +2362,10 @@ The output looks like this:
      },
    },
  );
+
+ __PACKAGE__->meta->initialize;
+
+ 1;
 
 See the L<auto-initialization|AUTO-INITIALIZATION> section for more discussion of Perl code generation.
 

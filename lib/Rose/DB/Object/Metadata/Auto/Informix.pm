@@ -783,10 +783,6 @@ sub auto_generate_foreign_keys
 
   my($class, @foreign_keys);
 
-if($self->table eq 'rose_db_object_test')
-{
-  $DB::single = 1;
-}
   eval
   {
     $class = $self->class or die "Missing class!";
@@ -869,7 +865,7 @@ EOF
                "'$foreign_table'";
         }
 
-        next;
+        next FK;
       }
 
       my %key_columns;

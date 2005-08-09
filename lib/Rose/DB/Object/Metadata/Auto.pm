@@ -328,7 +328,9 @@ sub auto_generate_foreign_keys
     @fk_info = 
       sort { lc $a->{'UK_TABLE_NAME'} cmp lc $b->{'UK_TABLE_NAME'} } @fk_info;
 
-    foreach my $fk_info (@fk_info)
+    my %warned;
+
+    FK_INFO: foreach my $fk_info (@fk_info)
     {
       my $foreign_class = 
         $self->class_for(catalog => $fk_info->{'UK_TABLE_CAT'},
@@ -337,14 +339,21 @@ sub auto_generate_foreign_keys
 
       unless($foreign_class)
       {
-        unless($no_warnings)
+        my $key = join($;, map { defined($_) ? $_ : '' } 
+                       @$fk_info{qw(UK_TABLE_CAT UK_TABLE_NAME UK_TABLE_SCHEM)});
+ 
+        unless($no_warnings || $warned{$key}++)
         {
           no warnings; # Allow undef coercion to empty string
           warn "No Rose::DB::Object-derived class found for catalog '",
                 $fk_info->{'UK_TABLE_CAT'}, "' schema '", 
                 $fk_info->{'UK_TABLE_SCHEM'}, "' table '", 
                 $fk_info->{'UK_TABLE_NAME'}, "'";
+
+          ;
         }
+
+        next FK_INFO;
       }
 
       my $key_name       = $fk_info->{'UK_NAME'}; 
@@ -362,6 +371,9 @@ sub auto_generate_foreign_keys
       next  if($seen{$fk_info->{'UK_NAME'}}++);
       my $info = $fk{$fk_info->{'UK_NAME'}};
       my $fk   = Rose::DB::Object::Metadata::ForeignKey->new(%$info);
+
+      next  unless(defined $fk->class);
+
       my $name = $self->foreign_key_name_generator->($self, $fk);
       
       unless(defined $name && $name =~ /^\w+$/)
@@ -617,10 +629,14 @@ use strict;
 @{[join(";\n", map { "use $_" } @$isa)]}
 our \@ISA = qw(@$isa);
 
+__PACKAGE__->meta->table('@{[ $self->table ]}');
+
 @{[join("\n", grep { /\S/ } $self->perl_columns_definition(%args),
                             $self->perl_primary_key_columns_definition(%args),
                             $self->perl_unique_keys_definition(%args),
                             $self->perl_foreign_keys_definition(%args))]}
+__PACKAGE__->meta->initialize;
+
 1;
 EOF
 }

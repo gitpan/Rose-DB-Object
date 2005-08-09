@@ -285,6 +285,8 @@ use strict;
 use Rose::DB::Object
 our @ISA = qw(Rose::DB::Object);
 
+__PACKAGE__->meta->table('rose_db_object_test');
+
 __PACKAGE__->meta->columns(
     bits          => { type => 'bitfield', bits => 5, default => '00101', not_null => 1 },
     date_created  => { type => 'timestamp' },
@@ -340,6 +342,8 @@ __PACKAGE__->meta->foreign_keys(
     },
 );
 
+__PACKAGE__->meta->initialize;
+
 1;
 EOF
 
@@ -351,6 +355,8 @@ use strict;
 
 use Rose::DB::Object
 our @ISA = qw(Rose::DB::Object);
+
+__PACKAGE__->meta->table('rose_db_object_test');
 
 __PACKAGE__->meta->columns
 (
@@ -416,6 +422,8 @@ __PACKAGE__->meta->foreign_keys
     },
   },
 );
+
+__PACKAGE__->meta->initialize;
 
 1;
 EOF
@@ -639,6 +647,8 @@ use strict;
 use Rose::DB::Object
 our @ISA = qw(Rose::DB::Object);
 
+__PACKAGE__->meta->table('rose_db_object_test');
+
 __PACKAGE__->meta->columns(
     bits          => { type => 'bitfield', bits => 5, default => 101 },
     date_created  => { type => 'timestamp' },
@@ -692,6 +702,8 @@ __PACKAGE__->meta->foreign_keys(
     },
 );
 
+__PACKAGE__->meta->initialize;
+
 1;
 EOF
 
@@ -703,6 +715,8 @@ use strict;
 
 use Rose::DB::Object
 our @ISA = qw(Rose::DB::Object);
+
+__PACKAGE__->meta->table('rose_db_object_test');
 
 __PACKAGE__->meta->columns
 (
@@ -766,6 +780,8 @@ __PACKAGE__->meta->foreign_keys
     },
   },
 );
+
+__PACKAGE__->meta->initialize;
 
 1;
 EOF
@@ -1009,6 +1025,8 @@ use strict;
 use Rose::DB::Object
 our @ISA = qw(Rose::DB::Object);
 
+__PACKAGE__->meta->table('rose_db_object_test');
+
 __PACKAGE__->meta->columns(
     bits          => { type => 'bitfield', bits => 5, default => 101 },
     date_created  => { type => 'datetime year to fraction(5)' },
@@ -1063,6 +1081,8 @@ __PACKAGE__->meta->foreign_keys(
     },
 );
 
+__PACKAGE__->meta->initialize;
+
 1;
 EOF
 
@@ -1074,6 +1094,8 @@ use strict;
 
 use Rose::DB::Object
 our @ISA = qw(Rose::DB::Object);
+
+__PACKAGE__->meta->table('rose_db_object_test');
 
 __PACKAGE__->meta->columns
 (
@@ -1138,6 +1160,8 @@ __PACKAGE__->meta->foreign_keys
     },
   },
 );
+
+__PACKAGE__->meta->initialize;
 
 1;
 EOF

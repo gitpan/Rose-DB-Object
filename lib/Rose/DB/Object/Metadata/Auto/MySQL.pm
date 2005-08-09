@@ -138,7 +138,7 @@ sub auto_generate_foreign_keys
       {
         s/^InnoDB free:.+?; *//;
 
-        while(s{\(((?:`[^`]+` *)+)\) REFER `([^`]+)/([^`]+)`\(((?:`[^`]+` *)+)\)(?:; *| *$)}{})
+        FK: while(s{\(((?:`[^`]+` *)+)\) REFER `([^`]+)/([^`]+)`\(((?:`[^`]+` *)+)\)(?:; *| *$)}{})
         {
           my $local_columns   = $1;
           my $foreign_db      = $2;
@@ -169,7 +169,7 @@ sub auto_generate_foreign_keys
                    "'$foreign_table'";
             }
 
-            next;
+            next FK;
           }
 
           my %key_columns;
