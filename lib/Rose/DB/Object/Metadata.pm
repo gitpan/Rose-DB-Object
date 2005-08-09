@@ -109,7 +109,7 @@ __PACKAGE__->column_type_classes
   'chkpass'   => 'Rose::DB::Object::Metadata::Column::Pg::Chkpass',
 );
 
-our $VERSION = '0.042';
+our $VERSION = '0.043';
 
 our $Debug = 0;
 
@@ -2143,8 +2143,6 @@ Returns a list of foreign key objects (in list context) or a reference to an arr
 If you do not want to inspect or modify the auto-generated foreign keys, but just want them to populate the metadata object's L<foreign_keys> list, you should use the L<auto_init_foreign_keys> method instead.
 
 B<Note:> This method works with MySQL only when using the InnoDB storage type.
-
-This method is currently a non-functional when working with Informix databases, but support is planned for the near future.
 
 =item B<auto_generate_unique_keys>
 

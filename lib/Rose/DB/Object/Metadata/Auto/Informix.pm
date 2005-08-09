@@ -4,17 +4,17 @@ use strict;
 
 use Carp();
 
+use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::UniqueKey;
 
 use Rose::DB::Object::Metadata::Auto;
 our @ISA = qw(Rose::DB::Object::Metadata::Auto);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 # syscolumns.coltype constants taken from:
 #
 # http://www-306.ibm.com/software/data/informix/pubs/library/datablade/dbdk/sqlr/01.fm14.html
-
 use constant CHAR       =>  0;
 use constant SMALLINT   =>  1;
 use constant INTEGER    =>  2;
@@ -659,6 +659,261 @@ EOF
   my @uk = map { $unique_keys{$_} } sort map { lc } keys(%unique_keys);
 
   return wantarray ? @uk : \@uk;
+}
+
+use constant FK_INDEXES_SQL =><<'EOF';
+SELECT
+    c1.constrname   referring_constraint_name,
+    c1.owner        referring_constraint_owner,
+    c1.idxname      referring_index_name,
+    t2.tabid        referring_table_id,
+    t2.owner        referring_table_owner,
+    t2.tabname      referring_table_name,
+    c2.constrname   referred_constraint_name,
+    c2.owner        referred_constraint_owner,
+    c2.idxname      referred_index_name,
+    t1.tabid        referred_table_id,
+    t1.owner        referred_table_owner,
+    t1.tabname      referred_table_name
+FROM
+    informix.sysreferences   r,
+    informix.sysconstraints c1,
+    informix.sysconstraints c2,
+    informix.systables      t1,
+    informix.systables      t2
+WHERE
+    c1.constrtype = 'R'       AND
+    c1.tabid = t2.tabid       AND
+    c1.constrid = r.constrid  AND
+    r.ptabid = t1.tabid       AND
+    r.primary = c2.constrid   AND
+    t2.tabid = ?
+EOF
+
+use constant INDEX_COLUMNS_SQL =><<'EOF';
+SELECT
+    tabname,
+    idxname,
+    c1.colname  col1,
+    c2.colname  col2,
+    c3.colname  col3,
+    c4.colname  col4,
+    c5.colname  col5,
+    c6.colname  col6,
+    c7.colname  col7,
+    c8.colname  col8,
+    c9.colname  col9,
+    c10.colname col10,
+    c11.colname col11,
+    c12.colname col12,
+    c13.colname col13,
+    c14.colname col14,
+    c15.colname col15,
+    c16.colname col16
+FROM
+    informix.systables        t,
+    informix.syscolumns       c1,
+    OUTER(informix.syscolumns c2),
+    OUTER(informix.syscolumns c3),
+    OUTER(informix.syscolumns c4),
+    OUTER(informix.syscolumns c5),
+    OUTER(informix.syscolumns c6),
+    OUTER(informix.syscolumns c7),
+    OUTER(informix.syscolumns c8),
+    OUTER(informix.syscolumns c9),
+    OUTER(informix.syscolumns c10),
+    OUTER(informix.syscolumns c11),
+    OUTER(informix.syscolumns c12),
+    OUTER(informix.syscolumns c13),
+    OUTER(informix.syscolumns c14),
+    OUTER(informix.syscolumns c15),
+    OUTER(informix.syscolumns c16),
+    informix.sysindexes       i
+WHERE
+    t.tabtype = 'T'       AND
+    t.tabid = i.tabid     AND
+    i.tabid = c1.tabid    AND
+    i.tabid = c2.tabid    AND
+    i.tabid = c3.tabid    AND
+    i.tabid = c4.tabid    AND
+    i.tabid = c5.tabid    AND
+    i.tabid = c6.tabid    AND
+    i.tabid = c7.tabid    AND
+    i.tabid = c8.tabid    AND
+    i.tabid = c9.tabid    AND
+    i.tabid = c10.tabid   AND
+    i.tabid = c11.tabid   AND
+    i.tabid = c12.tabid   AND
+    i.tabid = c13.tabid   AND
+    i.tabid = c14.tabid   AND
+    i.tabid = c15.tabid   AND
+    i.tabid = c16.tabid   AND
+    part1 = c1.colno      AND
+    part2 = c2.colno      AND
+    part3 = c3.colno      AND
+    part4 = c4.colno      AND
+    part5 = c5.colno      AND
+    part6 = c6.colno      AND
+    part7 = c7.colno      AND
+    part8 = c8.colno      AND
+    part9 = c9.colno      AND
+    part10 = c10.colno    AND
+    part11 = c11.colno    AND
+    part12 = c12.colno    AND
+    part13 = c13.colno    AND
+    part14 = c14.colno    AND
+    part15 = c15.colno    AND
+    part16 = c16.colno    AND
+    t.tabid = ?           AND
+    i.idxname = ?
+ORDER BY
+    idxname
+EOF
+
+sub auto_generate_foreign_keys
+{
+  my($self, %args) = @_;
+
+  unless(defined wantarray)
+  {
+    Carp::croak "Useless call to auto_generate_foreign_keys() in void context";
+  }
+
+  my $no_warnings = $args{'no_warnings'};
+
+  my($class, @foreign_keys);
+
+if($self->table eq 'rose_db_object_test')
+{
+  $DB::single = 1;
+}
+  eval
+  {
+    $class = $self->class or die "Missing class!";
+  
+    my $db  = $self->db;
+    my $dbh = $db->dbh or die $db->error;
+
+    # I'm doing this to get the table id and owner.  Gotta be a better way...
+    my @col_list = DBD::Informix::Metadata::ix_columns($dbh, $self->table);
+
+    my $st_sth = $dbh->prepare(<<"EOF");
+SELECT tabid FROM informix.systables WHERE tabname = ? AND owner = ?
+EOF
+    # Each item in @col_list is a reference to an array of values:
+    #
+    #   0     owner name
+    #   1     table name
+    #   2     column number
+    #   3     column name
+    #   4     data type (encoded)
+    #   5     data length (encoded)
+    #
+    my $table_name = $col_list[0][1];
+    my $owner_name = $col_list[0][0];
+
+    $st_sth->execute($table_name, $owner_name);
+
+    my $table_id = $st_sth->fetchrow_array;
+
+    my $col_sth = $dbh->prepare(INDEX_COLUMNS_SQL);
+
+    my $sth = $dbh->prepare(FK_INDEXES_SQL);    
+    $sth->execute($table_id);
+
+    my %fk;
+
+    FK: while(my $index_info = $sth->fetchrow_hashref)
+    {
+      # Sanity check - should never happen
+      unless(lc $self->table eq lc $index_info->{'referring_table_name'} &&
+             lc $owner_name eq lc $index_info->{'referring_table_owner'})
+      {
+        Carp::confess
+          "Fatal mismatch between table ('", lc $self->table, "' vs. '",
+          lc $index_info->{'referring_table_name'}, "' and/or owner ('",
+          lc $owner_name, "' vs. '", lc $index_info->{'referring_table_owner'},
+          "')";
+      }
+
+      my $key_name      = $index_info->{'referring_index_name'};
+      my $foreign_table = $index_info->{'referred_table_name'};
+
+      # Get local columns
+      $col_sth->execute(@$index_info{qw(referring_table_id referring_index_name)});
+      
+      my $local_cols_info = $col_sth->fetchrow_hashref;
+      my @local_cols = grep { defined && /\S/ } @$local_cols_info{map { "col$_" } 1 .. 16};
+
+      # Get foreign columns
+      $col_sth->execute(@$index_info{qw(referred_table_id referred_index_name)});
+
+      my $foreign_cols_info = $col_sth->fetchrow_hashref;
+      my @foreign_cols = grep { defined && /\S/ } @$foreign_cols_info{map { "col$_" } 1 .. 16};
+      
+      # Another sanity check - should never happen
+      unless(@local_cols > 0 && @local_cols == @foreign_cols)
+      {
+        Carp::confess "Failed to extract matching sets of foreign key ",
+                      "columns for table $table_name";
+      }
+
+      my $foreign_class = $self->class_for(table => $foreign_table);
+
+      unless($foreign_class)
+      {
+        unless($no_warnings)
+        {
+          no warnings; # Allow undef coercion to empty string
+          warn "No Rose::DB::Object-derived class found for table ",
+               "'$foreign_table'";
+        }
+
+        next;
+      }
+
+      my %key_columns;
+      @key_columns{@local_cols} = @foreign_cols;
+
+      my $fk = 
+        Rose::DB::Object::Metadata::ForeignKey->new(
+          class       => $foreign_class,
+          key_columns => \%key_columns);
+
+      push(@foreign_keys, $fk);
+    }
+
+    # This step is important!  It ensures that foreign keys will be created
+    # in a deterministic order, which in turn allows the "auto-naming" of
+    # foreign keys to work in a predictible manner.  This exact sort order
+    # (lowercase table name comparisons) is part of the API for foreign
+    # key auto generation.
+    @foreign_keys = 
+      sort { lc $a->class->meta->table cmp lc $b->class->meta->table } 
+      @foreign_keys;
+
+    foreach my $fk (@foreign_keys)
+    {
+      my $name = $self->foreign_key_name_generator->($self, $fk);
+
+      unless(defined $name && $name =~ /^\w+$/)
+      {
+        die "Missing or invalid key name '$name' for foreign key ",
+            "generated in $class for ", $fk->class;
+      }
+
+      $fk->name($name);
+    }
+  };
+
+  if($@)
+  {
+    Carp::croak "Could not auto-generate foreign keys for class $class - $@";
+  }
+
+  @foreign_keys = sort { lc $a->name cmp lc $b->name } @foreign_keys;
+
+  return wantarray ? @foreign_keys : \@foreign_keys;
 }
 
 #

@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 172;
+use Test::More tests => 192;
 
 BEGIN 
 {
@@ -777,7 +777,7 @@ EOF
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 45)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 65)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -865,33 +865,283 @@ SKIP: foreach my $db_type ('informix')
   my $oo2 = MyInformixOtherObject->new(k1 => 11, k2 => 12, k3 => 13, name => 'two');
   ok($oo2->save, 'other object save() 2');
 
-  is($o->other_obj, undef, 'other_obj() 1');
+  my $other2 = MyInformixOtherObject2->new(id2 => 12, name => 'twelve');
+  ok($other2->save, 'other 2 object save() 1');
 
+  my $other3 = MyInformixOtherObject3->new(id3 => 13, name => 'thirteen');
+  ok($other3->save, 'other 3 object save() 1');
+
+  my $other4 = MyInformixOtherObject4->new(id4 => 14, name => 'fourteen');
+  ok($other4->save, 'other 4 object save() 1');
+
+  is($o->fother, undef, 'fother() 1');
+  is($o->fother2, undef, 'fother2() 1');
+  is($o->fother3, undef, 'fother3() 1');
+  is($o->my_informix_other_object, undef, 'my_informix_other_object() 1');
+
+  $o->fother_id2(12);
+  $o->fother_id3(13);
+  $o->fother_id4(14);
   $o->fkone(1);
   $o->fk2(2);
   $o->fk3(3);
 
-  my $obj = $o->other_obj or warn "# ", $o->error, "\n";
+  my $obj = $o->my_informix_other_object or warn "# ", $o->error, "\n";
+  is(ref $obj, 'MyInformixOtherObject', 'my_informix_other_object() 2');
+  is($obj->name, 'one', 'my_informix_other_object() 3');
 
-  is(ref $obj, 'MyInformixOtherObject', 'other_obj() 2');
-  is($obj->name, 'one', 'other_obj() 3');
+  $obj = $o->fother or warn "# ", $o->error, "\n";
+  is(ref $obj, 'MyInformixOtherObject2', 'fother() 2');
+  is($obj->name, 'twelve', 'fother() 3');
 
-  $o->other_obj(undef);
+  $obj = $o->fother2 or warn "# ", $o->error, "\n";
+  is(ref $obj, 'MyInformixOtherObject3', 'fother2() 2');
+  is($obj->name, 'thirteen', 'fother2() 3');
+
+  $obj = $o->fother3 or warn "# ", $o->error, "\n";
+  is(ref $obj, 'MyInformixOtherObject4', 'fother3() 2');
+  is($obj->name, 'fourteen', 'fother3() 3');
+
+  $o->my_informix_other_object(undef);
   $o->fkone(11);
   $o->fk2(12);
   $o->fk3(13);
 
-  $obj = $o->other_obj or warn "# ", $o->error, "\n";
+  $obj = $o->my_informix_other_object or warn "# ", $o->error, "\n";
 
-  is(ref $obj, 'MyInformixOtherObject', 'other_obj() 4');
-  is($obj->name, 'two', 'other_obj() 5');
+  is(ref $obj, 'MyInformixOtherObject', 'my_informix_other_object() 4');
+  is($obj->name, 'two', 'my_informix_other_object() 5');
 
   ok($o->delete, "delete() - $db_type");
 
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, 'alias_column() nonesuch');
-}
 
+  #
+  # Test code generation
+  #
+
+  is(MyInformixObject->meta->perl_foreign_keys_definition,
+     <<'EOF', "perl_foreign_keys_definition 1 - $db_type");
+__PACKAGE__->meta->foreign_keys(
+    fother => {
+        class => 'MyInformixOtherObject2',
+        key_columns => {
+            fother_id2 => 'id2',
+        },
+    },
+
+    fother2 => {
+        class => 'MyInformixOtherObject3',
+        key_columns => {
+            fother_id3 => 'id3',
+        },
+    },
+
+    fother3 => {
+        class => 'MyInformixOtherObject4',
+        key_columns => {
+            fother_id4 => 'id4',
+        },
+    },
+
+    my_informix_other_object => {
+        class => 'MyInformixOtherObject',
+        key_columns => {
+            fk1 => 'k1',
+            fk2 => 'k2',
+            fk3 => 'k3',
+        },
+    },
+);
+EOF
+
+  is(MyInformixObject->meta->perl_foreign_keys_definition(braces => 'bsd', indent => 2),
+     <<'EOF', "perl_foreign_keys_definition 2 - $db_type");
+__PACKAGE__->meta->foreign_keys
+(
+  fother => 
+  {
+    class => 'MyInformixOtherObject2',
+    key_columns => 
+    {
+      fother_id2 => 'id2',
+    },
+  },
+
+  fother2 => 
+  {
+    class => 'MyInformixOtherObject3',
+    key_columns => 
+    {
+      fother_id3 => 'id3',
+    },
+  },
+
+  fother3 => 
+  {
+    class => 'MyInformixOtherObject4',
+    key_columns => 
+    {
+      fother_id4 => 'id4',
+    },
+  },
+
+  my_informix_other_object => 
+  {
+    class => 'MyInformixOtherObject',
+    key_columns => 
+    {
+      fk1 => 'k1',
+      fk2 => 'k2',
+      fk3 => 'k3',
+    },
+  },
+);
+EOF
+
+  is(MyInformixObject->meta->perl_class_definition,
+     <<'EOF', "perl_class_definition 1 - $db_type");
+package MyInformixObject;
+
+use strict;
+
+use Rose::DB::Object
+our @ISA = qw(Rose::DB::Object);
+
+__PACKAGE__->meta->columns(
+    bits          => { type => 'bitfield', bits => 5, default => 101 },
+    date_created  => { type => 'datetime year to fraction(5)' },
+    fk1           => { type => 'integer', method_name => 'fkone' },
+    fk2           => { type => 'integer' },
+    fk3           => { type => 'integer' },
+    flag          => { type => 'boolean', default => 't', not_null => 1 },
+    flag2         => { type => 'boolean' },
+    fother_id2    => { type => 'integer' },
+    fother_id3    => { type => 'integer' },
+    fother_id4    => { type => 'integer' },
+    id            => { type => 'integer', not_null => 1 },
+    last_modified => { type => 'datetime year to fraction(5)' },
+    name          => { type => 'varchar', length => 32, not_null => 1 },
+    nums          => { type => 'array' },
+    save          => { type => 'integer', method_name => 'save_col' },
+    start         => { type => 'date', default => '12/24/1980' },
+    status        => { type => 'varchar', default => 'active', length => 32 },
+);
+
+__PACKAGE__->meta->primary_key_columns([ 'id' ]);
+
+__PACKAGE__->meta->foreign_keys(
+    fother => {
+        class => 'MyInformixOtherObject2',
+        key_columns => {
+            fother_id2 => 'id2',
+        },
+    },
+
+    fother2 => {
+        class => 'MyInformixOtherObject3',
+        key_columns => {
+            fother_id3 => 'id3',
+        },
+    },
+
+    fother3 => {
+        class => 'MyInformixOtherObject4',
+        key_columns => {
+            fother_id4 => 'id4',
+        },
+    },
+
+    my_informix_other_object => {
+        class => 'MyInformixOtherObject',
+        key_columns => {
+            fk1 => 'k1',
+            fk2 => 'k2',
+            fk3 => 'k3',
+        },
+    },
+);
+
+1;
+EOF
+
+  is(MyInformixObject->meta->perl_class_definition(braces => 'bsd', indent => 2),
+     <<'EOF', "perl_class_definition 2 - $db_type");
+package MyInformixObject;
+
+use strict;
+
+use Rose::DB::Object
+our @ISA = qw(Rose::DB::Object);
+
+__PACKAGE__->meta->columns
+(
+  bits          => { type => 'bitfield', bits => 5, default => 101 },
+  date_created  => { type => 'datetime year to fraction(5)' },
+  fk1           => { type => 'integer', method_name => 'fkone' },
+  fk2           => { type => 'integer' },
+  fk3           => { type => 'integer' },
+  flag          => { type => 'boolean', default => 't', not_null => 1 },
+  flag2         => { type => 'boolean' },
+  fother_id2    => { type => 'integer' },
+  fother_id3    => { type => 'integer' },
+  fother_id4    => { type => 'integer' },
+  id            => { type => 'integer', not_null => 1 },
+  last_modified => { type => 'datetime year to fraction(5)' },
+  name          => { type => 'varchar', length => 32, not_null => 1 },
+  nums          => { type => 'array' },
+  save          => { type => 'integer', method_name => 'save_col' },
+  start         => { type => 'date', default => '12/24/1980' },
+  status        => { type => 'varchar', default => 'active', length => 32 },
+);
+
+__PACKAGE__->meta->primary_key_columns([ 'id' ]);
+
+__PACKAGE__->meta->foreign_keys
+(
+  fother => 
+  {
+    class => 'MyInformixOtherObject2',
+    key_columns => 
+    {
+      fother_id2 => 'id2',
+    },
+  },
+
+  fother2 => 
+  {
+    class => 'MyInformixOtherObject3',
+    key_columns => 
+    {
+      fother_id3 => 'id3',
+    },
+  },
+
+  fother3 => 
+  {
+    class => 'MyInformixOtherObject4',
+    key_columns => 
+    {
+      fother_id4 => 'id4',
+    },
+  },
+
+  my_informix_other_object => 
+  {
+    class => 'MyInformixOtherObject',
+    key_columns => 
+    {
+      fk1 => 'k1',
+      fk2 => 'k2',
+      fk3 => 'k3',
+    },
+  },
+);
+
+1;
+EOF
+}
 
 BEGIN
 {
@@ -1268,6 +1518,8 @@ EOF
       $dbh->do('DROP TABLE rose_db_object_test');
       $dbh->do('DROP TABLE rose_db_object_other');
       $dbh->do('DROP TABLE rose_db_object_other2');
+      $dbh->do('DROP TABLE rose_db_object_other3');
+      $dbh->do('DROP TABLE rose_db_object_other4');
     }
 
     $dbh->do(<<"EOF");
@@ -1278,14 +1530,30 @@ CREATE TABLE rose_db_object_other
   k3    INT NOT NULL,
   name  VARCHAR(32),
 
-  UNIQUE(k1, k2, k3)
+  PRIMARY KEY(k1, k2, k3)
 )
 EOF
 
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_other2
 (
-  id    SERIAL PRIMARY KEY,
+  id2   SERIAL PRIMARY KEY,
+  name  VARCHAR(32)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_other3
+(
+  id3   SERIAL PRIMARY KEY,
+  name  VARCHAR(32)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_other4
+(
+  id4   SERIAL PRIMARY KEY,
   name  VARCHAR(32)
 )
 EOF
@@ -1299,20 +1567,10 @@ EOF
     sub init_db { Rose::DB->new('informix') }
 
     MyInformixOtherObject->meta->table('rose_db_object_other');
-      
-    MyInformixOtherObject->meta->columns
-    (
-      name => { type => 'varchar'},
-      k1   => { type => 'int' },
-      k2   => { type => 'int' },
-      k3   => { type => 'int' },
-    );
 
-    MyInformixOtherObject->meta->primary_key_columns(qw(k1 k2 k3));
-    
-    MyInformixOtherObject->meta->initialize;
+    MyInformixOtherObject->meta->auto_initialize;
 
-    # Create test foreign subclass 2
+    # Create test foreign subclasses 2-4
 
     package MyInformixOtherObject2;
     our @ISA = qw(Rose::DB::Object);
@@ -1320,12 +1578,24 @@ EOF
     MyInformixOtherObject2->meta->table('rose_db_object_other2');
     MyInformixOtherObject2->meta->auto_initialize;
 
+    package MyInformixOtherObject3;
+    our @ISA = qw(Rose::DB::Object);
+    sub init_db { Rose::DB->new('informix') }
+    MyInformixOtherObject3->meta->table('rose_db_object_other3');
+    MyInformixOtherObject3->meta->auto_initialize;
+
+    package MyInformixOtherObject4;
+    our @ISA = qw(Rose::DB::Object);
+    sub init_db { Rose::DB->new('informix') }
+    MyInformixOtherObject4->meta->table('rose_db_object_other4');
+    MyInformixOtherObject4->meta->auto_initialize;   
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
   id             INT NOT NULL PRIMARY KEY,
   name           VARCHAR(32) NOT NULL,
-  flag           BOOLEAN DEFAULT 't',
+  flag           BOOLEAN DEFAULT 't' NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
   bits           VARCHAR(5) DEFAULT '00101' NOT NULL,
@@ -1335,7 +1605,9 @@ CREATE TABLE rose_db_object_test
   fk1            INT,
   fk2            INT,
   fk3            INT,
-  fother_id      INT REFERENCES rose_db_object_other2 (id),
+  fother_id2     INT REFERENCES rose_db_object_other2 (id2),
+  fother_id3     INT REFERENCES rose_db_object_other3 (id3),
+  fother_id4     INT REFERENCES rose_db_object_other4 (id4),
   last_modified  DATETIME YEAR TO FRACTION(5),
   date_created   DATETIME YEAR TO FRACTION(5),
   
@@ -1343,18 +1615,7 @@ CREATE TABLE rose_db_object_test
 )
 EOF
 
-# $DB::single = 1;
-# use Data::Dumper;
-# my $sth = $dbh->foreign_key_info(undef, undef, undef,
-#                                  undef, undef, 'rose_db_object_test');
-# $sth->execute;
-# while(my $r = $sth->fetchrow_hashref)
-# {
-#   print STDERR Dumper($r);
-# }
-
     $dbh->disconnect;
-#exit;
 
     # Create test subclass
 
@@ -1365,38 +1626,7 @@ EOF
     sub init_db { Rose::DB->new('informix') }
 
     MyInformixObject->meta->table('rose_db_object_test');
-      
-#     MyInformixObject->meta->columns
-#     (
-#       'name',
-#       id       => { primary_key => 1 },
-#       flag     => { type => 'boolean', default => 1 },
-#       flag2    => { type => 'boolean' },
-#       status   => { default => 'active' },
-#       start    => { type => 'date', default => '12/24/1980' },
-#       save     => { type => 'scalar' },
-#       nums     => { type => 'array' },
-#       bits     => { type => 'bitfield', bits => 5, default => 101 },
-#       fk1      => { type => 'int' },
-#       fk2      => { type => 'int' },
-#       fk3      => { type => 'int' },
-#       last_modified => { type => 'timestamp' },
-#       date_created  => { type => 'timestamp' },
-#     );
 
-    MyInformixObject->meta->foreign_keys
-    (
-      other_obj =>
-      {
-        class => 'MyInformixOtherObject',
-        key_columns =>
-        {
-          fk1 => 'k1',
-          fk2 => 'k2',
-          fk3 => 'k3',
-        }
-      },
-    );
 
     MyInformixObject->meta->column_name_to_method_name_mapper(sub
     {
@@ -1411,13 +1641,16 @@ EOF
 
     MyInformixObject->meta->auto_initialize;
 
-    #MyInformixObject->meta->alias_column(fk1 => 'fkone');
+    Test::More::ok(MyInformixObject->can('fother'),  'fother() check - informix');
+    Test::More::ok(MyInformixObject->can('fother2'), 'fother2() check - informix');
+    Test::More::ok(MyInformixObject->can('fother3'), 'fother3() check - informix');
 
-#     eval { MyInformixObject->meta->initialize };
-#     Test::More::ok($@, 'meta->initialize() reserved method');
-# 
-#     MyInformixObject->meta->alias_column(save => 'save_col');
-#     MyInformixObject->meta->initialize(preserve_existing => 1);
+    package MyInformixObjectEvalTest;
+    our @ISA = qw(Rose::DB::Object);
+    sub init_db { Rose::DB->new('informix') }
+
+    eval 'package MyInformixObjectEvalTest; ' . MyInformixObject->meta->perl_foreign_keys_definition;
+    Test::More::ok(!$@, 'perl_foreign_keys_definition eval - informix');
   }
 }
 
