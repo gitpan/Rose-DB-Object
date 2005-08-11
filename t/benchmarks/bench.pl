@@ -4,11 +4,10 @@ use strict;
 
 use FindBin qw($Bin);
 
-require "$Bin/../t/test-lib.pl";
+require "$Bin/../test-lib.pl";
 
-use lib "$Bin/lib";  
-use lib "$Bin/../lib";
-use lib "$Bin/../t/lib";
+use lib "$Bin/../../lib";
+use lib "$Bin/lib";
 
 use Rose::DB;
 
@@ -97,11 +96,11 @@ MAIN:
 
 EOF
     Rose::DB->default_type($db_type);
-    
+
     require MyTest::RDBO::Simple::Code;
     require MyTest::RDBO::Simple::Category;
     require MyTest::RDBO::Simple::Product;
-      
+
     if($Opt{'simple'} || $Opt{'simple-and-complex'})
     {
       require MyTest::RDBO::Simple::Product::Manager;
@@ -185,7 +184,7 @@ sub Get_Pager
       last;
     }
   }
-  
+
   return $Pager;
 }
 
@@ -215,7 +214,7 @@ Usage: $prog --help | [--skip-intro] [--cpu-time <num>]
 
     Benchmark against <modules>, which is a comma-separated list of
     one or more for the following: 
-    
+
         @{[join(', ', @Cmp_To)]}
 
     The special value "all" can be used to specify all available modules.
@@ -261,7 +260,7 @@ Usage: $prog --help | [--skip-intro] [--cpu-time <num>]
 
 --help        Show this help screen.
 --skip-intro  Skip the introductory message.
-    
+
 EOF
 
   exit(1);
@@ -285,9 +284,9 @@ sub Init
   unless($Opt{'skip-intro'})
   {
     my $pager = Get_Pager();
-   
+
     local $SIG{'PIPE'} = 'IGNORE';
-   
+
     if($pager)
     {
       my $fh;
@@ -335,9 +334,9 @@ EOF
     select(STDOUT);
 
     my %old;
-    
+
     $old{'ALRM'} = $SIG{'ALRM'} || 'DEFAULT';
-    
+
     eval
     {
       # Localize so I only have to restore in my catch block
@@ -346,7 +345,7 @@ EOF
       my $res = <STDIN>;
       alarm(0);
     };
-  
+
     if($@ =~ /alarm/)
     {
       $SIG{'ALRM'} = $old{'ALRM'};
@@ -354,7 +353,7 @@ EOF
   }
 
   Check_DB();
-  
+
   unless(%Have_DB)
   {
     print "Could not connect to any databases.  Exiting...\n";
@@ -381,7 +380,7 @@ EOF
 
     $response =~ s/,/ /g;
     @Cmp_To = split(/\s+/, $response);
-    
+
     foreach my $pm (@Cmp_To)
     {
       unless($Cmp_Abbreviation{$pm})
@@ -391,7 +390,7 @@ EOF
         exit(1)  if($Opt{'compare-to'});
         redo WHICH_PM;
       }
-      
+
       unless($Have_PM{$pm})
       {
         print "\n*** ERROR: Do not have module '$pm'\n\n";
@@ -419,12 +418,12 @@ EOF
       my $response = 
         $Opt{'database'} ? $Opt{'database'} :
         Ask(question   => $question,
-            prompt     => 'Use database(s)',
+            prompt     => 'Use database',
             default    => (map { $DB_Name{$_} } sort keys %Have_DB)[0]);
-  
+
       $response =~ s/,/ /g;
       @Use_DBs = split(/\s+/, $response);
-      
+
       foreach my $db (@Use_DBs)
       {
         unless($DB_Name{$db} || $DB_Tag{$db})
@@ -438,7 +437,7 @@ EOF
         $db = $DB_Tag{$db}  if($DB_Tag{$db});
       }
     }
-    
+
     if(@Use_DBs > 1)
     {
       warn<<"EOF";
@@ -549,11 +548,11 @@ BEGIN
   #
   # Insert
   #
-  
+
   INSERT_SIMPLE_CATEGORY_RDBO:
   {
     my $i = 1;
-    
+
     sub insert_simple_category_rdbo
     {
       my $c = 
@@ -565,11 +564,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   INSERT_SIMPLE_CATEGORY_CDBI:
   {
     my $i = 1;
-  
+
     sub insert_simple_category_cdbi
     {
       MyTest::CDBI::Simple::Category->create({ id => $i + 200_000, name => "xCat $i" });
@@ -580,7 +579,7 @@ BEGIN
   INSERT_SIMPLE_CATEGORY_CDBS:
   {
     my $i = 1;
-  
+
     sub insert_simple_category_cdbs
     {
       MyTest::CDBI::Sweet::Simple::Category->create({ id => $i + 400_000, name => "xCat $i" });
@@ -591,18 +590,18 @@ BEGIN
   INSERT_SIMPLE_CATEGORY_DBIC:
   {
     my $i = 1;
-  
+
     sub insert_simple_category_dbic
     {
       MyTest::DBIC::Simple::Category->create({ id => $i + 300_000, name => "xCat $i" });
       $i++;
     }
   }
-  
+
   INSERT_SIMPLE_PRODUCT_RDBO:
   {
     my $i = 1;
-    
+
     sub insert_simple_product_rdbo
     {
       my $p =
@@ -619,11 +618,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   INSERT_SIMPLE_PRODUCT_CDBI:
   {
     my $i = 1;
-  
+
     sub insert_simple_product_cdbi
     {
       MyTest::CDBI::Simple::Product->create({
@@ -641,7 +640,7 @@ BEGIN
   INSERT_SIMPLE_PRODUCT_CDBS:
   {
     my $i = 1;
-  
+
     sub insert_simple_product_cdbs
     {
       MyTest::CDBI::Sweet::Simple::Product->create({
@@ -659,7 +658,7 @@ BEGIN
   INSERT_SIMPLE_PRODUCT_DBIC:
   {
     my $i = 1;
-  
+
     sub insert_simple_product_dbic
     {
       MyTest::DBIC::Simple::Product->create({
@@ -673,15 +672,15 @@ BEGIN
       $i++;
     }
   }
-  
+
   #
   # Load
   #
-  
+
   LOAD_SIMPLE_CATEGORY_RDBO:
   {
     my $i = 1;
-    
+
     sub load_simple_category_rdbo
     {
       my $c = 
@@ -692,11 +691,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   LOAD_SIMPLE_CATEGORY_CDBI:
   {
     my $i = 1;
-  
+
     sub load_simple_category_cdbi
     {
       my $c = MyTest::CDBI::Simple::Category->retrieve($i + 200_000);
@@ -707,7 +706,7 @@ BEGIN
   LOAD_SIMPLE_CATEGORY_CDBS:
   {
     my $i = 1;
-  
+
     sub load_simple_category_cdbs
     {
       my $c = MyTest::CDBI::Sweet::Simple::Category->retrieve($i + 400_000);
@@ -718,18 +717,18 @@ BEGIN
   LOAD_SIMPLE_CATEGORY_DBIC:
   {
     my $i = 1;
-  
+
     sub load_simple_category_dbic
     {
       my $c = MyTest::DBIC::Simple::Category->find($i + 300_000);
       $i++;
     }
   }
-  
+
   LOAD_SIMPLE_PRODUCT_RDBO:
   {
     my $i = 1;
-    
+
     sub load_simple_product_rdbo
     {
       my $p =
@@ -740,11 +739,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   LOAD_SIMPLE_PRODUCT_CDBI:
   {
     my $i = 1;
-  
+
     sub load_simple_product_cdbi
     {
       my $c = MyTest::CDBI::Simple::Product->retrieve($i + 200_000);
@@ -755,7 +754,7 @@ BEGIN
   LOAD_SIMPLE_PRODUCT_CDBS:
   {
     my $i = 1;
-  
+
     sub load_simple_product_cdbs
     {
       my $c = MyTest::CDBI::Sweet::Simple::Product->retrieve($i + 400_000);
@@ -766,14 +765,14 @@ BEGIN
   LOAD_SIMPLE_PRODUCT_DBIC:
   {
     my $i = 1;
-  
+
     sub load_simple_product_dbic
     {
       my $c = MyTest::DBIC::Simple::Product->find($i + 300_000);
       $i++;
     }
   }
-  
+
   LOAD_SIMPLE_PRODUCT_AND_CATEGORY_RDBO:
   {
     my $i = 1;
@@ -785,18 +784,18 @@ BEGIN
           db => $DB, 
           id => $i + 100_000);
       $p->load;
-  
+
       my $cat = $p->category;
       my $n = $cat->name;
       die  unless($n =~ /\S/);
       $i++;
     }
   }
-  
+
   LOAD_SIMPLE_PRODUCT_AND_CATEGORY_CDBI:
   {
     my $i = 1;
-  
+
     sub load_simple_product_and_category_cdbi
     {
       my $c = MyTest::CDBI::Simple::Product->retrieve($i + 200_000);
@@ -810,7 +809,7 @@ BEGIN
   LOAD_SIMPLE_PRODUCT_AND_CATEGORY_CDBS:
   {
     my $i = 1;
-  
+
     sub load_simple_product_and_category_cdbs
     {
       my $c = MyTest::CDBI::Sweet::Simple::Product->retrieve($i + 400_000);
@@ -824,7 +823,7 @@ BEGIN
   LOAD_SIMPLE_PRODUCT_AND_CATEGORY_DBIC:
   {
     my $i = 1;
-  
+
     sub load_simple_product_and_category_dbic
     {
       my $c = MyTest::DBIC::Simple::Product->find($i + 300_000);
@@ -834,15 +833,15 @@ BEGIN
       $i++;
     }
   }
-  
+
   #
   # Update
   #
-  
+
   UPDATE_SIMPLE_CATEGORY_RDBO:
   {
     my $i = 1;
-    
+
     sub update_simple_category_rdbo
     {
       my $c = 
@@ -855,11 +854,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   UPDATE_SIMPLE_CATEGORY_CDBI:
   {
     my $i = 1;
-  
+
     sub update_simple_category_cdbi
     {
       my $c = MyTest::CDBI::Simple::Category->retrieve($i + 200_000);
@@ -872,7 +871,7 @@ BEGIN
   UPDATE_SIMPLE_CATEGORY_CDBS:
   {
     my $i = 1;
-  
+
     sub update_simple_category_cdbs
     {
       my $c = MyTest::CDBI::Sweet::Simple::Category->retrieve($i + 400_000);
@@ -885,7 +884,7 @@ BEGIN
   UPDATE_SIMPLE_CATEGORY_DBIC:
   {
     my $i = 1;
-  
+
     sub update_simple_category_dbic
     {
       my $c = MyTest::DBIC::Simple::Category->find($i + 300_000);
@@ -894,11 +893,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   UPDATE_SIMPLE_PRODUCT_RDBO:
   {
     my $i = 1;
-    
+
     sub update_simple_product_rdbo
     {
       my $p =
@@ -911,11 +910,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   UPDATE_SIMPLE_PRODUCT_CDBI:
   {
     my $i = 1;
-  
+
     sub update_simple_product_cdbi
     {
       my $p = MyTest::CDBI::Simple::Product->retrieve($i + 200_000);
@@ -928,7 +927,7 @@ BEGIN
   UPDATE_SIMPLE_PRODUCT_CDBS:
   {
     my $i = 1;
-  
+
     sub update_simple_product_cdbs
     {
       my $p = MyTest::CDBI::Sweet::Simple::Product->retrieve($i + 400_000);
@@ -941,7 +940,7 @@ BEGIN
   UPDATE_SIMPLE_PRODUCT_DBIC:
   {
     my $i = 1;
-  
+
     sub update_simple_product_dbic
     {
       my $p = MyTest::DBIC::Simple::Product->find($i + 300_000);
@@ -950,15 +949,15 @@ BEGIN
       $i++;
     }
   }
-  
+
   #
   # Search
   #
-  
+
   SEARCH_SIMPLE_CATEGORY_RDBO:
   {
     my $printed = 0;
-  
+
     sub search_simple_category_rdbo
     {
       my $c = 
@@ -969,7 +968,7 @@ BEGIN
             name => { like => 'xCat %2%' },
           ]);
       die unless(@$c);
-  
+
       if($Debug && !$printed)
       {
         print "search_simple_category_rdbo GOT ", scalar(@$c), "\n";
@@ -981,7 +980,7 @@ BEGIN
   SEARCH_SIMPLE_CATEGORY_CDBI:
   {
     my $printed = 0;
-  
+
     sub search_simple_category_cdbi
     {
       my @c = MyTest::CDBI::Simple::Category->search_like(name => 'xCat %2%');
@@ -994,11 +993,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_SIMPLE_CATEGORY_CDBS:
   {
     my $printed = 0;
-  
+
     sub search_simple_category_cdbs
     {
       my @c = MyTest::CDBI::Sweet::Simple::Category->search_like(name => 'xCat %2%');
@@ -1011,11 +1010,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_SIMPLE_CATEGORY_DBIC:
   {
     my $printed = 0;
-  
+
     sub search_simple_category_dbic
     {
       my @c = MyTest::DBIC::Simple::Category->search_like({ name => 'xCat %2%' });
@@ -1028,11 +1027,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_SIMPLE_PRODUCT_RDBO:
   {
     my $printed = 0;
-  
+
     sub search_simple_product_rdbo
     {
       my $p =
@@ -1051,11 +1050,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_SIMPLE_PRODUCT_CDBI:
   {
     my $printed = 0;
-  
+
     sub search_simple_product_cdbi
     {
       my @p = MyTest::CDBI::Simple::Product->search_like(name => 'Product %2%');
@@ -1072,7 +1071,7 @@ BEGIN
   SEARCH_SIMPLE_PRODUCT_CDBS:
   {
     my $printed = 0;
-  
+
     sub search_simple_product_cdbs
     {
       my @p = MyTest::CDBI::Sweet::Simple::Product->search_like(name => 'Product %2%');
@@ -1089,7 +1088,7 @@ BEGIN
   SEARCH_SIMPLE_PRODUCT_DBIC:
   {
     my $printed = 0;
-  
+
     sub search_simple_product_dbic
     {
       my @p = MyTest::DBIC::Simple::Product->search_like({ name => 'Product %2%' });
@@ -1102,11 +1101,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_RDBO:
   {
     my $printed = 0;
-  
+
     sub search_simple_product_and_category_rdbo
     {
       my $ps =
@@ -1124,7 +1123,7 @@ BEGIN
         print "search_simple_product_and_category_rdbo GOT ", scalar(@$ps), "\n";
         $printed++;
       }
-      
+
       foreach my $p (@$ps)
       {
         my $cat = $p->category;
@@ -1133,11 +1132,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_CDBI:
   {
     my $printed = 0;
-  
+
     sub search_simple_product_and_category_cdbi
     {
       my @p = MyTest::CDBI::Simple::Product->search_like(name => 'Product %2%');
@@ -1148,7 +1147,7 @@ BEGIN
         print "search_simple_product_and_category_cdbi GOT ", scalar(@p), "\n";
         $printed++;
       }
-  
+
       foreach my $p (@p)
       {
         my $cat = $p->category_id;
@@ -1161,7 +1160,7 @@ BEGIN
   SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_CDBS:
   {
     my $printed = 0;
-  
+
     sub search_simple_product_and_category_cdbs
     {
       my @p = MyTest::CDBI::Sweet::Simple::Product->search(
@@ -1174,7 +1173,7 @@ BEGIN
         print "search_simple_product_and_category_cdbs GOT ", scalar(@p), "\n";
         $printed++;
       }
-  
+
       foreach my $p (@p)
       {
         my $cat = $p->category_id;
@@ -1187,7 +1186,7 @@ BEGIN
   SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_DBIC:
   {
     my $printed = 0;
-  
+
     sub search_simple_product_and_category_dbic
     {
       my @p = MyTest::DBIC::Simple::Product->search_like({ name => 'Product %2%' });
@@ -1198,7 +1197,7 @@ BEGIN
         print "search_simple_product_and_category_dbic GOT ", scalar(@p), "\n";
         $printed++;
       }
-  
+
       foreach my $p (@p)
       {
         my $cat = $p->category_id;
@@ -1215,7 +1214,7 @@ BEGIN
   ITERATE_SIMPLE_CATEGORY_RDBO:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_category_rdbo
     {
       my $iter = 
@@ -1225,7 +1224,7 @@ BEGIN
           [
             name => { like => 'xCat %2%' },
           ]);
-  
+
       my $i = 0;
 
       while(my $c = $iter->next)
@@ -1240,11 +1239,11 @@ BEGIN
       }
     }
   }
-  
+
   ITERATE_SIMPLE_CATEGORY_CDBI:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_category_cdbi
     {
       my $iter = MyTest::CDBI::Simple::Category->search_like(name => 'xCat %2%');
@@ -1267,7 +1266,7 @@ BEGIN
   ITERATE_SIMPLE_CATEGORY_CDBS:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_category_cdbs
     {
       my $iter = MyTest::CDBI::Sweet::Simple::Category->search_like(name => 'xCat %2%');
@@ -1290,7 +1289,7 @@ BEGIN
   ITERATE_SIMPLE_CATEGORY_DBIC:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_category_dbic
     {
       my $iter = MyTest::DBIC::Simple::Category->search_like({ name => 'xCat %2%' });
@@ -1309,11 +1308,11 @@ BEGIN
       }
     }
   }
-  
+
   ITERATE_SIMPLE_PRODUCT_RDBO:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_product_rdbo
     {
       my $iter =
@@ -1338,11 +1337,11 @@ BEGIN
       }
     }
   }
-  
+
   ITERATE_SIMPLE_PRODUCT_CDBI:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_product_cdbi
     {
       my $iter = MyTest::CDBI::Simple::Product->search_like(name => 'Product %2%');
@@ -1365,7 +1364,7 @@ BEGIN
   ITERATE_SIMPLE_PRODUCT_CDBS:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_product_cdbs
     {
       my $iter = MyTest::CDBI::Sweet::Simple::Product->search_like(name => 'Product %2%');
@@ -1388,7 +1387,7 @@ BEGIN
   ITERATE_SIMPLE_PRODUCT_DBIC:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_product_dbic
     {
       my $iter = MyTest::DBIC::Simple::Product->search_like({ name => 'Product %2%' });
@@ -1411,7 +1410,7 @@ BEGIN
   ITERATE_SIMPLE_PRODUCT_AND_CATEGORY_RDBO:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_product_and_category_rdbo
     {
       my $iter =
@@ -1440,15 +1439,15 @@ BEGIN
       }
     }
   }
-  
+
   ITERATE_SIMPLE_PRODUCT_AND_CATEGORY_CDBI:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_product_and_category_cdbi
     {
       my $iter = MyTest::CDBI::Simple::Product->search_like(name => 'Product %2%');
-  
+
       my $i = 0;
 
       while(my $p = $iter->next)
@@ -1470,13 +1469,13 @@ BEGIN
   ITERATE_SIMPLE_PRODUCT_AND_CATEGORY_CDBS:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_product_and_category_cdbs
     {
       my $iter = MyTest::CDBI::Sweet::Simple::Product->search(
         { name => { -like => [ 'Product %2%' ] } },
         { prefetch => [ 'category_id' ] });
-  
+
       my $i = 0;
 
       while(my $p = $iter->next)
@@ -1498,11 +1497,11 @@ BEGIN
   ITERATE_SIMPLE_PRODUCT_AND_CATEGORY_DBIC:
   {
     my $printed = 0;
-  
+
     sub iterate_simple_product_and_category_dbic
     {
       my $iter = MyTest::DBIC::Simple::Product->search_like({ name => 'Product %2%' });
-  
+
       my $i = 0;
 
       while(my $p = $iter->next)
@@ -1538,7 +1537,7 @@ BEGIN
   INSERT_COMPLEX_CATEGORY_RDBO:
   {
     my $i = 1;
-    
+
     sub insert_complex_category_rdbo
     {
       my $c = 
@@ -1550,11 +1549,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   INSERT_COMPLEX_CATEGORY_CDBI:
   {
     my $i = 1;
-  
+
     sub insert_complex_category_cdbi
     {
       MyTest::CDBI::Complex::Category->create({ id => $i + 2_200_000, name => "xCat $i" });
@@ -1565,7 +1564,7 @@ BEGIN
   INSERT_COMPLEX_CATEGORY_CDBS:
   {
     my $i = 1;
-  
+
     sub insert_complex_category_cdbs
     {
       MyTest::CDBI::Sweet::Complex::Category->create({ id => $i + 4_400_000, name => "xCat $i" });
@@ -1576,7 +1575,7 @@ BEGIN
   INSERT_COMPLEX_CATEGORY_DBIC:
   {
     my $i = 1;
-  
+
     sub insert_complex_category_dbic
     {
       MyTest::DBIC::Complex::Category->create({ id => $i + 3_300_000, name => "xCat $i" });
@@ -1587,7 +1586,7 @@ BEGIN
   INSERT_COMPLEX_PRODUCT_RDBO:
   {
     my $i = 1;
-    
+
     sub insert_complex_product_rdbo
     {
       my $p =
@@ -1606,7 +1605,7 @@ BEGIN
   INSERT_COMPLEX_PRODUCT_CDBI:
   {
     my $i = 1;
-  
+
     sub insert_complex_product_cdbi
     {
       MyTest::CDBI::Simple::Product->create({
@@ -1622,7 +1621,7 @@ BEGIN
   INSERT_COMPLEX_PRODUCT_CDBS:
   {
     my $i = 1;
-  
+
     sub insert_complex_product_cdbs
     {
       MyTest::CDBI::Sweet::Simple::Product->create({
@@ -1638,7 +1637,7 @@ BEGIN
   INSERT_COMPLEX_PRODUCT_DBIC:
   {
     my $i = 1;
-  
+
     sub insert_complex_product_dbic
     {
       MyTest::DBIC::Simple::Product->create({
@@ -1650,15 +1649,15 @@ BEGIN
       $i++;
     }
   }
-  
+
   #
   # Load
   #
-  
+
   LOAD_COMPLEX_CATEGORY_RDBO:
   {
     my $i = 1;
-    
+
     sub load_complex_category_rdbo
     {
       my $c = 
@@ -1669,11 +1668,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   LOAD_COMPLEX_CATEGORY_CDBI:
   {
     my $i = 1;
-  
+
     sub load_complex_category_cdbi
     {
       my $c = MyTest::CDBI::Complex::Category->retrieve($i + 2_200_000);
@@ -1684,7 +1683,7 @@ BEGIN
   LOAD_COMPLEX_CATEGORY_CDBS:
   {
     my $i = 1;
-  
+
     sub load_complex_category_cdbs
     {
       my $c = MyTest::CDBI::Sweet::Complex::Category->retrieve($i + 4_400_000);
@@ -1695,18 +1694,18 @@ BEGIN
   LOAD_COMPLEX_CATEGORY_DBIC:
   {
     my $i = 1;
-  
+
     sub load_complex_category_dbic
     {
       my $c = MyTest::DBIC::Complex::Category->find($i + 3_300_000);
       $i++;
     }
   }
-  
+
   LOAD_COMPLEX_PRODUCT_RDBO:
   {
     my $i = 1;
-    
+
     sub load_complex_product_rdbo
     {
       my $p =
@@ -1717,11 +1716,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   LOAD_COMPLEX_PRODUCT_CDBI:
   {
     my $i = 1;
-  
+
     sub load_complex_product_cdbi
     {
       my $c = MyTest::CDBI::Complex::Product->retrieve($i + 2_200_000);
@@ -1732,7 +1731,7 @@ BEGIN
   LOAD_COMPLEX_PRODUCT_CDBS:
   {
     my $i = 1;
-  
+
     sub load_complex_product_cdbs
     {
       my $c = MyTest::CDBI::Sweet::Complex::Product->retrieve($i + 4_400_000);
@@ -1743,14 +1742,14 @@ BEGIN
   LOAD_COMPLEX_PRODUCT_DBIC:
   {
     my $i = 1;
-  
+
     sub load_complex_product_dbic
     {
       my $c = MyTest::DBIC::Complex::Product->find($i + 3_300_000);
       $i++;
     }
   }
-  
+
   LOAD_COMPLEX_PRODUCT_AND_CATEGORY_RDBO:
   {
     my $i = 1;
@@ -1762,18 +1761,18 @@ BEGIN
           db => $DB, 
           id => $i + 1_100_000);
       $p->load;
-  
+
       my $cat = $p->category;
       my $n = $cat->name;
       die  unless($n =~ /\S/);
       $i++;
     }
   }
-  
+
   LOAD_COMPLEX_PRODUCT_AND_CATEGORY_CDBI:
   {
     my $i = 1;
-  
+
     sub load_complex_product_and_category_cdbi
     {
       my $c = MyTest::CDBI::Complex::Product->retrieve($i + 2_200_000);
@@ -1787,7 +1786,7 @@ BEGIN
   LOAD_COMPLEX_PRODUCT_AND_CATEGORY_CDBS:
   {
     my $i = 1;
-  
+
     sub load_complex_product_and_category_cdbs
     {
       my $c = MyTest::CDBI::Sweet::Complex::Product->retrieve($i + 4_400_000);
@@ -1801,7 +1800,7 @@ BEGIN
   LOAD_COMPLEX_PRODUCT_AND_CATEGORY_DBIC:
   {
     my $i = 1;
-  
+
     sub load_complex_product_and_category_dbic
     {
       my $c = MyTest::DBIC::Complex::Product->find($i + 3_300_000);
@@ -1811,15 +1810,15 @@ BEGIN
       $i++;
     }
   }
-  
+
   #
   # Update
   #
-  
+
   UPDATE_COMPLEX_CATEGORY_RDBO:
   {
     my $i = 1;
-    
+
     sub update_complex_category_rdbo
     {
       my $c = 
@@ -1832,11 +1831,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   UPDATE_COMPLEX_CATEGORY_CDBI:
   {
     my $i = 1;
-  
+
     sub update_complex_category_cdbi
     {
       my $c = MyTest::CDBI::Complex::Category->retrieve($i + 2_200_000);
@@ -1849,7 +1848,7 @@ BEGIN
   UPDATE_COMPLEX_CATEGORY_CDBS:
   {
     my $i = 1;
-  
+
     sub update_complex_category_cdbs
     {
       my $c = MyTest::CDBI::Sweet::Complex::Category->retrieve($i + 4_400_000);
@@ -1862,7 +1861,7 @@ BEGIN
   UPDATE_COMPLEX_CATEGORY_DBIC:
   {
     my $i = 1;
-  
+
     sub update_complex_category_dbic
     {
       my $c = MyTest::DBIC::Complex::Category->find($i + 3_300_000);
@@ -1871,11 +1870,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   UPDATE_COMPLEX_PRODUCT_RDBO:
   {
     my $i = 1;
-    
+
     sub update_complex_product_rdbo
     {
       my $p =
@@ -1889,11 +1888,11 @@ BEGIN
       $i++;
     }
   }
-  
+
   UPDATE_COMPLEX_PRODUCT_CDBI:
   {
     my $i = 1;
-  
+
     sub update_complex_product_cdbi
     {
       my $p = MyTest::CDBI::Complex::Product->retrieve($i + 2_200_000);
@@ -1907,7 +1906,7 @@ BEGIN
   UPDATE_COMPLEX_PRODUCT_CDBS:
   {
     my $i = 1;
-  
+
     sub update_complex_product_cdbs
     {
       my $p = MyTest::CDBI::Sweet::Complex::Product->retrieve($i + 4_400_000);
@@ -1921,7 +1920,7 @@ BEGIN
   UPDATE_COMPLEX_PRODUCT_DBIC:
   {
     my $i = 1;
-  
+
     sub update_complex_product_dbic
     {
       my $p = MyTest::DBIC::Complex::Product->find($i + 3_300_000);
@@ -1931,15 +1930,15 @@ BEGIN
       $i++;
     }
   }
-  
+
   #
   # Search
   #
-  
+
   SEARCH_COMPLEX_CATEGORY_RDBO:
   {
     my $printed = 0;
-  
+
     sub search_complex_category_rdbo
     {
       my $c = 
@@ -1950,7 +1949,7 @@ BEGIN
             name => { like => 'xCat %2%' },
           ]);
       die unless(@$c);
-  
+
       if($Debug && !$printed)
       {
         print "search_complex_category_rdbo GOT ", scalar(@$c), "\n";
@@ -1962,7 +1961,7 @@ BEGIN
   SEARCH_COMPLEX_CATEGORY_CDBI:
   {
     my $printed = 0;
-  
+
     sub search_complex_category_cdbi
     {
       my @c = MyTest::CDBI::Complex::Category->search_like(name => 'xCat %2%');
@@ -1975,11 +1974,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_COMPLEX_CATEGORY_CDBS:
   {
     my $printed = 0;
-  
+
     sub search_complex_category_cdbs
     {
       my @c = MyTest::CDBI::Sweet::Complex::Category->search_like(name => 'xCat %2%');
@@ -1992,11 +1991,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_COMPLEX_CATEGORY_DBIC:
   {
     my $printed = 0;
-  
+
     sub search_complex_category_dbic
     {
       my @c = MyTest::DBIC::Complex::Category->search_like({ name => 'xCat %2%' });
@@ -2009,11 +2008,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_COMPLEX_PRODUCT_RDBO:
   {
     my $printed = 0;
-  
+
     sub search_complex_product_rdbo
     {
       my $p =
@@ -2032,11 +2031,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_COMPLEX_PRODUCT_CDBI:
   {
     my $printed = 0;
-  
+
     sub search_complex_product_cdbi
     {
       my @p = MyTest::CDBI::Complex::Product->search_like(name => 'Product %2%');
@@ -2053,7 +2052,7 @@ BEGIN
   SEARCH_COMPLEX_PRODUCT_CDBS:
   {
     my $printed = 0;
-  
+
     sub search_complex_product_cdbs
     {
       my @p = MyTest::CDBI::Sweet::Complex::Product->search_like(name => 'Product %2%');
@@ -2070,7 +2069,7 @@ BEGIN
   SEARCH_COMPLEX_PRODUCT_DBIC:
   {
     my $printed = 0;
-  
+
     sub search_complex_product_dbic
     {
       my @p = MyTest::DBIC::Complex::Product->search_like({ name => 'Product %2%' });
@@ -2083,11 +2082,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_RDBO:
   {
     my $printed = 0;
-  
+
     sub search_complex_product_and_category_rdbo
     {
       my $ps =
@@ -2105,7 +2104,7 @@ BEGIN
         print "search_complex_product_and_category_rdbo GOT ", scalar(@$ps), "\n";
         $printed++;
       }
-      
+
       foreach my $p (@$ps)
       {
         my $cat = $p->category;
@@ -2114,11 +2113,11 @@ BEGIN
       }
     }
   }
-  
+
   SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_CDBI:
   {
     my $printed = 0;
-  
+
     sub search_complex_product_and_category_cdbi
     {
       my @p = MyTest::CDBI::Complex::Product->search_like(name => 'Product %2%');
@@ -2129,7 +2128,7 @@ BEGIN
         print "search_complex_product_and_category_cdbi GOT ", scalar(@p), "\n";
         $printed++;
       }
-  
+
       foreach my $p (@p)
       {
         my $cat = $p->category_id;
@@ -2142,7 +2141,7 @@ BEGIN
   SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_CDBS:
   {
     my $printed = 0;
-  
+
     sub search_complex_product_and_category_cdbs
     {
       my @p = MyTest::CDBI::Sweet::Complex::Product->search(
@@ -2155,7 +2154,7 @@ BEGIN
         print "search_complex_product_and_category_cdbs GOT ", scalar(@p), "\n";
         $printed++;
       }
-  
+
       foreach my $p (@p)
       {
         my $cat = $p->category_id;
@@ -2168,7 +2167,7 @@ BEGIN
   SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_DBIC:
   {
     my $printed = 0;
-  
+
     sub search_complex_product_and_category_dbic
     {
       my @p = MyTest::DBIC::Complex::Product->search_like({ name => 'Product %2%' });
@@ -2179,7 +2178,7 @@ BEGIN
         print "search_complex_product_and_category_dbic GOT ", scalar(@p), "\n";
         $printed++;
       }
-  
+
       foreach my $p (@p)
       {
         my $cat = $p->category_id;
@@ -2196,7 +2195,7 @@ BEGIN
   ITERATE_COMPLEX_CATEGORY_RDBO:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_category_rdbo
     {
       my $iter = 
@@ -2206,7 +2205,7 @@ BEGIN
           [
             name => { like => 'xCat %2%' },
           ]);
-  
+
       my $i = 0;
 
       while(my $c = $iter->next)
@@ -2221,11 +2220,11 @@ BEGIN
       }
     }
   }
-  
+
   ITERATE_COMPLEX_CATEGORY_CDBI:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_category_cdbi
     {
       my $iter = MyTest::CDBI::Complex::Category->search_like(name => 'xCat %2%');
@@ -2248,7 +2247,7 @@ BEGIN
   ITERATE_COMPLEX_CATEGORY_CDBS:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_category_cdbs
     {
       my $iter = MyTest::CDBI::Sweet::Complex::Category->search_like(name => 'xCat %2%');
@@ -2271,7 +2270,7 @@ BEGIN
   ITERATE_COMPLEX_CATEGORY_DBIC:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_category_dbic
     {
       my $iter = MyTest::DBIC::Complex::Category->search_like({ name => 'xCat %2%' });
@@ -2290,11 +2289,11 @@ BEGIN
       }
     }
   }
-  
+
   ITERATE_COMPLEX_PRODUCT_RDBO:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_product_rdbo
     {
       my $iter =
@@ -2319,11 +2318,11 @@ BEGIN
       }
     }
   }
-  
+
   ITERATE_COMPLEX_PRODUCT_CDBI:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_product_cdbi
     {
       my $iter = MyTest::CDBI::Complex::Product->search_like(name => 'Product %2%');
@@ -2346,7 +2345,7 @@ BEGIN
   ITERATE_COMPLEX_PRODUCT_CDBS:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_product_cdbs
     {
       my $iter = MyTest::CDBI::Sweet::Complex::Product->search_like(name => 'Product %2%');
@@ -2369,7 +2368,7 @@ BEGIN
   ITERATE_COMPLEX_PRODUCT_DBIC:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_product_dbic
     {
       my $iter = MyTest::DBIC::Complex::Product->search_like({ name => 'Product %2%' });
@@ -2392,7 +2391,7 @@ BEGIN
   ITERATE_COMPLEX_PRODUCT_AND_CATEGORY_RDBO:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_product_and_category_rdbo
     {
       my $iter =
@@ -2421,15 +2420,15 @@ BEGIN
       }
     }
   }
-  
+
   ITERATE_COMPLEX_PRODUCT_AND_CATEGORY_CDBI:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_product_and_category_cdbi
     {
       my $iter = MyTest::CDBI::Complex::Product->search_like(name => 'Product %2%');
-  
+
       my $i = 0;
 
       while(my $p = $iter->next)
@@ -2451,13 +2450,13 @@ BEGIN
   ITERATE_COMPLEX_PRODUCT_AND_CATEGORY_CDBS:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_product_and_category_cdbs
     {
       my $iter = MyTest::CDBI::Sweet::Complex::Product->search(
         { name => { -like => [ 'Product %2%' ] } },
         { prefetch => [ 'category_id' ] });
-  
+
       my $i = 0;
 
       while(my $p = $iter->next)
@@ -2479,11 +2478,11 @@ BEGIN
   ITERATE_COMPLEX_PRODUCT_AND_CATEGORY_DBIC:
   {
     my $printed = 0;
-  
+
     sub iterate_complex_product_and_category_dbic
     {
       my $iter = MyTest::DBIC::Complex::Product->search_like({ name => 'Product %2%' });
-  
+
       my $i = 0;
 
       while(my $p = $iter->next)
@@ -2508,7 +2507,7 @@ sub Bench
   my($name, $iterations, $tests, $no_newline) = @_;
 
   my %filtered_tests;
-  
+
   my $db_regex = '\bRDBO|' . join('|', map { $Cmp_Abbreviation{$_} } @Cmp_To) . '\b';
   $db_regex = qr($db_regex);
 
@@ -2576,7 +2575,7 @@ sub Run_Tests
     'CDBS' => \&insert_complex_product_cdbs,
     'DBIC' => \&insert_complex_product_dbic,
   });
-  
+
   #
   # Load
   #
@@ -2612,7 +2611,7 @@ sub Run_Tests
     'CDBS' => \&load_complex_product_cdbs,
     'DBIC' => \&load_complex_product_dbic,
   });
-  
+
   Bench('Simple: load 3', $Iterations,
   {
     'RDBO' => \&load_simple_product_and_category_rdbo,
@@ -2628,7 +2627,7 @@ sub Run_Tests
     'CDBS' => \&load_complex_product_and_category_cdbs,
     'DBIC' => \&load_complex_product_and_category_dbic,
   });
-  
+
   #
   # Update
   #
@@ -2648,7 +2647,7 @@ sub Run_Tests
   #  'CDBS' => \&update_complex_category_cdbs,
   #  'DBIC' => \&update_complex_category_dbic,
   #});
-  
+
   Bench('Simple: update 2', $Iterations,
   {
     'RDBO' => \&update_simple_product_rdbo,
@@ -2664,7 +2663,7 @@ sub Run_Tests
     'CDBS' => \&update_complex_product_cdbs,
     'DBIC' => \&update_complex_product_dbic,
   });
-  
+
   INTERNAL_LOOPERS:
   {
     #
@@ -2682,7 +2681,7 @@ sub Run_Tests
       'CDBS' => \&search_simple_category_cdbs,
       'DBIC' => \&search_simple_category_dbic,
     });
-  
+
     #Bench('Complex: search 1', $CPU_Time,
     #{
     #  'RDBO' => \&search_complex_category_rdbo,
@@ -2690,7 +2689,7 @@ sub Run_Tests
     #  'CDBS' => \&search_complex_category_cdbs,
     #  'DBIC' => \&search_complex_category_dbic,
     #});
-  
+
     Bench('Simple: search 2', $CPU_Time,
     {
       'RDBO' => \&search_simple_product_rdbo,
@@ -2698,7 +2697,7 @@ sub Run_Tests
       'CDBS' => \&search_simple_product_cdbs,
       'DBIC' => \&search_simple_product_dbic,
     });
-  
+
     Bench('Complex: search 2', $CPU_Time,
     {
       'RDBO' => \&search_complex_product_rdbo,
@@ -2706,7 +2705,7 @@ sub Run_Tests
       'CDBS' => \&search_complex_product_cdbs,
       'DBIC' => \&search_complex_product_dbic,
     });
-    
+
     Bench('Simple: search 3', $CPU_Time,
     {
       'RDBO' => \&search_simple_product_and_category_rdbo,
@@ -2714,7 +2713,7 @@ sub Run_Tests
       'CDBS' => \&search_simple_product_and_category_cdbs,
       'DBIC' => \&search_simple_product_and_category_dbic,
     });
-  
+
     Bench('Complex: search 3', $CPU_Time ,
     {
       'RDBO' => \&search_complex_product_and_category_rdbo,
@@ -2722,11 +2721,11 @@ sub Run_Tests
       'CDBS' => \&search_complex_product_and_category_cdbs,
       'DBIC' => \&search_complex_product_and_category_dbic,
     });
-  
+
     #
     # Iterate
     #
-  
+
     Bench('Simple: iterate 1', $CPU_Time,
     {
       'RDBO' => \&iterate_simple_category_rdbo,
@@ -2734,7 +2733,7 @@ sub Run_Tests
       'CDBS' => \&iterate_simple_category_cdbs,
       'DBIC' => \&iterate_simple_category_dbic,
     });
-  
+
     Bench('Complex: iterate 1', $CPU_Time,
     {
       'RDBO' => \&iterate_complex_category_rdbo,
@@ -2742,7 +2741,7 @@ sub Run_Tests
       'CDBS' => \&iterate_complex_category_cdbs,
       'DBIC' => \&iterate_complex_category_dbic,
     });
-  
+
     Bench('Simple: iterate 2', $CPU_Time,
     {
       'RDBO' => \&iterate_simple_product_rdbo,
@@ -2750,7 +2749,7 @@ sub Run_Tests
       'CDBS' => \&iterate_simple_product_cdbs,
       'DBIC' => \&iterate_simple_product_dbic,
     });
-  
+
     Bench('Complex: iterate 2', $CPU_Time,
     {
       'RDBO' => \&iterate_complex_product_rdbo,
@@ -2758,7 +2757,7 @@ sub Run_Tests
       'CDBS' => \&iterate_complex_product_cdbs,
       'DBIC' => \&iterate_complex_product_dbic,
     });
-    
+
     Bench('Simple: iterate 3', $CPU_Time,
     {
       'RDBO' => \&iterate_simple_product_and_category_rdbo,
@@ -2766,7 +2765,7 @@ sub Run_Tests
       'CDBS' => \&iterate_simple_product_and_category_cdbs,
       'DBIC' => \&iterate_simple_product_and_category_dbic,
     });
-    
+
     Bench('Complex: iterate 3', $CPU_Time,
     {
       'RDBO' => \&iterate_complex_product_and_category_rdbo,
@@ -2829,7 +2828,7 @@ sub Init_DB
 {
   my %init = map { $_ => 1 } @Use_DBs;
   my $dbh;
-  
+
   #
   # Postgres
   #
@@ -2867,7 +2866,7 @@ CREATE TABLE rose_db_object_test_categories
   name  VARCHAR(255) NOT NULL
 )
 EOF
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test_products
 (
@@ -2881,7 +2880,7 @@ CREATE TABLE rose_db_object_test_products
   published      TIMESTAMP,
   last_modified  TIMESTAMP DEFAULT NOW(),
   date_created   TIMESTAMP DEFAULT NOW(),
-  
+
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_test_codes (k1, k2, k3)
 )
 EOF
@@ -2897,7 +2896,7 @@ EOF
     foreach my $i (1 .. 10)
     {
       $dbh->do(<<"EOF");
-INSERT INTO rose_db_object_test_categories (name) VALUES ('Cat $i');
+INSERT INTO rose_db_object_test_categories (name) VALUES ('Cat $i')
 EOF
     }
 
@@ -2938,7 +2937,7 @@ EOF
   {
     $dbh = Rose::DB->new('mysql')->retain_dbh()
       or die Rose::DB->error;
-    
+
     # Drop existing table and create schema, ignoring errors
     {
       local $dbh->{'RaiseError'} = 0;
@@ -2967,7 +2966,7 @@ CREATE TABLE rose_db_object_test_categories
   name  VARCHAR(255) NOT NULL
 )
 EOF
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test_products
 (
@@ -2995,7 +2994,7 @@ EOF
     foreach my $i (1 .. 10)
     {
       $dbh->do(<<"EOF");
-INSERT INTO rose_db_object_test_categories (name) VALUES ('Cat $i');
+INSERT INTO rose_db_object_test_categories (name) VALUES ('Cat $i')
 EOF
     }
 
@@ -3034,7 +3033,7 @@ EOF
   {
     $dbh = Rose::DB->new('informix')->retain_dbh()
       or die Rose::DB->error;
-    
+
     # Drop existing table and create schema, ignoring errors
     {
       local $dbh->{'RaiseError'} = 0;
@@ -3063,7 +3062,7 @@ CREATE TABLE rose_db_object_test_categories
   name  VARCHAR(255) NOT NULL
 )
 EOF
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test_products
 (
@@ -3093,7 +3092,7 @@ EOF
     foreach my $i (1 .. 10)
     {
       $dbh->do(<<"EOF");
-INSERT INTO rose_db_object_test_categories (name) VALUES ('Cat $i');
+INSERT INTO rose_db_object_test_categories (name) VALUES ('Cat $i')
 EOF
     }
 
@@ -3140,7 +3139,7 @@ END
     $MyTest::CDBI::Sweet::Base::DB = undef;
     MyTest::CDBI::Sweet::Base->db_Main->disconnect;
   }
-  
+
   # Delete test tables
 
   if($Inited_DB{'pg'})
@@ -3148,14 +3147,14 @@ END
     # Postgres
     my $dbh = Rose::DB->new('pg')->retain_dbh()
       or die Rose::DB->error;
-    
+
     $dbh->do('DROP TABLE rose_db_object_test_products');
     $dbh->do('DROP TABLE rose_db_object_test_categories');
     $dbh->do('DROP TABLE rose_db_object_test_codes');
 
     $dbh->disconnect;
   }
-  
+
   if($Inited_DB{'mysql'})
   {
     # MySQL
@@ -3174,11 +3173,11 @@ END
     # Informix
     my $dbh = Rose::DB->new('informix')->retain_dbh()
       or die Rose::DB->error;
-  
+
     $dbh->do('DROP TABLE rose_db_object_test_products');
     $dbh->do('DROP TABLE rose_db_object_test_categories');
     $dbh->do('DROP TABLE rose_db_object_test_codes');
-  
+
     $dbh->disconnect;
   }
 }

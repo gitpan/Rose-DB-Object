@@ -3,7 +3,6 @@ require 5.006;
 use ExtUtils::MakeMaker;
 
 WriteMakefile(NAME         => 'Rose::DB::Object',
-              PMLIBDIRS    => [ 'lib' ],
               VERSION_FROM => 'lib/Rose/DB/Object.pm',
               dist => { 'COMPRESS' => 'gzip' },
               PREREQ_PM =>

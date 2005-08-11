@@ -1,3 +1,8 @@
+0.0651 (08.11.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Moved benchmarks into test directory in an attempt to
+      get search.cpan.org to ignore them.
+
 0.065 (08.11.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Improved the efficiency of manager classes.
