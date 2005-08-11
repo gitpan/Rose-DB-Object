@@ -21,6 +21,7 @@ BEGIN
     host     => 'localhost',
     username => 'postgres',
     password => '',
+    connect_options => { AutoCommit => 1 },
     post_connect_sql =>
     [
       'SET default_transaction_isolation TO "read committed"',
@@ -37,6 +38,7 @@ BEGIN
     host     => 'localhost',
     username => 'postgres',
     password => '',
+    connect_options => { AutoCommit => 1 },
     post_connect_sql =>
     [
       'SET default_transaction_isolation TO "read committed"',

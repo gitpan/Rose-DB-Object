@@ -7,7 +7,9 @@ use Carp();
 use Rose::DB::Objects::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
-our $VERSION = '0.042';
+use Rose::DB::Object::Constants qw(STATE_LOADING);
+
+our $VERSION = '0.043';
 
 our $Debug = 0;
 
@@ -444,8 +446,11 @@ sub get_objects
 
             next ROW  if($skip_first && ++$count <= $skip_first);
 
-            $object = $object_class->new(%{$row{$object_class}}, %object_args);
+            $object = $object_class->new(%object_args);
 
+            local $object->{STATE_LOADING()} = 1;
+            $object->init(%{$row{$object_class}});
+            
             if($with_objects)
             {
               foreach my $i (1 .. $num_subtables)
@@ -453,7 +458,11 @@ sub get_objects
                 my $method = $with_objects->[$i - 1];
                 my $class  = $classes[$i];
 
-                $object->$method($class->new(%{$row{$class}}, %subobject_args));
+                my $subobject = $class->new(%subobject_args);
+                local $subobject->{STATE_LOADING()} = 1;
+                $subobject->init(%{$row{$class}});
+
+                $object->$method($subobject);
               }
             }
 
@@ -499,14 +508,21 @@ sub get_objects
 
       while($sth->fetch)
       {
-        my $object = $object_class->new(%{$row{$object_class}}, %object_args);
+        my $object = $object_class->new(%object_args);
+
+        local $object->{STATE_LOADING()} = 1;
+        $object->init(%{$row{$object_class}});
 
         foreach my $i (1 .. $num_subtables)
         {
           my $method = $with_objects->[$i - 1];
           my $class  = $classes[$i];
 
-          $object->$method($class->new(%{$row{$class}}, %subobject_args));
+          my $subobject = $class->new(%subobject_args);
+          local $subobject->{STATE_LOADING()} = 1;
+          $subobject->init(%{$row{$class}});
+                
+          $object->$method($subobject);
         }
 
         push(@objects, $object);
@@ -525,7 +541,12 @@ sub get_objects
 
       while($sth->fetch)
       {
-        push(@objects, $object_class->new(%{$row{$object_class}}, %object_args));
+        my $object = $object_class->new(%object_args);
+
+        local $object->{STATE_LOADING()} = 1;
+        $object->init(%{$row{$object_class}});
+
+        push(@objects, $object);
       }
     }
 

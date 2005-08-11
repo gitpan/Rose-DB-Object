@@ -1,3 +1,9 @@
+0.065 (08.11.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Improved the efficiency of manager classes.
+    * Added benchmark suite.
+    * More POD fixes.
+
 0.064 (08.09.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Duh, forgot the table name and initialize() call in 

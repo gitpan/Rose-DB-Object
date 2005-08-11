@@ -1431,8 +1431,8 @@ Rose::DB::Object::Metadata - Database object metadata.
     start_date  => { type => 'datetime' },
     end_date    => { type => 'datetime' },
 
-    date_created     => { type => 'timestamp', default => 'now' },  
-    last_modified    => { type => 'timestamp', default => 'now' },
+    date_created  => { type => 'timestamp', default => 'now' },  
+    last_modified => { type => 'timestamp', default => 'now' },
   );
 
   $meta->add_unique_key('name');
@@ -1540,7 +1540,7 @@ Thankfully, there is a solution to this dilemma.  Remember that auto-initializat
     $meta->column(bits => { type => 'bits', bits => 5, default => 101 });
 
     # Fix BOOLEAN column that shows up as TINYINT(1)
-    $meta->column(flag  => { type => 'boolean', default => 1 });
+    $meta->column(flag => { type => 'boolean', default => 1 });
 
     # Do everything else
     $meta->auto_initialize;

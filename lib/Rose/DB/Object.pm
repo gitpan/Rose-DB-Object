@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.064';
+our $VERSION = '0.065';
 
 our $Debug = 0;
 
@@ -664,9 +664,9 @@ Rose::DB::Object - Object representation of a single row in a database table.
 
 =head1 SYNOPSIS
 
-  ## Step 0: Set up your Rose::DB data sources, otherwise you
-  ## won't be able to connect to the database at all!  See thee
-  ## Rose::DB documentation for more information.
+  ## First, set up your Rose::DB data sources, otherwise you
+  ## won't be able to connect to the database at all!  See 
+  ## the Rose::DB documentation for more information.
 
   ##
   ## Create classes - two possible approaches:
