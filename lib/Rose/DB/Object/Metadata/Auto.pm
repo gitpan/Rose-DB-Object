@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata;
 our @ISA = qw(Rose::DB::Object::Metadata);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Rose::Class::MakeMethods::Generic
 (
@@ -39,7 +39,7 @@ sub auto_generate_columns
 {
   my($self) = shift;
 
-  my($class, %columns);
+  my($class, %columns, $schema);
 
   eval
   {
@@ -48,17 +48,19 @@ sub auto_generate_columns
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
-    my $sth = $dbh->column_info($self->catalog, $self->schema, $self->table, '%');
+    my $table = lc $self->table;
+
+    $schema = $self->schema;
+    $schema = $db->default_implicit_schema  unless(defined $schema);
+  
+    my $sth = $dbh->column_info($self->catalog, $schema, $table, '%');
 
     unless(defined $sth)
     {
       no warnings; # undef strings okay
       die "No column information found for catalog '", $self->catalog,
-          "' schema '", $self->schema, "' table '", $self->table, "'";
+          "' schema '", $schema, "' table '", $table, "'";
     }
-
-    my $schema = $self->schema;
-    $schema = $db->default_implicit_schema  unless(defined $schema);
 
     COLUMN: while(my $col_info = $sth->fetchrow_hashref)
     {
@@ -68,7 +70,7 @@ sub auto_generate_columns
 
         next COLUMN unless($col_info->{'TABLE_CAT'}   eq $self->catalog &&
                            $col_info->{'TABLE_SCHEM'} eq $schema &&
-                           $col_info->{'TABLE_NAME'}  eq $self->table);
+                           $col_info->{'TABLE_NAME'}  eq $table);
       }
 
       unless(defined $col_info->{'COLUMN_NAME'})
@@ -83,7 +85,10 @@ sub auto_generate_columns
   
   if($@ || !keys %columns)
   {
-    Carp::croak "Could not auto-generate columns for class $class - $@";
+    no warnings; # undef strings okay
+    Carp::croak "Could not auto-generate columns for class $class - ",
+                ($@ || "no column info found for catalog '" . $self->catalog .
+                "' schema '" . $schema . "' table '" . lc $self->table, "'");
   }
 
   return wantarray ? values %columns : \%columns;
@@ -226,8 +231,8 @@ sub auto_retrieve_primary_key_column_names
     Carp::croak "Useless call to auto_retrieve_primary_key_column_names() in void context";
   }
 
-  my($class, @columns);
-
+  my($class, @columns, $schema);
+    
   eval
   {
     $class = $self->class or die "Missing class!";
@@ -235,17 +240,19 @@ sub auto_retrieve_primary_key_column_names
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
-    my $sth = $dbh->primary_key_info($self->catalog, $self->schema, $self->table);
+    my $table = lc $self->table;
+
+    $schema = $self->schema;
+    $schema = $db->default_implicit_schema  unless(defined $schema);
+  
+    my $sth = $dbh->primary_key_info($self->catalog, $schema, $table);
     
     unless(defined $sth)
     {
       no warnings; # undef strings okay
       die "No primary key information found for catalog '", $self->catalog,
-          "' schema '", $self->schema, "' table '", $self->table, "'";
+          "' schema '", $schema, "' table '", $table, "'";
     }
-
-    my $schema = $self->schema;
-    $schema = $db->default_implicit_schema  unless(defined $schema);
 
     PK: while(my $pk_info = $sth->fetchrow_hashref)
     {
@@ -255,7 +262,7 @@ sub auto_retrieve_primary_key_column_names
 
         next PK  unless($pk_info->{'TABLE_CAT'}   eq $self->catalog &&
                         $pk_info->{'TABLE_SCHEM'} eq $schema &&
-                        $pk_info->{'TABLE_NAME'}  eq $self->table);
+                        $pk_info->{'TABLE_NAME'}  eq $table);
       }
 
       unless(defined $pk_info->{'COLUMN_NAME'})
@@ -270,7 +277,9 @@ sub auto_retrieve_primary_key_column_names
   if($@ || !@columns)
   {
     $@ = 'no primary key coumns found'  unless(defined $@);
-    Carp::croak "Could not auto-retrieve primary key columns for class $class - $@";
+    Carp::croak "Could not auto-retrieve primary key columns for class $class - ",
+                ($@ || "no primary key info found for catalog '" . $self->catalog .
+                "' schema '" . $schema . "' table '" . lc $self->table, "'");
   }
 
   return wantarray ? @columns : \@columns;

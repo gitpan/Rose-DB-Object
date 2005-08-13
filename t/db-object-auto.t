@@ -680,8 +680,8 @@ BEGIN
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
-      $dbh->do('DROP TABLE rose_db_object_test');
-      $dbh->do('DROP TABLE rose_db_object_private.rose_db_object_test');
+      $dbh->do('DROP TABLE Rose_db_object_test');
+      $dbh->do('DROP TABLE rose_db_object_private.Rose_db_object_test');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
       $dbh->do('CREATE SCHEMA rose_db_object_private');
     }
@@ -697,7 +697,7 @@ BEGIN
     our $PG_HAS_CHKPASS = 1  unless($@);
 
     $dbh->do(<<"EOF");
-CREATE TABLE rose_db_object_test
+CREATE TABLE Rose_db_object_test
 (
   id             SERIAL NOT NULL PRIMARY KEY,
   k1             INT,
@@ -722,7 +722,7 @@ CREATE TABLE rose_db_object_test
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE rose_db_object_private.rose_db_object_test
+CREATE TABLE rose_db_object_private.Rose_db_object_test
 (
   id             SERIAL NOT NULL PRIMARY KEY,
   k1             INT,
@@ -756,7 +756,7 @@ EOF
 
     sub init_db { Rose::DB->new('pg') }
 
-    MyPgObject->meta->table('rose_db_object_test');
+    MyPgObject->meta->table('Rose_db_object_test');
 
     MyPgObject->meta->auto_initialize;
 
@@ -795,12 +795,12 @@ EOF
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
-      $dbh->do('DROP TABLE rose_db_object_test');
-      $dbh->do('DROP TABLE rose_db_object_test2');
+      $dbh->do('DROP TABLE Rose_db_object_test');
+      $dbh->do('DROP TABLE Rose_db_object_test2');
     }
 
     $dbh->do(<<"EOF");
-CREATE TABLE rose_db_object_test
+CREATE TABLE Rose_db_object_test
 (
   id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   k1             INT,
@@ -824,7 +824,7 @@ CREATE TABLE rose_db_object_test
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE rose_db_object_test2
+CREATE TABLE Rose_db_object_test2
 (
   k1             INT NOT NULL,
   k2             INT NOT NULL,
@@ -844,7 +844,7 @@ EOF
 
     sub init_db { Rose::DB->new('mysql') }
 
-    MyMySQLObject->meta->table('rose_db_object_test');
+    MyMySQLObject->meta->table('Rose_db_object_test');
 
     MyMySQLObject->meta->columns(MyMySQLObject->meta->auto_generate_columns);
 
@@ -881,7 +881,7 @@ EOF
 
     sub init_db { Rose::DB->new('mysql') }
 
-    MyMPKMySQLObject->meta->table('rose_db_object_test2');
+    MyMPKMySQLObject->meta->table('Rose_db_object_test2');
 
     MyMPKMySQLObject->meta->columns(MyMPKMySQLObject->meta->auto_generate_columns);
 
@@ -1032,8 +1032,8 @@ END
     my $dbh = Rose::DB->new('pg_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE rose_db_object_test');
-    $dbh->do('DROP TABLE rose_db_object_private.rose_db_object_test');
+    $dbh->do('DROP TABLE Rose_db_object_test');
+    $dbh->do('DROP TABLE rose_db_object_private.Rose_db_object_test');
     $dbh->do('DROP SCHEMA rose_db_object_private CASCADE');
 
     $dbh->disconnect;
@@ -1045,8 +1045,8 @@ END
     my $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE rose_db_object_test');
-    $dbh->do('DROP TABLE rose_db_object_test2');
+    $dbh->do('DROP TABLE Rose_db_object_test');
+    $dbh->do('DROP TABLE Rose_db_object_test2');
 
     $dbh->disconnect;
   }

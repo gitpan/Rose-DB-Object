@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::UniqueKey;
 use Rose::DB::Object::Metadata::Auto;
 our @ISA = qw(Rose::DB::Object::Metadata::Auto);
 
-our $VERSION = '0.02';
+our $VERSION = '0.021';
 
 sub auto_retrieve_primary_key_column_names
 {
@@ -113,7 +113,7 @@ sub auto_generate_foreign_keys
 
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
-    my $db_name = lc $db->database;
+    my $db_name = $db->database;
 
     my $sth = $dbh->prepare("SHOW TABLE STATUS FROM `$db_name` LIKE ?");
     $sth->execute($self->table);

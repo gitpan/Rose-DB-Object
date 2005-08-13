@@ -277,9 +277,9 @@ sub build_select
       join(",\n", map { "  $_ $table_alias{$_}" } @$tables) :
       "  $tables->[0]";
 
-    my $first = (defined $limit && $use_prefix_limit) ? " FIRST $limit" : '';
+    my $prefix_limit = (defined $limit && $use_prefix_limit) ? $limit : '';
     $select ||= join(",\n", map { "  $_" } @select_columns);
-    $qs = "SELECT$first\n$select\nFROM\n$tables_sql\n";
+    $qs = "SELECT $prefix_limit\n$select\nFROM\n$tables_sql\n";
   }
 
   if($where)

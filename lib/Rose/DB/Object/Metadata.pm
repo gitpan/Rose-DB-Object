@@ -14,6 +14,10 @@ use Rose::DB::Object::Metadata::UniqueKey;
 use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 
+our $VERSION = '0.045';
+
+our $Debug = 0;
+
 use Rose::Object::MakeMethods::Generic
 (
   scalar => 
@@ -108,10 +112,6 @@ __PACKAGE__->column_type_classes
 
   'chkpass'   => 'Rose::DB::Object::Metadata::Column::Pg::Chkpass',
 );
-
-our $VERSION = '0.044';
-
-our $Debug = 0;
 
 our %Objects;
 
@@ -1348,7 +1348,7 @@ sub AUTOLOAD
     return $self->$method(@_);
   }
 
-  goto &$AUTOLOAD;
+  Carp::confess "No such method: $AUTOLOAD";
 }
 
 sub auto_helper_class 

@@ -9,7 +9,7 @@ use Rose::DB::Object::Metadata::UniqueKey;
 use Rose::DB::Object::Metadata::Auto;
 our @ISA = qw(Rose::DB::Object::Metadata::Auto);
 
-our $VERSION = '0.01';
+our $VERSION = '0.011';
 
 # Other useful columns, not selected for now
 #   pg_get_indexdef(i.oid) AS indexdef
@@ -67,12 +67,14 @@ sub auto_generate_unique_keys
 
     my $schema = $self->schema;
     $schema = $db->default_implicit_schema  unless(defined $schema);
+ 
+    my $table = lc $self->table;
 
     my($relation_id, $column_nums, $key_name);
 
     my $sth = $dbh->prepare(UNIQUE_INDEX_SQL);
 
-    $sth->execute($schema, $self->table);
+    $sth->execute($schema, $table);
     $sth->bind_columns(\($relation_id, $column_nums, $key_name));
 
     while($sth->fetch)

@@ -374,7 +374,12 @@ sub get_objects
     {
       $skip_first += delete $args{'offset'};
       $args{'limit'} += $skip_first;
+      $args{'limit'} = $db->format_limit_with_offset($args{'limit'});
     }
+  }
+  elsif($args{'limit'})
+  {
+    $args{'limit'} = $db->format_limit_with_offset($args{'limit'});
   }
 
   my($count, @objects, $iterator);

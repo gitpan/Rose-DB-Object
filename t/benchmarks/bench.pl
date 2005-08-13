@@ -19,9 +19,9 @@ our @Cmp_To = (qw(Class::DBI Class::DBI::Sweet DBIx::Class));
 
 our %Cmp_Abbreviation =
 (
-  'Class::DBI'         => 'CDBI',
-  'Class::DBI::Sweet'  => 'CDBS',
-  'DBIx::Class'        => 'DBIC',
+  'Class::DBI'        => 'CDBI',
+  'Class::DBI::Sweet' => 'CDBS',
+  'DBIx::Class'       => 'DBIC',
 );
 
 our %DB_Name =
@@ -63,8 +63,6 @@ Usage()  if($Opt{'help'});
 our $Debug = $Opt{'debug'} || 0;
 our $CPU_Time = $Opt{'cpu-time'} || $Default_CPU_Time;
 $CPU_Time = -$CPU_Time  if($CPU_Time > 0);
-
-$Opt{'compare-to'} = join(',', @Cmp_To)  if($Opt{'compare-to'} eq 'all');
 
 unless($Opt{'time'} || $Opt{'time-and-compare'})
 {
@@ -458,6 +456,8 @@ sub Init_PM
     eval "use $class";
     $Have_PM{$class} = 1  unless($@);
   }
+
+  $Opt{'compare-to'} = join(',', sort keys %Have_PM)  if($Opt{'compare-to'} eq 'all');
 }
 
 sub Init_Term
@@ -544,7 +544,7 @@ BEGIN
   ##
   ## Simple
   ##
-
+  
   #
   # Insert
   #
@@ -670,6 +670,154 @@ BEGIN
         last_modified => '2005-02-02 12:34:56',
         date_created  => '2005-03-02 12:34:56' });
       $i++;
+    }
+  }
+
+  #
+  # Accessor
+  #
+
+  use constant ACCESSOR_ITERATIONS => 10_000;
+
+  ACCCESSOR_SIMPLE_CATEGORY_RDBO:
+  {
+    sub accessor_simple_category_rdbo
+    {
+      my $c = 
+        MyTest::RDBO::Simple::Category->new(
+          db  => $DB,
+          id  => 1 + 100_000);
+
+      $c->load;
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          $c->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_SIMPLE_CATEGORY_CDBI:
+  {
+    sub accessor_simple_category_cdbi
+    {
+      my $c = MyTest::CDBI::Simple::Category->retrieve(1 + 200_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          $c->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_SIMPLE_CATEGORY_CDBS:
+  {
+    sub accessor_simple_category_cdbs
+    {
+      my $c = MyTest::CDBI::Sweet::Simple::Category->retrieve(1 + 400_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          $c->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_SIMPLE_CATEGORY_DBIC:
+  {
+    sub accessor_simple_category_dbic
+    {
+      my $c = MyTest::DBIC::Simple::Category->find(1 + 300_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          $c->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_SIMPLE_PRODUCT_RDBO:
+  {
+    sub accessor_simple_product_rdbo
+    {
+      my $p =
+        MyTest::RDBO::Simple::Product->new(
+          db => $DB, 
+          id => 1 + 100_000);
+
+      $p->load;
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          $p->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_SIMPLE_PRODUCT_CDBI:
+  {
+    sub accessor_simple_product_cdbi
+    {
+      my $p = MyTest::CDBI::Simple::Product->retrieve(1 + 200_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          $p->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_SIMPLE_PRODUCT_CDBS:
+  {
+    sub accessor_simple_product_cdbs
+    {
+      my $p = MyTest::CDBI::Sweet::Simple::Product->retrieve(1 + 400_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          $p->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_SIMPLE_PRODUCT_DBIC:
+  {
+    sub accessor_simple_product_dbic
+    {
+      my $p = MyTest::DBIC::Simple::Product->find(1 + 300_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          $p->$_();
+        }
+      }
     }
   }
 
@@ -1208,6 +1356,92 @@ BEGIN
   }
 
   #
+  # Search with limit and offset
+  #
+
+  use constant LIMIT  => 20;
+  use constant OFFSET => 100;
+
+  SEARCH_LIMIT_OFFSET_SIMPLE_PRODUCT_RDBO:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_simple_product_rdbo
+    {
+      my $p =
+        MyTest::RDBO::Simple::Product::Manager->get_products(
+          db => $DB,
+          query =>
+          [
+            name => { like => 'Product %2%' },
+          ],
+          limit  => LIMIT,
+          offset => OFFSET);
+      #die unless(@$p);
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_simple_product_rdbo GOT ", scalar(@$p), "\n";
+        $printed++;
+      }
+    }
+  }
+
+  SEARCH_LIMIT_OFFSET_SIMPLE_PRODUCT_CDBI:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_simple_product_cdbi
+    {
+      die "Unsupported";
+      my @p = MyTest::CDBI::Simple::Product->search_like(name => 'Product %2%');
+      #die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_simple_product_cdbi GOT ", scalar(@p), "\n";
+        $printed++;
+      }
+    }
+  }
+
+  SEARCH_LIMIT_OFFSET_SIMPLE_PRODUCT_CDBS:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_simple_product_cdbs
+    {
+      my @p = MyTest::CDBI::Sweet::Simple::Product->search_like(
+        { name => 'Product %2%' }, { rows => LIMIT, offset => OFFSET });
+      #die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_simple_product_cdbs GOT ", scalar(@p), "\n";
+        $printed++;
+      }
+    }
+  }
+
+  SEARCH_LIMIT_OFFSET_SIMPLE_PRODUCT_DBIC:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_simple_product_dbic
+    {
+      my @p = MyTest::DBIC::Simple::Product->search_like(
+        { name => 'Product %2%' }, { rows => LIMIT, offset => OFFSET });
+      #die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_simple_product_dbic GOT ", scalar(@p), "\n";
+        $printed++;
+      }
+    }
+  }
+
+  #
   # Iterate
   #
 
@@ -1520,6 +1754,61 @@ BEGIN
     }
   }
 
+  #
+  # Delete
+  #
+
+  DELETE_SIMPLE_CATEGORY_RDBO:
+  {
+    my $i = 1;
+
+    sub delete_simple_category_rdbo
+    {
+      my $c = 
+        MyTest::RDBO::Simple::Category->new(
+          db => $DB, 
+          id => $i + 100_000);
+      $c->delete;
+      $i++;
+    }
+  }
+
+  DELETE_SIMPLE_CATEGORY_CDBI:
+  {
+    my $i = 1;
+
+    sub delete_simple_category_cdbi
+    {
+      my $c = MyTest::CDBI::Simple::Category->retrieve($i + 200_000);
+      $c->delete;
+      $i++;
+    }
+  }
+
+  DELETE_SIMPLE_CATEGORY_CDBS:
+  {
+    my $i = 1;
+
+    sub delete_simple_category_cdbs
+    {
+      my $c = MyTest::CDBI::Sweet::Simple::Category->retrieve($i + 400_000);
+      $c->delete;
+      $i++;
+    }
+  }
+
+  DELETE_SIMPLE_CATEGORY_DBIC:
+  {
+    my $i = 1;
+
+    sub delete_simple_category_dbic
+    {
+      my $c = MyTest::DBIC::Simple::Category->find($i + 300_000);
+      $c->delete;
+      $i++;
+    }
+  }
+
   ##
   ## Complex
   ##
@@ -1647,6 +1936,152 @@ BEGIN
         status      => 'temp',
         published   => '2005-01-02 12:34:56' });
       $i++;
+    }
+  }
+
+  #
+  # Accessor
+  #
+
+  ACCCESSOR_COMPLEX_CATEGORY_RDBO:
+  {
+    sub accessor_complex_category_rdbo
+    {
+      my $c = 
+        MyTest::RDBO::Complex::Category->new(
+          db  => $DB,
+          id  => 1 + 100_000);
+
+      $c->load;
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          $c->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_COMPLEX_CATEGORY_CDBI:
+  {
+    sub accessor_complex_category_cdbi
+    {
+      my $c = MyTest::CDBI::Complex::Category->retrieve(1 + 200_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          $c->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_COMPLEX_CATEGORY_CDBS:
+  {
+    sub accessor_complex_category_cdbs
+    {
+      my $c = MyTest::CDBI::Sweet::Complex::Category->retrieve(1 + 400_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          $c->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_COMPLEX_CATEGORY_DBIC:
+  {
+    sub accessor_complex_category_dbic
+    {
+      my $c = MyTest::DBIC::Complex::Category->find(1 + 300_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          $c->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_COMPLEX_PRODUCT_RDBO:
+  {
+    sub accessor_complex_product_rdbo
+    {
+      my $p =
+        MyTest::RDBO::Complex::Product->new(
+          db => $DB, 
+          id => 1 + 100_000);
+
+      $p->load;
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          $p->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_COMPLEX_PRODUCT_CDBI:
+  {
+    sub accessor_complex_product_cdbi
+    {
+      my $p = MyTest::CDBI::Complex::Product->retrieve(1 + 200_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          $p->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_COMPLEX_PRODUCT_CDBS:
+  {
+    sub accessor_complex_product_cdbs
+    {
+      my $p = MyTest::CDBI::Sweet::Complex::Product->retrieve(1 + 400_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          $p->$_();
+        }
+      }
+    }
+  }
+
+  ACCCESSOR_COMPLEX_PRODUCT_DBIC:
+  {
+    sub accessor_complex_product_dbic
+    {
+      my $p = MyTest::DBIC::Complex::Product->find(1 + 300_000);
+
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          $p->$_();
+        }
+      }
     }
   }
 
@@ -2187,7 +2622,90 @@ BEGIN
       }
     }
   }
+  
+  #
+  # Search with limit and offset
+  #
 
+  SEARCH_LIMIT_OFFSET_COMPLEX_PRODUCT_RDBO:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_complex_product_rdbo
+    {
+      my $p =
+        MyTest::RDBO::Complex::Product::Manager->get_products(
+          db => $DB,
+          query =>
+          [
+            name => { like => 'Product %2%' },
+          ],
+          limit  => LIMIT,
+          offset => OFFSET);
+      #die unless(@$p);
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_complex_product_rdbo GOT ", scalar(@$p), "\n";
+        $printed++;
+      }
+    }
+  }
+
+  SEARCH_LIMIT_OFFSET_COMPLEX_PRODUCT_CDBI:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_complex_product_cdbi
+    {
+      die "Unsupported";
+      my @p = MyTest::CDBI::Complex::Product->search_like(name => 'Product %2%');
+      #die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_complex_product_cdbi GOT ", scalar(@p), "\n";
+        $printed++;
+      }
+    }
+  }
+
+  SEARCH_LIMIT_OFFSET_COMPLEX_PRODUCT_CDBS:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_complex_product_cdbs
+    {
+      my @p = MyTest::CDBI::Sweet::Complex::Product->search_like(
+        { name => 'Product %2%' }, { rows => LIMIT, offset => OFFSET });
+      #die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_complex_product_cdbs GOT ", scalar(@p), "\n";
+        $printed++;
+      }
+    }
+  }
+
+  SEARCH_LIMIT_OFFSET_COMPLEX_PRODUCT_DBIC:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_complex_product_dbic
+    {
+      my @p = MyTest::DBIC::Complex::Product->search_like(
+        { name => 'Product %2%' }, { rows => LIMIT, offset => OFFSET });
+      #die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_complex_product_dbic GOT ", scalar(@p), "\n";
+        $printed++;
+      }
+    }
+  }
+  
   #
   # Iterate
   #
@@ -2500,6 +3018,61 @@ BEGIN
       }
     }
   }
+
+  #
+  # Delete
+  #
+
+  DELETE_COMPLEX_PRODUCT_RDBO:
+  {
+    my $i = 1;
+
+    sub delete_complex_product_rdbo
+    {
+      my $p =
+        MyTest::RDBO::Complex::Product->new(
+          db => $DB, 
+          id => $i + 1_100_000);
+      $p->delete;
+      $i++;
+    }
+  }
+
+  DELETE_COMPLEX_PRODUCT_CDBI:
+  {
+    my $i = 1;
+
+    sub delete_complex_product_cdbi
+    {
+      my $c = MyTest::CDBI::Complex::Product->retrieve($i + 2_200_000);
+      $c->delete;
+      $i++;
+    }
+  }
+
+  DELETE_COMPLEX_PRODUCT_CDBS:
+  {
+    my $i = 1;
+
+    sub delete_complex_product_cdbs
+    {
+      my $c = MyTest::CDBI::Sweet::Complex::Product->retrieve($i + 4_400_000);
+      $c->delete;
+      $i++;
+    }
+  }
+
+  DELETE_COMPLEX_PRODUCT_DBIC:
+  {
+    my $i = 1;
+
+    sub delete_complex_product_dbic
+    {
+      my $c = MyTest::DBIC::Complex::Product->find($i + 3_300_000);
+      $c->delete;
+      $i++;
+    }
+  }
 }
 
 sub Bench
@@ -2575,6 +3148,49 @@ sub Run_Tests
     'CDBS' => \&insert_complex_product_cdbs,
     'DBIC' => \&insert_complex_product_dbic,
   });
+
+  INTERNAL_LOOPERS1:
+  {
+    #
+    # Accessor
+    #
+
+    # It's okay for these tests to only have a few iterations because they
+    # loop internally.
+    local $Benchmark::Min_Count = 1;
+
+    Bench('Simple: accessor 1', $CPU_Time,
+    {
+      'RDBO' => \&accessor_simple_category_rdbo,
+      'CDBI' => \&accessor_simple_category_cdbi,
+      'CDBS' => \&accessor_simple_category_cdbs,
+      'DBIC' => \&accessor_simple_category_dbic,
+    });
+  
+    Bench('Complex: accessor 1', $CPU_Time,
+    {
+      'RDBO' => \&accessor_complex_category_rdbo,
+      'CDBI' => \&accessor_complex_category_cdbi,
+      'CDBS' => \&accessor_complex_category_cdbs,
+      'DBIC' => \&accessor_complex_category_dbic,
+    });
+  
+    Bench('Simple: accessor 2', $CPU_Time,
+    {
+      'RDBO' => \&accessor_simple_product_rdbo,
+      'CDBI' => \&accessor_simple_product_cdbi,
+      'CDBS' => \&accessor_simple_product_cdbs,
+      'DBIC' => \&accessor_simple_product_dbic,
+    });
+  
+    Bench('Complex: accessor 2', $CPU_Time,
+    {
+      'RDBO' => \&accessor_complex_product_rdbo,
+      'CDBI' => \&accessor_complex_product_cdbi,
+      'CDBS' => \&accessor_complex_product_cdbs,
+      'DBIC' => \&accessor_complex_product_dbic,
+    });
+  }
 
   #
   # Load
@@ -2664,7 +3280,7 @@ sub Run_Tests
     'DBIC' => \&update_complex_product_dbic,
   });
 
-  INTERNAL_LOOPERS:
+  INTERNAL_LOOPERS2:
   {
     #
     # Search
@@ -2696,6 +3312,22 @@ sub Run_Tests
       'CDBI' => \&search_simple_product_cdbi,
       'CDBS' => \&search_simple_product_cdbs,
       'DBIC' => \&search_simple_product_dbic,
+    });
+
+    Bench('Simple: search with limit and offset', $CPU_Time,
+    {
+      'RDBO' => \&search_limit_offset_simple_product_rdbo,
+      #'CDBI' => \&search_limit_offset_simple_product_cdbi,
+      'CDBS' => \&search_limit_offset_simple_product_cdbs,
+      'DBIC' => \&search_limit_offset_simple_product_dbic,
+    });
+
+    Bench('Complex: search with limit and offset', $CPU_Time,
+    {
+      'RDBO' => \&search_limit_offset_complex_product_rdbo,
+      #'CDBI' => \&search_limit_offset_complex_product_cdbi,
+      'CDBS' => \&search_limit_offset_complex_product_cdbs,
+      'DBIC' => \&search_limit_offset_complex_product_dbic,
     });
 
     Bench('Complex: search 2', $CPU_Time,
@@ -2774,6 +3406,26 @@ sub Run_Tests
       'DBIC' => \&iterate_complex_product_and_category_dbic,
     });
   }
+
+  #
+  # Delete
+  #
+
+  Bench('Simple: delete', $Iterations,
+  {
+    'RDBO' => \&delete_simple_category_rdbo,
+    'CDBI' => \&delete_simple_category_cdbi,
+    'CDBS' => \&delete_simple_category_cdbs,
+    'DBIC' => \&delete_simple_category_dbic,
+  });
+
+  Bench('Complex: delete', $Iterations,
+  {
+    'RDBO' => \&delete_complex_product_rdbo,
+    'CDBI' => \&delete_complex_product_cdbi,
+    'CDBS' => \&delete_complex_product_cdbs,
+    'DBIC' => \&delete_complex_product_dbic,
+  });
 
   $DB && $DB->disconnect;
 }
