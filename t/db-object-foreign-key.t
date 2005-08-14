@@ -573,14 +573,14 @@ CREATE TABLE rose_db_object_test
 (
   id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name           VARCHAR(32) NOT NULL,
-  flag           BOOLEAN NOT NULL,
-  flag2          BOOLEAN,
+  flag           TINYINT(1) NOT NULL,
+  flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'active',
   bits           BIT(5) NOT NULL DEFAULT '00101',
   start          DATE,
   save           INT,
   last_modified  TIMESTAMP,
-  date_created   TIMESTAMP
+  date_created   DATETIME
 )
 EOF
 
@@ -606,7 +606,7 @@ EOF
       start    => { type => 'date', default => '12/24/1980' },
       save     => { type => 'scalar' },
       bits     => { type => 'bitfield', bits => 5, default => 101 },
-      last_modified => { type => 'datetime' },
+      last_modified => { type => 'timestamp' },
       date_created  => { type => 'datetime' },
     );
 

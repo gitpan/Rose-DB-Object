@@ -1383,8 +1383,8 @@ CREATE TABLE rose_db_object_test
 (
   id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name           VARCHAR(32) NOT NULL,
-  flag           BOOLEAN NOT NULL,
-  flag2          BOOLEAN,
+  flag           TINYINT(1) NOT NULL,
+  flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'active',
   bits           VARCHAR(5) NOT NULL DEFAULT '00101',
   nums           VARCHAR(255),
@@ -1394,7 +1394,7 @@ CREATE TABLE rose_db_object_test
   fk2            INT,
   fk3            INT,
   last_modified  TIMESTAMP,
-  date_created   TIMESTAMP
+  date_created   DATETIME
 )
 EOF
 
@@ -1422,7 +1422,7 @@ EOF
       fk1      => { type => 'int' },
       fk2      => { type => 'int' },
       fk3      => { type => 'int' },
-      last_modified => { type => 'datetime' },
+      last_modified => { type => 'timestamp' },
       date_created  => { type => 'datetime' },
     );
 

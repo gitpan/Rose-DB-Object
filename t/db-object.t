@@ -728,8 +728,8 @@ CREATE TABLE rose_db_object_test
   k3             INT,
   name           VARCHAR(32) NOT NULL,
   code           CHAR(6),
-  flag           BOOLEAN NOT NULL,
-  flag2          BOOLEAN,
+  flag           TINYINT(1) NOT NULL,
+  flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'active',
   bits           BIT(5) NOT NULL DEFAULT '00101',
   nums           VARCHAR(255),
@@ -780,8 +780,8 @@ EOF
       save     => { type => 'scalar' },
       nums     => { type => 'array' },
       bits     => { type => 'bitfield', bits => 5, default => 101 },
-      last_modified => { type => 'datetime' },
-      date_created  => { type => 'datetime' },
+      last_modified => { type => 'timestamp' },
+      date_created  => { type => 'timestamp' },
     );
 
     eval { MyMySQLObject->meta->initialize };

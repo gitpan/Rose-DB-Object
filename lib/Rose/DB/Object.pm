@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.066';
+our $VERSION = '0.067';
 
 our $Debug = 0;
 
@@ -836,7 +836,7 @@ L<Rose::DB::Object> provides the following functions:
 
 =item * Fetch an object referred to by a foreign key in the current object. (The "has a" relationship.)
 
-=item * Fetch multiple a objects that refer to the current object.  (The "has many" relationship.)
+=item * Fetch multiple objects that refer to the current object.  (The "has many" relationship.)
 
 =back
 

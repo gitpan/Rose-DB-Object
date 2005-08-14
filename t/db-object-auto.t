@@ -808,8 +808,8 @@ CREATE TABLE Rose_db_object_test
   k3             INT,
   name           VARCHAR(32) NOT NULL,
   code           CHAR(6),
-  flag           BOOLEAN NOT NULL DEFAULT 1,
-  flag2          BOOLEAN,
+  flag           TINYINT(1) NOT NULL DEFAULT 1,
+  flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'act''ive',
   bits           BIT(5) NOT NULL DEFAULT '00101',
   nums           VARCHAR(255),
@@ -856,7 +856,9 @@ EOF
     # BIT(5) column shows up as TINYINT(1)
     MyMySQLObject->meta->column(bits => { type => 'bitfield', bits => 5, default => 101 });
     
-    # BOOLEAN column shows up as TINYINT(1)
+    # BOOLEAN column shows up as TINYINT(1) even if you use the 
+    # BOOLEAN keyword (which is not supported prior to MySQL 4.1,
+    # so we're actually using TINYINT(1) in the definition above)
     MyMySQLObject->meta->column(flag  => { type => 'boolean', default => 1 });
     MyMySQLObject->meta->column(flag2 => { type => 'boolean' });
     

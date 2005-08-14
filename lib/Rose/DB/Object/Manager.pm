@@ -651,8 +651,8 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
     start_date  => { type => 'datetime' },
     end_date    => { type => 'datetime' },
 
-    date_created     => { type => 'timestamp', default => 'now' },  
-    last_modified    => { type => 'timestamp', default => 'now' },
+    date_created  => { type => 'timestamp', default => 'now' },  
+    last_modified => { type => 'timestamp', default => 'now' },
   );
 
   __PACKAGE__->meta->add_unique_key('name');

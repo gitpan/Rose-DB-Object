@@ -638,20 +638,23 @@ __PACKAGE__->meta->foreign_keys
 );
 EOF
 
+  my $version = $o->db->dbh->get_info(18); # SQL_DBMS_VER
+  my $mysql_41 = ($version =~ /^4\.1\./) ? 1 : 0;
+
   is(MyMySQLObject->meta->perl_class_definition,
-     <<'EOF', "perl_class_definition 1 - $db_type");
+     <<"EOF", "perl_class_definition 1 - $db_type");
 package MyMySQLObject;
 
 use strict;
 
 use Rose::DB::Object
-our @ISA = qw(Rose::DB::Object);
+our \@ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('rose_db_object_test');
 
 __PACKAGE__->meta->columns(
     bits          => { type => 'bitfield', bits => 5, default => 101 },
-    date_created  => { type => 'timestamp' },
+    date_created  => { type => 'datetime' },
     fk1           => { type => 'integer', method_name => 'fkone' },
     fk2           => { type => 'integer' },
     fk3           => { type => 'integer' },
@@ -661,7 +664,7 @@ __PACKAGE__->meta->columns(
     fother_id3    => { type => 'integer' },
     fother_id4    => { type => 'integer' },
     id            => { type => 'integer', not_null => 1 },
-    last_modified => { type => 'timestamp', default => 'now' },
+    last_modified => { type => 'timestamp'@{[ $mysql_41 ? ", default => 'now'" : '' ]} },
     name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
     save          => { type => 'integer', method_name => 'save_col' },
     start         => { type => 'date', default => '1980-12-24' },
@@ -708,20 +711,20 @@ __PACKAGE__->meta->initialize;
 EOF
 
   is(MyMySQLObject->meta->perl_class_definition(braces => 'bsd', indent => 2),
-     <<'EOF', "perl_class_definition 2 - $db_type");
+     <<"EOF", "perl_class_definition 2 - $db_type");
 package MyMySQLObject;
 
 use strict;
 
 use Rose::DB::Object
-our @ISA = qw(Rose::DB::Object);
+our \@ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('rose_db_object_test');
 
 __PACKAGE__->meta->columns
 (
   bits          => { type => 'bitfield', bits => 5, default => 101 },
-  date_created  => { type => 'timestamp' },
+  date_created  => { type => 'datetime' },
   fk1           => { type => 'integer', method_name => 'fkone' },
   fk2           => { type => 'integer' },
   fk3           => { type => 'integer' },
@@ -731,7 +734,7 @@ __PACKAGE__->meta->columns
   fother_id3    => { type => 'integer' },
   fother_id4    => { type => 'integer' },
   id            => { type => 'integer', not_null => 1 },
-  last_modified => { type => 'timestamp', default => 'now' },
+  last_modified => { type => 'timestamp'@{[ $mysql_41 ? ", default => 'now'" : '' ]} },
   name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
   save          => { type => 'integer', method_name => 'save_col' },
   start         => { type => 'date', default => '1980-12-24' },
@@ -1340,6 +1343,10 @@ EOF
     $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
       or die Rose::DB->error;
 
+    my $version = $dbh->get_info(18); # SQL_DBMS_VER  
+
+    die "MySQL version too old"  unless($version =~ /^4\./);
+
     CLEAR:
     {
       local $dbh->{'RaiseError'} = 0;
@@ -1455,8 +1462,8 @@ CREATE TABLE rose_db_object_test
 (
   id             INT AUTO_INCREMENT PRIMARY KEY,
   name           VARCHAR(32) NOT NULL,
-  flag           BOOLEAN NOT NULL,
-  flag2          BOOLEAN,
+  flag           TINYINT(1) NOT NULL,
+  flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'active',
   bits           BIT(5) NOT NULL DEFAULT '00101',
   start          DATE DEFAULT '1980-12-24',
@@ -1468,17 +1475,35 @@ CREATE TABLE rose_db_object_test
   fother_id3     INT UNSIGNED,
   fother_id4     INT UNSIGNED,
   last_modified  TIMESTAMP,
-  date_created   TIMESTAMP,
+  date_created   DATETIME,
+
+  INDEX(fother_id2),
+  INDEX(fother_id3),
+  INDEX(fother_id4),
+  INDEX(fk1, fk2, fk3),
 
   FOREIGN KEY (fother_id2) REFERENCES rose_db_object_other2 (id2),
   FOREIGN KEY (fother_id3) REFERENCES rose_db_object_other3 (id3),
   FOREIGN KEY (fother_id4) REFERENCES rose_db_object_other4 (id4),
-  
+
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
 )
 TYPE=InnoDB
 EOF
 
+#   $dbh->do(<<"EOF");
+# ALTER TABLE rose_db_object_test ADD CONSTRAINT foo
+# 
+# EOF
+
+# ,
+# 
+#   FOREIGN KEY (fother_id2) REFERENCES rose_db_object_other2 (id2)
+# ,
+#   FOREIGN KEY (fother_id3) REFERENCES rose_db_object_other3 (id3),
+#   FOREIGN KEY (fother_id4) REFERENCES rose_db_object_other4 (id4),
+#   
+#   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
     $dbh->disconnect;
 
     # Create test subclass
@@ -1503,7 +1528,9 @@ EOF
     # BIT(5) column shows up as TINYINT(1)
     MyMySQLObject->meta->column(bits => { type => 'bitfield', bits => 5, default => 101 });
     
-    # BOOLEAN column shows up as TINYINT(1)
+    # BOOLEAN column shows up as TINYINT(1) even if you use the 
+    # BOOLEAN keyword (which is not supported prior to MySQL 4.1,
+    # so we're actually using TINYINT(1) in the definition above)
     MyMySQLObject->meta->column(flag  => { type => 'boolean', default => 1 });
     MyMySQLObject->meta->column(flag2 => { type => 'boolean' });
 

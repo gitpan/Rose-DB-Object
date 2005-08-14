@@ -1,3 +1,8 @@
+0.067 (08.14.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Fixed more MySQL bugs related to foreign keys, timestamps,
+      and boolean support in MySQL 4.0.x.
+
 0.066 (08.12.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Fixed MySQL case-sensitivity bug.
