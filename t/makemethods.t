@@ -42,12 +42,28 @@ foreach my $val (qw(f false False FALSE F n N no No NO 0 0.0 0.00))
 # These tests require Rose::DB
 #
 
+our $db_type;
+
 eval
 {
   require Rose::DB;
-  Rose::DB->default_type('pg');
-  my $db = Rose::DB->new();
-  $db->connect or die $db->error;
+  
+  foreach my $type (qw(pg mysql))
+  {  
+    Rose::DB->default_type($type);
+    my $db = Rose::DB->new();
+
+    $db->raise_error(0);
+    $db->print_error(0);
+
+    if($db->connect)
+    {
+      $db_type = $type;
+      last;
+    }
+  }
+  
+  die unless(defined $db_type);
 };
 
 SKIP:
@@ -74,7 +90,14 @@ SKIP:
 
   $p->sql_date_birthday('now');
 
-  is($p->sql_date_birthday, 'now', 'date now');
+  if($db_type eq 'pg')
+  {
+    is($p->sql_date_birthday, 'now', 'date now');
+  }
+  else
+  {
+    ok($p->sql_date_birthday =~ /^2/, 'date now');
+  }
 
   $p->sql_date_birthday('infinity');
   is($p->sql_date_birthday(format => ''), 'infinity', 'date infinity');
@@ -164,6 +187,13 @@ SKIP:
     $p->sql_5bits3(5.0);
     is($p->sql_5bits3()->to_Bin, '00101', 'bitfield(5) 5.0');
   }
+  else
+  {
+    SKIP:
+    {
+      skip("Not connected to PostgreSQL", 12);
+    }
+  }
   
   #
   # array
@@ -177,6 +207,13 @@ SKIP:
 
     $p->sql_array([ 'a' .. 'c' ]);
     is($p->sql_array, '{"a","b","c"}', 'array 2');
+  }
+  else
+  {
+    SKIP:
+    {
+      skip("Not connected to PostgreSQL", 2);
+    }
   }
 }
 

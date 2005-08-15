@@ -1340,8 +1340,8 @@ EOF
 
   eval
   {
-    $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
-      or die Rose::DB->error;
+    my $db = Rose::DB->new('mysql_admin');
+    $dbh = $db->retain_dbh or die Rose::DB->error;
 
     my $version = $dbh->get_info(18); # SQL_DBMS_VER  
 
@@ -1368,6 +1368,15 @@ CREATE TABLE rose_db_object_other
 )
 TYPE=InnoDB
 EOF
+
+    # MySQL will silently ignore the "TYPE=InnoDB" part and create
+    # a MyISAM table instead.  MySQL is evil!  Now we have to manually
+    # check to make sure an InnoDB table was really created.
+    my $db_name = $db->database;
+    my $sth = $dbh->prepare("SHOW TABLE STATUS FROM `$db_name` LIKE ?");
+    $sth->execute('rose_db_object_other');
+    my $info = $sth->fetchrow_hashref;
+    die "Missing InnoDB support"  unless(lc $info->{'Type'} eq 'innodb');
   };
 
   if(!$@ && $dbh)
@@ -1491,19 +1500,6 @@ CREATE TABLE rose_db_object_test
 TYPE=InnoDB
 EOF
 
-#   $dbh->do(<<"EOF");
-# ALTER TABLE rose_db_object_test ADD CONSTRAINT foo
-# 
-# EOF
-
-# ,
-# 
-#   FOREIGN KEY (fother_id2) REFERENCES rose_db_object_other2 (id2)
-# ,
-#   FOREIGN KEY (fother_id3) REFERENCES rose_db_object_other3 (id3),
-#   FOREIGN KEY (fother_id4) REFERENCES rose_db_object_other4 (id4),
-#   
-#   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
     $dbh->disconnect;
 
     # Create test subclass

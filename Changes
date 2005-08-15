@@ -1,3 +1,10 @@
+0.0671 (08.15.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Fixed more MySQL case sensitivity bugs.  (Thanks Uwe!)
+    * Changed objects_by_key query_args parameter to be an array ref
+      instead of a hash ref to match the manager change from long ago.
+    * Upaded makemethods.t to use MySQL if Postgres is not available.
+
 0.067 (08.14.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Fixed more MySQL bugs related to foreign keys, timestamps,

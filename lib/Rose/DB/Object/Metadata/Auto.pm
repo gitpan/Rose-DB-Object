@@ -39,7 +39,7 @@ sub auto_generate_columns
 {
   my($self) = shift;
 
-  my($class, %columns, $schema);
+  my($class, %columns, $schema, $table);
 
   eval
   {
@@ -48,7 +48,7 @@ sub auto_generate_columns
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
-    my $table = lc $self->table;
+    $table = ($db->driver eq 'mysql') ? $self->table : lc $self->table;
 
     $schema = $self->schema;
     $schema = $db->default_implicit_schema  unless(defined $schema);
@@ -88,7 +88,7 @@ sub auto_generate_columns
     no warnings; # undef strings okay
     Carp::croak "Could not auto-generate columns for class $class - ",
                 ($@ || "no column info found for catalog '" . $self->catalog .
-                "' schema '" . $schema . "' table '" . lc $self->table, "'");
+                "' schema '" . $schema . "' table '$table'");
   }
 
   return wantarray ? values %columns : \%columns;

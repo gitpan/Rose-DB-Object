@@ -795,7 +795,12 @@ sub objects_by_key
   my $ft_method  = $args->{'manager_method'} || 'get_objects';
   my $share_db   = $args->{'share_db'} || 1;
   my $mgr_args   = $args->{'manager_args'} || {};
-  my $query_args = $args->{'query_args'} || {};
+  my $query_args = $args->{'query_args'} || [];
+
+  if(@$query_args % 2 != 0)
+  {
+    Carp::croak "Odd number of arguments passed in query_args parameter";
+  }
 
   unless($ft_manager)
   {
@@ -833,26 +838,15 @@ sub objects_by_key
       }
     }
 
-    while(my($k, $v) = each(%$query_args))
-    {
-      if(exists $key{$k})
-      {
-        Carp::croak "Cannot override $k query argument in objects_by_key ",   
-                    "method $name in class $class";
-      }
-
-      $key{$k} = $v;
-    }
-
     my $objs;
 
     if($share_db)
     {
-      $objs = $ft_manager->$ft_method(query => [ %key ], %$mgr_args, db => $self->db);
+      $objs = $ft_manager->$ft_method(query => [ %key, @$query_args ], %$mgr_args, db => $self->db);
     }
     else
     {
-      $objs = $ft_manager->$ft_method(query => [ %key ], %$mgr_args);
+      $objs = $ft_manager->$ft_method(query => [ %key, @$query_args ], %$mgr_args);
     }
 
     unless($objs)
@@ -992,7 +986,7 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
           version => 'version',
         },
         manager_args => { sort_by => 'date_submitted DESC' },
-        query_args   => { state => { ne => 'closed' } },
+        query_args   => [ state => { ne => 'closed' } ],
       },
     ]
   );
@@ -1311,7 +1305,7 @@ If true, the C<db> attribute of the current object is shared with all of the obj
 
 =item C<query_args>
 
-A reference to a hash of arguments added to the value of the C<query> parameter passed to the call to C<manager_class>'s C<manager_method> class method.  If one of the C<key_column> arguments is overridden, a fatal error will occur when C<manager_method> is called.
+A reference to an array of arguments added to the value of the C<query> parameter passed to the call to C<manager_class>'s C<manager_method> class method.
 
 =back
 

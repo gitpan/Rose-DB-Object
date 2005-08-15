@@ -360,7 +360,7 @@ EOF
             fk3 => 'k3',
           },
           manager_args => { sort_by => 'LOWER(name)' },
-          query_args   => { name => { ne => 'foo' } },
+          query_args   => [ name => { ne => 'foo' } ],
         },
       ]
     );

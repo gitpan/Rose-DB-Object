@@ -816,7 +816,7 @@ CREATE TABLE Rose_db_object_test
   start          DATE DEFAULT '1980-12-24',
   save           INT,
   last_modified  TIMESTAMP,
-  date_created   TIMESTAMP,
+  date_created   DATETIME,
   
   UNIQUE(save),
   UNIQUE(k1, k2, k3)
@@ -1055,7 +1055,7 @@ END
 
   if($HAVE_INFORMIX)
   {
-    # MySQL
+    # Informix
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
 
