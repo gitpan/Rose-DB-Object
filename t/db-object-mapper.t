@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 256;
+use Test::More tests => 254;
 
 BEGIN 
 {
@@ -388,7 +388,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 65)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 63)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -396,44 +396,44 @@ SKIP: foreach my $db_type ('informix')
                                 ID   => 1,
                                 K1   => 1,
                                 K2   => undef,
-                                k3   => 3);
+                                K3   => 3);
 
   ok(ref $o && $o->isa('MyInformixObject'), "new() 1 - $db_type");
 
   $o->meta->allow_inline_column_values(1);
 
-  $o->flag2('true');
-  $o->date_created('current year to fraction(5)');
-  $o->last_modified($o->date_created);
+  $o->FLAG2('true');
+  $o->DATE_CREATED('current year to fraction(5)');
+  $o->LAST_MODIFIED($o->DATE_CREATED);
   $o->save_col(22);
 
   ok($o->save, "save() 1 - $db_type");
   ok($o->load, "load() 1 - $db_type");
 
-  $o->name('C' x 50);
-  is($o->name, 'C' x 32, "varchar truncation - $db_type");
+  $o->NAME('C' x 50);
+  is($o->NAME, 'C' x 32, "varchar truncation - $db_type");
 
-  $o->name('John');
+  $o->NAME('John');
 
-  $o->code('A');
-  is($o->code, 'A     ', "character padding - $db_type");
+  $o->CODE('A');
+  is($o->CODE, 'A     ', "character padding - $db_type");
 
-  $o->code('C' x 50);
-  is($o->code, 'C' x 6, "character truncation - $db_type");
+  $o->CODE('C' x 50);
+  is($o->CODE, 'C' x 6, "character truncation - $db_type");
 
-  my $ouk = MyInformixObject->new(k1 => 1,
-                                  k2 => undef,
-                                  k3 => 3);
+  my $ouk = MyInformixObject->new(K1 => 1,
+                                  K2 => undef,
+                                  K3 => 3);
 
   ok($ouk->load, "load() uk 1 - $db_type");
   ok(!$ouk->not_found, "not_found() uk 1 - $db_type");
 
-  is($ouk->id, 1, "load() uk 2 - $db_type");
-  is($ouk->name, 'John', "load() uk 3 - $db_type");
+  is($ouk->ID, 1, "load() uk 2 - $db_type");
+  is($ouk->NAME, 'John', "load() uk 3 - $db_type");
 
   ok($ouk->save, "save() uk 1 - $db_type");
 
-  my $o2 = MyInformixObject->new(id => $o->id);
+  my $o2 = MyInformixObject->new(ID => $o->ID);
 
   ok(ref $o2 && $o2->isa('MyInformixObject'), "new() 2 - $db_type");
 
@@ -442,34 +442,34 @@ SKIP: foreach my $db_type ('informix')
   ok($o2->load, "load() 2 - $db_type");
   ok(!$o2->not_found, "not_found() 1 - $db_type");
 
-  is($o2->name, $o->name, "load() verify 1 - $db_type");
-  is($o2->date_created, $o->date_created, "load() verify 2 - $db_type");
-  is($o2->last_modified, $o->last_modified, "load() verify 3 - $db_type");
-  is($o2->status, 'active', "load() verify 4 (default value) - $db_type");
-  is($o2->flag, 1, "load() verify 5 (default boolean value) - $db_type");
-  is($o2->flag2, 1, "load() verify 6 (boolean value) - $db_type");
+  is($o2->NAME, $o->NAME, "load() verify 1 - $db_type");
+  is($o2->DATE_CREATED, $o->DATE_CREATED, "load() verify 2 - $db_type");
+  is($o2->LAST_MODIFIED, $o->LAST_MODIFIED, "load() verify 3 - $db_type");
+  is($o2->STATUS, 'active', "load() verify 4 (default value) - $db_type");
+  is($o2->FLAG, 1, "load() verify 5 (default boolean value) - $db_type");
+  is($o2->FLAG2, 1, "load() verify 6 (boolean value) - $db_type");
   is($o2->save_col, 22, "load() verify 7 (aliased column) - $db_type");
-  is($o2->start->ymd, '1980-12-24', "load() verify 8 (date value) - $db_type");
+  is($o2->START->ymd, '1980-12-24', "load() verify 8 (date value) - $db_type");
 
   is($o2->bits->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
 
   my $clone = $o2->clone;
-  ok($o2->start eq $clone->start, "clone() 1 - $db_type");
-  $clone->start->set(year => '1960');
-  ok($o2->start ne $clone->start, "clone() 2 - $db_type");
+  ok($o2->START eq $clone->START, "clone() 1 - $db_type");
+  $clone->START->set(year => '1960');
+  ok($o2->START ne $clone->START, "clone() 2 - $db_type");
 
-  $o2->name('John 2');
-  $o2->start('5/24/2001');
+  $o2->NAME('John 2');
+  $o2->START('5/24/2001');
 
   sleep(1); # keep the last modified dates from being the same
 
-  $o2->last_modified('current year to second');
+  $o2->LAST_MODIFIED('current year to second');
   ok($o2->save, "save() 2 - $db_type");
   ok($o2->load, "load() 3 - $db_type");
 
-  is($o2->date_created, $o->date_created, "save() verify 1 - $db_type");
-  ok($o2->last_modified ne $o->last_modified, "save() verify 2 - $db_type");
-  is($o2->start->ymd, '2001-05-24', "save() verify 3 (date value) - $db_type");
+  is($o2->DATE_CREATED, $o->DATE_CREATED, "save() verify 1 - $db_type");
+  ok($o2->LAST_MODIFIED ne $o->LAST_MODIFIED, "save() verify 2 - $db_type");
+  is($o2->START->ymd, '2001-05-24', "save() verify 3 (date value) - $db_type");
 
   my $o3 = MyInformixObject->new();
 
@@ -479,36 +479,36 @@ SKIP: foreach my $db_type ('informix')
 
   is($db->dbh, $o3->dbh, "dbh() - $db_type");
 
-  my $o4 = MyInformixObject->new(id => 999);
+  my $o4 = MyInformixObject->new(ID => 999);
   ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
-  $o->nums([ 4, 5, 6 ]);
-  $o->names([ qw(a b 3.1) ]);
+  $o->NUMS([ 4, 5, 6 ]);
+  $o->NAMES([ qw(a b 3.1) ]);
 
   ok($o->save, "save() 3 - $db_type");
   ok($o->load, "load() 4 - $db_type");
 
-  is($o->nums->[0], 4, "load() verify 10 (array value) - $db_type");
-  is($o->nums->[1], 5, "load() verify 11 (array value) - $db_type");
-  is($o->nums->[2], 6, "load() verify 12 (array value) - $db_type");
+  is($o->NUMS->[0], 4, "load() verify 10 (array value) - $db_type");
+  is($o->NUMS->[1], 5, "load() verify 11 (array value) - $db_type");
+  is($o->NUMS->[2], 6, "load() verify 12 (array value) - $db_type");
 
-  $o->nums(7, 8, 9);
+  $o->NUMS(7, 8, 9);
 
-  my @a = $o->nums;
+  my @a = $o->NUMS;
 
   is($a[0], 7, "load() verify 13 (array value) - $db_type");
   is($a[1], 8, "load() verify 14 (array value) - $db_type");
   is($a[2], 9, "load() verify 15 (array value) - $db_type");
   is(@a, 3, "load() verify 16 (array value) - $db_type");
 
-  is($o->names->[0], 'a', "load() verify 10 (set value) - $db_type");
-  is($o->names->[1], 'b', "load() verify 11 (set value) - $db_type");
-  is($o->names->[2], '3.1', "load() verify 12 (set value) - $db_type");
+  is($o->NAMES->[0], 'a', "load() verify 10 (set value) - $db_type");
+  is($o->NAMES->[1], 'b', "load() verify 11 (set value) - $db_type");
+  is($o->NAMES->[2], '3.1', "load() verify 12 (set value) - $db_type");
 
-  $o->names('c', 'd', '4.2');
+  $o->NAMES('c', 'd', '4.2');
 
-  @a = $o->names;
+  @a = $o->NAMES;
 
   is($a[0], 'c', "load() verify 13 (set value) - $db_type");
   is($a[1], 'd', "load() verify 14 (set value) - $db_type");
@@ -517,11 +517,11 @@ SKIP: foreach my $db_type ('informix')
 
   ok($o->delete, "delete() - $db_type");
 
-  $o = MyInformixObject->new(name => 'John', id => 9);
+  $o = MyInformixObject->new(NAME => 'John', ID => 9);
 
-  $o->flag2('true');
-  $o->date_created('current year to fraction(5)');
-  $o->last_modified($o->date_created);
+  $o->FLAG2('true');
+  $o->DATE_CREATED('current year to fraction(5)');
+  $o->LAST_MODIFIED($o->DATE_CREATED);
   $o->save_col(22);
 
   ok($o->save, "save() 4 - $db_type");
@@ -536,10 +536,10 @@ SKIP: foreach my $db_type ('informix')
   ok($@, "alias_column() nonesuch - $db_type");
 
   # This is okay now
-  #eval { $o->meta->alias_column(id => 'foo') };
+  #eval { $o->meta->alias_column(ID => 'foo') };
   #ok($@, "alias_column() primary key - $db_type");
 
-  $o = MyInformixObject->new(id => 777);
+  $o = MyInformixObject->new(ID => 777);
 
   $o->meta->error_mode('fatal');
 
@@ -548,7 +548,7 @@ SKIP: foreach my $db_type ('informix')
   eval { $o->load };
   ok($@ && $o->not_found, "load() not found fatal - $db_type");
 
-  $o->id('abc');
+  $o->ID('abc');
 
   eval { $o->load };
   ok($@ && !$o->not_found, "load() fatal - $db_type");
@@ -931,20 +931,14 @@ EOF
       return uc $name;
     });
 
-    eval { MyInformixObject->meta->initialize };
-    Test::More::ok($@, 'meta->initialize() reserved method');
-
     MyInformixObject->meta->prepare_options({ix_CursorWithHold => 1});    
 
     MyInformixObject->meta->alias_column(save => 'save_col');
 
-    eval { MyInformixObject->meta->initialize };
-    Test::More::ok($@, 'meta->initialize() no override');
-
     MyInformixObject->meta->add_unique_key('save');
     MyInformixObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
-    MyInformixObject->meta->initialize(preserve_existing => 1);
+    MyInformixObject->meta->initialize;
 
     Test::More::is(MyInformixObject->meta->column('id')->is_primary_key_member, 1, 'is_primary_key_member - informix');
     Test::More::is(MyInformixObject->meta->column('id')->primary_key_position, 1, 'primary_key_position 1 - informix');

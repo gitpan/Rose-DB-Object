@@ -216,7 +216,7 @@ sub init_with_db
 
   UNDEF_IS_OK: # Avoid undef string comparison warnings
   {
-    no warnings;
+    no warnings 'uninitialized';
     if($catalog ne $self->{'catalog'})
     {
       $self->{'catalog'} = $catalog;
@@ -235,13 +235,19 @@ sub init_with_db
     $self->_clear_table_generated_values;
   }
 
-  # If necessary, also clear the select few column-generated values that
-  # depend on the database driver.
-  if($db->{'driver'} ne $self->{'driver'})
+  UNDEF_IS_OK: # Avoid undef string comparison warnings
   {
-    $self->{'column_names_string_sql'} = undef;
-    $self->{'column_names_sql'} = undef;
+    no warnings 'uninitialized';
+    # If necessary, also clear the select few column-generated values that
+    # depend on the database driver.
+    if($db->{'driver'} ne $self->{'db_driver'})
+    {
+      $self->{'column_names_string_sql'} = undef;
+      $self->{'column_names_sql'} = undef;
+    }
   }
+
+  $self->{'db_driver'} = $db->{'driver'};
 
   return;
 }
