@@ -1,3 +1,7 @@
+0.069 (08.20.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Whoops, fixed manifest to repair a botched 0.068 release.
+
 0.068 (08.19.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Enabled multiple joins with the same table in the manager,
@@ -5,6 +9,7 @@
       same Rose::DB::Object class fronting it.
     * Added support for the "alias" parameter to hash-style column
       definitions.
+    * Added "relationship" objects.
     * Fixed a bug that caused nearly everything to fail if a 
       column_name_to_method_name_mapper was used.
     * Moved some class methods out of the object methods section of the
