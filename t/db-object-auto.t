@@ -3,7 +3,7 @@
 use strict;
 
 use Test::More tests => 261;
-  
+
 BEGIN 
 {
   require 't/test-lib.pl';
@@ -192,7 +192,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyPgObject->new(id => 777);
-                          
+
   $o->meta->error_mode('fatal');
 
   $o->dbh->{'PrintError'} = 0;
@@ -207,7 +207,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   eval { $o->save };
   ok($@, "save() fatal - $db_type");
-  
+
   $o->meta->error_mode('return');
 
   #
@@ -436,7 +436,7 @@ SKIP: foreach my $db_type ('mysql')
   #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyMySQLObject->new(id => 777);
-                          
+
   $o->meta->error_mode('fatal');
 
   $o->dbh->{'PrintError'} = 0;
@@ -495,7 +495,7 @@ SKIP: foreach my $db_type ('informix')
   $o->date_created('current year to fraction(5)');
   $o->last_modified($o->date_created);
   $o->save_col(22);
-  
+
   my $dt = DateTime->now(time_zone => 'floating');
   $dt->set_nanosecond(123456789);
 
@@ -628,7 +628,7 @@ SKIP: foreach my $db_type ('informix')
 
   ok($o->save, "save() 4 - $db_type");
   $o->save_col(50);
-  
+
   ok($o->save, "save() 5 - $db_type");
 
   $ouk = MyInformixObject->new(save_col => 50);
@@ -642,7 +642,7 @@ SKIP: foreach my $db_type ('informix')
   #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyInformixObject->new(id => 777);
-                          
+
   $o->meta->error_mode('fatal');
 
   $o->dbh->{'PrintError'} = 0;
@@ -657,7 +657,7 @@ SKIP: foreach my $db_type ('informix')
 
   eval { $o->save };
   ok($@, "save() fatal - $db_type");
-  
+
   $o->meta->error_mode('return'); 
 }
 
@@ -668,7 +668,7 @@ BEGIN
   #
 
   my $dbh;
-  
+
   eval 
   {
     $dbh = Rose::DB->new('pg_admin')->retain_dbh()
@@ -696,7 +696,7 @@ BEGIN
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
-  
+
     our $PG_HAS_CHKPASS = 1  unless($@);
 
     $dbh->do(<<"EOF");
@@ -793,7 +793,7 @@ EOF
   if(!$@ && $dbh)
   {
     our $HAVE_MYSQL = 1;
-  
+
     # Drop existing table and create schema, ignoring errors
     {
       local $dbh->{'RaiseError'} = 0;
@@ -820,7 +820,7 @@ CREATE TABLE Rose_db_object_test
   save           INT,
   last_modified  TIMESTAMP,
   date_created   DATETIME,
-  
+
   UNIQUE(save),
   UNIQUE(k1, k2, k3)
 )
@@ -832,7 +832,7 @@ CREATE TABLE Rose_db_object_test2
   k1             INT NOT NULL,
   k2             INT NOT NULL,
   name           VARCHAR(32),
-  
+
   UNIQUE(k1, k2)
 )
 EOF
@@ -858,13 +858,13 @@ EOF
 
     # BIT(5) column shows up as TINYINT(1)
     MyMySQLObject->meta->column(bits => { type => 'bitfield', bits => 5, default => 101 });
-    
+
     # BOOLEAN column shows up as TINYINT(1) even if you use the 
     # BOOLEAN keyword (which is not supported prior to MySQL 4.1,
     # so we're actually using TINYINT(1) in the definition above)
     MyMySQLObject->meta->column(flag  => { type => 'boolean', default => 1 });
     MyMySQLObject->meta->column(flag2 => { type => 'boolean' });
-    
+
     # No native support for array types in MySQL
     MyMySQLObject->meta->column(nums => { type => 'array' });
 
@@ -896,9 +896,9 @@ EOF
     MyMPKMySQLObject->meta->column('k2')->default(undef);
 
     MyMPKMySQLObject->meta->primary_key_columns('k1', 'k2');
-  
+
     MyMPKMySQLObject->meta->initialize;
-    
+
     my $i = 1;
 
     MyMPKMySQLObject->meta->primary_key_generator(sub
@@ -907,7 +907,7 @@ EOF
 
       my $k1 = $i++;
       my $k2 = $i++;
-      
+
       return $k1, $k2;
     });
   }
@@ -1043,7 +1043,7 @@ END
 
     $dbh->disconnect;
   }
-  
+
   if($HAVE_MYSQL)
   {
     # MySQL

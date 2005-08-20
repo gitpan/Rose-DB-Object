@@ -147,13 +147,13 @@ Get or set a reference to a hash that maps local column names to foreign column 
 
 =item B<make_method PARAMS>
 
-Create an object method used to fetch the L<Rose::DB::Object>-derived object referred to by the foreign key.  To do this, the C<make_methods()> class method of the L<method_maker_class> is called.  PARAMS are name/value pairs.  Valid PARAMS are:
+Create an object method used to fetch the L<Rose::DB::Object>-derived object referred to by the foreign key.  To do this, the C<make_methods()> class method of the L<method_maker_class|/method_maker_class> is called.  PARAMS are name/value pairs.  Valid PARAMS are:
 
 =over 4
 
 =item C<options HASHREF>
 
-A reference to a hash of options that will be passed as the first argument to the call to the C<make_methods()> class method of the L<method_maker_class>.  This parameter is required, and the HASHREF must include a value for the key C<target_class>, which C<make_methods()> needs in order to determine where to make the method.
+A reference to a hash of options that will be passed as the first argument to the call to the C<make_methods()> class method of the L<method_maker_class|/method_maker_class>.  This parameter is required, and the HASHREF must include a value for the key C<target_class>, which C<make_methods()> needs in order to determine where to make the method.
 
 =back
 
@@ -177,9 +177,9 @@ The call to C<make_methods()> looks something like this:
 
 where C<$args{'options'}> is the value of the "options" PARAM.
 
-The L<method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
+The L<method_maker_class|/method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
 
-More than one method may be created, but there must be at least one accessor method created, and its name must match the L<method_name> (or L<name> if L<method_name> is undefined).
+More than one method may be created, but there must be at least one accessor method created, and its name must match the L<method_name|/method_name> (or L<name|/name> if L<method_name|/method_name> is undefined).
 
 =item B<method_maker_class>
 
@@ -191,7 +191,7 @@ Returns C<object_by_key>.
 
 =item B<method_name [NAME]>
 
-Get or set the name of the object method to be created for this foreign key.  This may be left undefined if the desired method name is stored in L<name> instead.  Once the method is actually created, the L<method_name> will be set.
+Get or set the name of the object method to be created for this foreign key.  This may be left undefined if the desired method name is stored in L<name|/name> instead.  Once the method is actually created, the L<method_name|/method_name> will be set.
 
 =item B<name [NAME]>
 

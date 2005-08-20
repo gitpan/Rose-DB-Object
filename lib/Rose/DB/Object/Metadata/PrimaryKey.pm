@@ -45,7 +45,7 @@ Objects of this class store and manipulate metadata for primary keys in a databa
 
 =item B<add_column [COLUMNS]>
 
-This method is an alias for the L<add_columns()|add_columns> method.
+This method is an alias for the L<add_columns|/add_columns> method.
 
 =item B<add_columns [COLUMNS]>
 
@@ -55,7 +55,7 @@ Add COLUMNS to the list of columns that make up the primary key.  COLUMNS must b
 
 Get or set the list of columns that make up the primary key.  COLUMNS must a list or reference to an array of column names or L<Rose::DB::Object::Metadata::Column>-derived objects.
 
-This method returns all of the columns that make up the primary key.  Each column is a L<Rose::DB::Object::Metadata::Column>-derived column object if the primary key's L<parent> has a column object with the same name, or just the column name otherwise.  In scalar context, a reference to an array of columns is returned.  In list context, a list is returned.
+This method returns all of the columns that make up the primary key.  Each column is a L<Rose::DB::Object::Metadata::Column>-derived column object if the primary key's L<parent|/parent> has a column object with the same name, or just the column name otherwise.  In scalar context, a reference to an array of columns is returned.  In list context, a list is returned.
 
 =item B<column_names>
 

@@ -53,7 +53,7 @@ sub column_names
 sub add_columns
 {
   my($self) = shift;
-  
+
   if(@_ == 1 && ref $_[0] eq 'ARRAY')
   {
     push @{$self->{'columns'}}, map { "$_" } @{$_[0]};

@@ -47,7 +47,7 @@ our $db_type;
 eval
 {
   require Rose::DB;
-  
+
   foreach my $type (qw(pg mysql))
   {  
     Rose::DB->default_type($type);
@@ -62,7 +62,7 @@ eval
       last;
     }
   }
-  
+
   die unless(defined $db_type);
 };
 
@@ -101,13 +101,13 @@ SKIP:
 
   $p->sql_date_birthday('infinity');
   is($p->sql_date_birthday(format => ''), 'infinity', 'date infinity');
-  
+
   $p->sql_date_birthday('-infinity');
   is($p->sql_date_birthday(format => ''), '-infinity', 'date -infinity');
 
   eval { $p->sql_date_birthday('asdf') };
   ok($@, 'Invalid date');
-  
+
   #
   # datetime
   #
@@ -194,7 +194,7 @@ SKIP:
       skip("Not connected to PostgreSQL", 12);
     }
   }
-  
+
   #
   # array
   #
@@ -298,7 +298,7 @@ BEGIN
       sql_8bits  => { bits => 8, column => $meta->column('sql_8bits') },
       sql_5bits3 => { bits => 5, default => '00011', column => $meta->column('sql_5bits3') },
     ],
-    
+
     array => [ 'sql_array' => { column => $meta->column('sql_array') } ],
   );
 
@@ -315,6 +315,6 @@ BEGIN
     $self->{'db'}->connect or die $self->{'db'}->error;
     return $self->{'db'};
   }
-  
+
   sub _loading { 0 }
 }

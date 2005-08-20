@@ -18,7 +18,7 @@ use constant PK_SEP => "\0\0";
 use constant UK_SEP => "\0\0";
 
 # Try to pick a very unlikely value to stand in for undef in 
-# the stringified multi-column unique key vaue
+# the stringified multi-column unique key value
 use constant UNDEF  => "\1\2undef\2\1";
 
 sub __xrdbopriv_save_object
@@ -274,7 +274,7 @@ Rose::DB::Object::Cached - Memory cached object representation of a single row i
 
 C<Rose::DB::Object::Cached> is a subclass of L<Rose::DB::Object> that is backed by a write-through memory cache.  Whenever an object is loaded from or saved to the database, it is cached in memory.  Any subsequent attempt to load an object of the same class with the same primary key or unique key value(s) will give you the cached object instead of loading from the database.
 
-This means that I<modifications to an object will also modify all other objects in memory that have the same primary key.>  The L<synopsis|SYNOPSIS> above highlights this fact.
+This means that I<modifications to an object will also modify all other objects in memory that have the same primary key.>  The L<synopsis|/SYNOPSIS> above highlights this fact.
 
 This class is most useful for encapsulating "read-only" rows, or other data that is updated very infrequently.  In the C<Category> example above, it would be inefficient to repeatedly load category information in a long-running process (such as a mod_perl Apache web server) if that information changes infrequently.
 
@@ -294,7 +294,7 @@ Delete the current object from the memory cache.
 
 Load an object based on either a primary key or a unique key.
 
-If the object exists in the memory cache, the current object "becomes" the cached object.  See the L<synopsis|SYNOPSIS> or L<description|DESCRIPTION> above for more information.
+If the object exists in the memory cache, the current object "becomes" the cached object.  See the L<synopsis|/SYNOPSIS> or L<description|/DESCRIPTION> above for more information.
 
 If the object is not in the memory cache, it is loaded from the database.  If the load succeeds, it is also written to the memory cache.
 

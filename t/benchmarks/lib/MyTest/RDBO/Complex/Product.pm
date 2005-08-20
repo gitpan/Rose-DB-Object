@@ -4,7 +4,7 @@ use strict;
 
 use MyTest::RDBO::Complex::Code;
 use MyTest::RDBO::Complex::Category;
-  
+
 use Rose::DB::Object;
 our @ISA = qw(Rose::DB::Object);
 

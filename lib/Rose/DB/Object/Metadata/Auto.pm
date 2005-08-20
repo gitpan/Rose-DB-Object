@@ -44,7 +44,7 @@ sub auto_generate_columns
   eval
   {
     $class = $self->class or die "Missing class!";
-  
+
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
@@ -52,7 +52,7 @@ sub auto_generate_columns
 
     $schema = $self->schema;
     $schema = $db->default_implicit_schema  unless(defined $schema);
-  
+
     my $sth = $dbh->column_info($self->catalog, $schema, $table, '%');
 
     unless(defined $sth)
@@ -82,7 +82,7 @@ sub auto_generate_columns
         $self->auto_generate_column($col_info->{'COLUMN_NAME'}, $col_info);
     }
   };
-  
+
   if($@ || !keys %columns)
   {
     no warnings; # undef strings okay
@@ -114,7 +114,7 @@ sub auto_generate_column
   }
 
   my $column = $column_class->new(name => $name, parent => $self);
-  
+
   $column->init_with_dbi_column_info($col_info);
 
   $column->method_name($self->method_name_from_column_name($name));
@@ -136,10 +136,10 @@ DEFAULT_FK_NAME_GEN:
   sub default_foreign_key_name_generator
   {
     my($meta, $fk) = @_;
-    
+
     my $class       = $meta->class;
     my $key_columns = $fk->key_columns;
-    
+
     my $name;
 
     # No single column whose name we can steal and then
@@ -155,7 +155,7 @@ DEFAULT_FK_NAME_GEN:
     else
     {
       my($local_column, $foreign_column) = each(%$key_columns);
-      
+
       # Try to lop off foreign column name.  Example:
       # my_foreign_object_id -> my_foreign_object
       if($local_column =~ s/_$foreign_column$//)
@@ -189,7 +189,7 @@ DEFAULT_FK_NAME_GEN:
       {
         $new_name = $name . $num++;
       }
-      
+
       $name = $new_name;
     }
 
@@ -207,16 +207,16 @@ sub auto_alias_column
 
   my $fixer = $self->reserved_method_name_fixer;
   local $_ = $column->method_name;
-  
+
   my $fixed_name = $fixer->($self, $_);
-  
+
   if($self->method_name_is_reserved($fixed_name, $self->class))
   {
     Carp::croak "Called reserved_method_name_fixer() to fix reserved ",
                 "method name ", $column->method_name, " but the value ",
                 "returned is still a reserved method name: $fixed_name";
   }
-  
+
   $column->method_name($fixed_name);
 
   return;
@@ -232,11 +232,11 @@ sub auto_retrieve_primary_key_column_names
   }
 
   my($class, @columns, $schema);
-    
+
   eval
   {
     $class = $self->class or die "Missing class!";
-  
+
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
@@ -244,9 +244,9 @@ sub auto_retrieve_primary_key_column_names
 
     $schema = $self->schema;
     $schema = $db->default_implicit_schema  unless(defined $schema);
-  
+
     my $sth = $dbh->primary_key_info($self->catalog, $schema, $table);
-    
+
     unless(defined $sth)
     {
       no warnings; # undef strings okay
@@ -301,13 +301,13 @@ sub auto_generate_foreign_keys
   eval
   {
     $class = $self->class or die "Missing class!";
-  
+
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
     my $sth = $dbh->foreign_key_info(undef, undef, undef,
                                      $self->catalog, $self->schema, $self->table);
-    
+
     # This happens when the table has no foreign keys
     return  unless(defined $sth);
 
@@ -328,7 +328,7 @@ sub auto_generate_foreign_keys
 
       push(@fk_info, $fk_info);
     }
-    
+
     # This step is important!  It ensures that foreign keys will be created
     # in a deterministic order, which in turn allows the "auto-naming" of
     # foreign keys to work in a predictible manner.  This exact sort order
@@ -350,7 +350,7 @@ sub auto_generate_foreign_keys
       {
         my $key = join($;, map { defined($_) ? $_ : '' } 
                        @$fk_info{qw(UK_TABLE_CAT UK_TABLE_NAME UK_TABLE_SCHEM)});
- 
+
         unless($no_warnings || $warned{$key}++)
         {
           no warnings; # Allow undef coercion to empty string
@@ -368,7 +368,7 @@ sub auto_generate_foreign_keys
       my $key_name       = $fk_info->{'UK_NAME'}; 
       my $local_column   = $fk_info->{'FK_COLUMN_NAME'};
       my $foreign_column = $fk_info->{'UK_COLUMN_NAME'};
-      
+
       $fk{$key_name}{'class'} = $foreign_class;
       $fk{$key_name}{'key_columns'}{$local_column} = $foreign_column;
     }
@@ -384,7 +384,7 @@ sub auto_generate_foreign_keys
       next  unless(defined $fk->class);
 
       my $name = $self->foreign_key_name_generator->($self, $fk);
-      
+
       unless(defined $name && $name =~ /^\w+$/)
       {
         die "Missing or invalid key name '$name' for foreign key ",
@@ -410,7 +410,7 @@ sub auto_generate_foreign_keys
 sub auto_init_columns
 {
   my($self, %args) = @_;
-  
+
   my $auto_columns     = $self->auto_generate_columns;
   my $existing_columns = $self->columns;
 
@@ -448,7 +448,7 @@ sub perl_columns_definition
   $indent = ' ' x $indent;
 
   my $def_start = "__PACKAGE__->meta->columns";
-  
+
   if($braces eq 'bsd')
   {
     $def_start .= "\n(\n";
@@ -473,7 +473,7 @@ sub perl_columns_definition
   }
 
   my @col_defs;
-  
+
   foreach my $column ($self->columns)
   {
     push(@col_defs, $column->perl_hash_definition(inline       => 1, 
@@ -501,7 +501,7 @@ sub perl_foreign_keys_definition
   my $indent_txt = ' ' x $indent;
 
   my $def = "__PACKAGE__->meta->foreign_keys";
-  
+
   if($braces eq 'bsd')
   {
     $def .= "\n(\n";
@@ -517,7 +517,7 @@ sub perl_foreign_keys_definition
   }
 
   my @fk_defs;
-  
+
   foreach my $fk ($self->foreign_keys)
   {
     push(@fk_defs, $fk->perl_hash_definition(indent => $indent, braces => $braces));
@@ -553,7 +553,7 @@ sub perl_unique_keys_definition
   $indent = ' ' x $indent;
 
   my $uk_perl_method;
-  
+
   if($style eq 'array')
   {
     $uk_perl_method = 'perl_array_definition';
@@ -567,9 +567,9 @@ sub perl_unique_keys_definition
     Carp::croak 'Invalid ', (defined $args{'style'} ? '' : 'default '),
                 "unique key style: '$style'";
   }
-  
+
   my @uk_defs;
-  
+
   foreach my $uk ($self->unique_keys)
   {
     push(@uk_defs, $uk->$uk_perl_method());
@@ -578,7 +578,7 @@ sub perl_unique_keys_definition
   return ''  unless(@uk_defs);
 
   my $def_start = "__PACKAGE__->meta->add_unique_keys";
-  
+
   if(@uk_defs == 1)
   {
     $def_start .= '(';
@@ -625,7 +625,7 @@ sub perl_primary_key_columns_definition
 sub perl_class_definition
 {
   my($self, %args) = @_;
-  
+
   my $isa = delete $args{'isa'} || [ 'Rose::DB::Object' ];
 
   $isa = [ $isa ]  unless(ref $isa);
@@ -655,9 +655,9 @@ sub auto_generate_unique_keys { die "Override in subclass" }
 sub auto_init_unique_keys
 {
   my($self, %args) = @_;
-  
+
   my $pk_cols = join("\0", $self->primary_key_columns);
-  
+
   unless(length $pk_cols)
   {
     $pk_cols = join("\0", $self->auto_retrieve_primary_key_column_names);
@@ -679,7 +679,7 @@ sub auto_init_unique_keys
 
       # Skip primary key
       next KEY  if($pk_cols eq join("\0", $key->column_names));
-      
+
       $self->add_unique_key($key);
     }
   }
@@ -694,7 +694,7 @@ sub auto_init_unique_keys
 sub auto_init_foreign_keys
 {
   my($self, %args) = @_;
-  
+
   my $auto_foreign_keys     = $self->auto_generate_foreign_keys;
   my $existing_foreign_keys = $self->foreign_keys;
 
@@ -733,7 +733,7 @@ sub __fk_key_to_id
 sub auto_init_primary_key_columns
 {
   my($self) = shift;
-  
+
   my $primary_key_columns = $self->auto_retrieve_primary_key_column_names;
 
   unless(@$primary_key_columns)

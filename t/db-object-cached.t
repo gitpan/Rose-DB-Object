@@ -26,7 +26,7 @@ foreach my $pair ((map { [ "2 $_", 2 ] } qw(s sec secs second seconds)),
   my($arg, $secs) = @$pair;
   MyCachedObject->meta->cached_objects_expire_in($arg);
   is(MyCachedObject->meta->cached_objects_expire_in, $secs, "cache_expires_in($arg) - generic");
-  
+
   $arg =~ s/\s+//g;
 
   MyCachedObject->meta->cached_objects_expire_in($arg);
@@ -80,7 +80,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   is($ouk, $of, "load() verify cached unique key 1 - $db_type");
   is($ouk, $of2, "load() verify cached unique key 2 - $db_type");
   is($ouk, $of3, "load() verify cached unique key 3 - $db_type");
- 
+
   is(keys %MyPgObject::Objects_By_Id, 1, "cache check 1 - $db_type");
 
   ok($of->forget, "forget() - $db_type");
@@ -209,12 +209,12 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   ok($@, "alias_column() nonesuch - $db_type");
 
   $o2->forget;
-  
+
   $o = MyPgObject->new(name => 'John');
   ok($o->load, "load() forget 1 - $db_type");
-  
+
   $o->forget;
-  
+
   $o2 = MyPgObject->new(name => 'John');
   ok($o2->load, "load() forget 2 - $db_type");
 
@@ -229,7 +229,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
     is(scalar keys %MyPgObject::Objects_By_Key, 0, "clear_object_cache() 2 - $db_type");
     is(scalar keys %MyPgObject::Objects_Keys, 0, "clear_object_cache() 3 - $db_type");
   }
-  
+
   # Cache expiration with primary key
   MyPgObject->meta->cached_objects_expire_in('5 seconds');
   $o = MyPgObject->new(id => 99);
@@ -373,14 +373,14 @@ SKIP: foreach my $db_type ('mysql')
 
   $o = MyMySQLObject->new(name => 'John');
   ok($o->load, "load() forget 1 - $db_type");
-  
+
   $o->forget;
-  
+
   $o2 = MyMySQLObject->new(name => 'John');
   ok($o2->load, "load() forget 2 - $db_type");
 
   ok($o ne $o2, "load() forget 3 - $db_type");
-  
+
   $o->meta->clear_object_cache;
 
   FORGET_ALL_MYSQL:
@@ -390,7 +390,7 @@ SKIP: foreach my $db_type ('mysql')
     is(scalar keys %MyMySQLObject::Objects_By_Key, 0, "clear_object_cache() 2 - $db_type");
     is(scalar keys %MyMySQLObject::Objects_Keys, 0, "clear_object_cache() 3 - $db_type");
   }
-  
+
   my $id = $o->id;
 
   # Cache expiration with primary key
@@ -560,9 +560,9 @@ SKIP: foreach my $db_type (qw(informix))
 
   $o = MyInformixObject->new(name => 'John');
   ok($o->load, "load() forget 1 - $db_type");
-  
+
   $o->forget;
-  
+
   $o2 = MyInformixObject->new(name => 'John');
   ok($o2->load, "load() forget 2 - $db_type");
 
@@ -577,7 +577,7 @@ SKIP: foreach my $db_type (qw(informix))
     is(scalar keys %MyInformixObject::Objects_By_Key, 0, "clear_object_cache() 2 - $db_type");
     is(scalar keys %MyInformixObject::Objects_Keys, 0, "clear_object_cache() 3 - $db_type");
   }
-  
+
   # Cache expiration with primary key
   MyInformixObject->meta->cached_objects_expire_in('5 seconds');
   $o = MyInformixObject->new(id => 99);
@@ -612,7 +612,7 @@ BEGIN
   #
   # Generic
   #
-  
+
   GENERIC:
   {
     package MyCachedObject;
@@ -624,7 +624,7 @@ BEGIN
   #
 
   my $dbh;
-  
+
   eval 
   {
     $dbh = Rose::DB->new('pg_admin')->retain_dbh()
@@ -652,7 +652,7 @@ BEGIN
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
-  
+
     our $PG_HAS_CHKPASS = 1  unless($@);
 
     $dbh->do(<<"EOF");
@@ -670,7 +670,7 @@ CREATE TABLE rose_db_object_test
   nums           INT[],
   last_modified  TIMESTAMP NOT NULL DEFAULT 'now',
   date_created   TIMESTAMP NOT NULL DEFAULT 'now',
-  
+
   UNIQUE(name)
 )
 EOF
@@ -706,7 +706,7 @@ EOF
     sub init_db { Rose::DB->new('pg') }
 
     MyPgObject->meta->table('rose_db_object_test');
-      
+
     MyPgObject->meta->columns
     (
       'name',
@@ -727,7 +727,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() reserved method');
 
     MyPgObject->meta->add_unique_key('name');
-    
+
     MyPgObject->meta->alias_column(save => 'save_col');
     MyPgObject->meta->initialize(replace_existing => 1);
 
@@ -908,7 +908,7 @@ END
 
     $dbh->disconnect;
   }
-  
+
   if($HAVE_MYSQL)
   {
     # MySQL

@@ -118,7 +118,7 @@ This class inherits from L<Rose::DB::Object::Metadata::Relationship>. Inherited 
 
 Get or set the L<Rose::DB::Object::Metadata::ForeignKey> object to which this object delegates all responsibility.
 
-One to one relationships encapsulate essentially the same information as foreign keys.  If a foreign key object is stored in this relationship object, then I<all compatible operations are passed through to the foreign key object.>  This includes making object method(s) and adding or modifying the local-to-foreign column map.  In other words, if a L<foreign_key> is set, the relationship object simply acts as a proxy for the foreign key object.
+One to one relationships encapsulate essentially the same information as foreign keys.  If a foreign key object is stored in this relationship object, then I<all compatible operations are passed through to the foreign key object.>  This includes making object method(s) and adding or modifying the local-to-foreign column map.  In other words, if a L<foreign_key|/foreign_key> is set, the relationship object simply acts as a proxy for the foreign key object.
 
 =item B<map_column LOCAL [, FOREIGN]>
 

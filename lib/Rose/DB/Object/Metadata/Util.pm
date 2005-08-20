@@ -16,7 +16,7 @@ our $VERSION = '0.01';
 sub perl_hashref
 {
   my(%args) = (@_ == 1 ? (hash => $_[0]) : @_);
-  
+
   my $inline = defined $args{'inline'} ? $args{'inline'} : 1;
   my $indent = defined $args{'indent'} ? $args{'indent'} : $DEFAULT_PERL_INDENT;
   my $braces = defined $args{'braces'} ? $args{'braces'} : $DEFAULT_PERL_BRACES;
@@ -27,7 +27,7 @@ sub perl_hashref
   $indent = ' ' x $indent;    
 
   my @pairs;
-  
+
   foreach my $key (sort { $sort_keys->($a, $b) } keys %$hash)
   {
     push(@pairs, perl_quote_key($key) . ' => ' . 
@@ -48,7 +48,7 @@ sub perl_quote_key
     s/'/\\'/g    if(/'/);    
     $_ = "'$_'"  if(/\W/);
   }
-  
+
   return $key;
 }
 
@@ -61,6 +61,8 @@ sub perl_quote_value
     s/'/\\'/g    if(/'/);
     $_ = "'$_'"  unless(/^(?:[1-9]\d*\.?\d*|\.\d+)$/);
   }
-  
+
   return $val;
 }
+
+1;

@@ -3,7 +3,7 @@
 use strict;
 
 use Test::More tests => 155;
-  
+
 BEGIN 
 {
   require 't/test-lib.pl';
@@ -138,7 +138,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   is(@a, 3, "load() verify 16 (array value) - $db_type");
 
   my $other = $o->other;
-  
+
   is(ref $other, 'MyPgObjectOther', 'object_by_id 1');
   is($other->name, 'John', 'object_by_id 2');
 
@@ -146,9 +146,9 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, 'alias_column() nonesuch');
-  
+
   my $new_id;
-  
+
   eval { $new_id = $o->meta->generate_primary_key_values($o->db) };
   ok(defined $new_id && $new_id > $o->id, 'generate_primary_key_values()');
 }
@@ -221,7 +221,7 @@ SKIP: foreach my $db_type ('mysql')
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->delete, "delete() - $db_type");
-  
+
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, 'alias_column() nonesuch');
 }
@@ -294,7 +294,7 @@ SKIP: foreach my $db_type ('informix')
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->delete, "delete() - $db_type");
-  
+
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, 'alias_column() nonesuch');
 }
@@ -306,7 +306,7 @@ BEGIN
   #
 
   my $dbh;
-  
+
   eval 
   {
     $dbh = Rose::DB->new('pg_admin')->retain_dbh()
@@ -336,7 +336,7 @@ BEGIN
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
-  
+
     our $PG_HAS_CHKPASS = 1  unless($@);
 
     $dbh->do(<<"EOF");
@@ -428,7 +428,7 @@ EOF
     sub init_db { Rose::DB->new('pg') }
 
     MyPgObject->meta->table('rose_db_object_test');
-      
+
     MyPgObject->meta->columns
     (
       'name',
@@ -621,7 +621,7 @@ END
 
     $dbh->disconnect;
   }
-  
+
   if($HAVE_MYSQL)
   {
     # MySQL
@@ -638,9 +638,9 @@ END
     # Informix
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
-  
+
     $dbh->do('DROP TABLE rose_db_object_test');
-  
+
     $dbh->disconnect;
   }
 }

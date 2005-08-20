@@ -396,7 +396,7 @@ BEGIN
   #
 
   my $dbh;
-  
+
   eval 
   {
     $dbh = Rose::DB->new('pg_admin')->retain_dbh()
@@ -424,7 +424,7 @@ BEGIN
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
-  
+
     our $PG_HAS_CHKPASS = 1  unless($@);
 
     $dbh->do(<<"EOF");
@@ -474,7 +474,7 @@ EOF
     sub init_db { Rose::DB->new('pg') }
 
     MyPgObject->meta->table('rose_db_object_test');
-      
+
     MyPgObject->meta->columns
     (
       'name',
@@ -655,7 +655,7 @@ END
 
     $dbh->disconnect;
   }
-  
+
   if($HAVE_MYSQL)
   {
     # MySQL
@@ -672,9 +672,9 @@ END
     # Informix
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
-  
+
     $dbh->do('DROP TABLE rose_db_object_test');
-  
+
     $dbh->disconnect;
   }
 }

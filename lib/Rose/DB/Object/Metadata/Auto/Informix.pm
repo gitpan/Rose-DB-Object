@@ -177,7 +177,7 @@ EOF
       $st_sth->execute(@$col_info{qw(informix_table informix_owner)});
 
       $table_id = $st_sth->fetchrow_array;
-      
+
       unless(defined $table_id)
       {
         die "Could not find informix.systables record for table '",
@@ -205,7 +205,7 @@ EOF
 
     # Query the syscolumns table to get somemore column information
     $sc_sth->execute($table_id);
-    
+
     while(my $sc_row = $sc_sth->fetchrow_hashref)
     {
       my $col_info = $col_info{$sc_row->{'colname'}}
@@ -249,7 +249,7 @@ EOF
         $col_info->{'IS_NULLABLE'} = 'YES';
         $col_info->{'NULLABLE'}    = SQL_NULLABLE;      
       }
-      
+
       #
       # Now we need to turn $type_num into a type name.  Hold on to your hat.
       #
@@ -320,7 +320,7 @@ EOF
       #
       # Mine column length for information
       #
-      
+
       # COLUMN_SIZE is the maximum length in characters for character data
       # types, the number of digits or bits for numeric data types or the
       # length in the representation of temporal types. See the relevant
@@ -338,7 +338,7 @@ EOF
 
         $col_info->{'COLUMN_SIZE'} =
           _ix_numeric_precision($type_num, $sc_row->{'collength'});
-          
+
         $col_info->{'NUM_PREC_RADIX'} =
           _ix_numeric_precision_radix($type_num, $sc_row->{'collength'});
       }
@@ -355,7 +355,7 @@ SELECT * FROM informix.sysdefaults WHERE tabid = ? AND class = 'T'
 EOF
 
     $sd_sth->execute($table_id);
-    
+
     while(my $sd_row = $sd_sth->fetchrow_hashref)
     {
       my $col_name = $colno_to_name{$sd_row->{'colno'}}
@@ -406,7 +406,7 @@ EOF
           # value in English text. The two parts are separated by a space.
           my $default = $sd_row->{'default'};
           $default =~ s/^.+ //; # cheat by just looking for the space
-          
+
           $col_info->{'COLUMN_DEF'} = $default;
         }
       }
@@ -414,7 +414,7 @@ EOF
 
     # Finally, generate the columns based on the DBI-like $col_info
     # that we built in the previous steps.
-    
+
     foreach my $col_info (values %col_info)
     {
       $columns{$col_info->{'COLUMN_NAME'}} = 
@@ -516,7 +516,7 @@ WHERE
 EOF
 
     $pk_sth->execute($table, $owner);
-    
+
     my $column;
 
     $pk_sth->bind_columns(\$column);    
@@ -635,7 +635,7 @@ WHERE
 EOF
 
     $uk_sth->execute($table_id, $table_id);
-    
+
     my($column, $key);
 
     $uk_sth->bind_columns(\$column, \$key);
@@ -786,7 +786,7 @@ sub auto_generate_foreign_keys
   eval
   {
     $class = $self->class or die "Missing class!";
-  
+
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
@@ -837,7 +837,7 @@ EOF
 
       # Get local columns
       $col_sth->execute(@$index_info{qw(referring_table_id referring_index_name)});
-      
+
       my $local_cols_info = $col_sth->fetchrow_hashref;
       my @local_cols = grep { defined && /\S/ } @$local_cols_info{map { "col$_" } 1 .. 16};
 
@@ -846,7 +846,7 @@ EOF
 
       my $foreign_cols_info = $col_sth->fetchrow_hashref;
       my @foreign_cols = grep { defined && /\S/ } @$foreign_cols_info{map { "col$_" } 1 .. 16};
-      
+
       # Another sanity check - should never happen
       unless(@local_cols > 0 && @local_cols == @foreign_cols)
       {
@@ -949,7 +949,7 @@ EOF
 # document
 #         'returns the precision of a numeric column',
 #         'Synopsis: ansinumprec(smallint, smallint) returns int';
-        
+
 sub _ix_numeric_precision
 {
   my($type_num, $collength) = @_;
@@ -963,7 +963,7 @@ sub _ix_numeric_precision
   {
     return int($collength / 256);
   }
-  
+
   return undef;
 }
 
@@ -990,18 +990,18 @@ sub _ix_numeric_precision
 sub _ix_numeric_scale
 {
   my($type_num, $collength) = @_;
-  
+
   if($type_num == SMALLINT || $type_num == INTEGER ||
      $type_num == SERIAL)
   {
     return 0;
   }
-  
+
   if($type_num == DECIMAL || $type_num == MONEY)
   {
     return $collength - ((int($collength / 256)) * 256);
   }
-  
+
   return undef;
 }
 
@@ -1029,19 +1029,19 @@ sub _ix_numeric_scale
 sub _ix_numeric_precision_radix
 {
   my($type_num, $collength) = @_;
-  
+
   if($type_num == SMALLINT || $type_num == INTEGER ||
      $type_num == DECIMAL  || $type_num == SERIAL  ||
      $type_num == MONEY)
   {
     return 10;
   }
-  
+
   if($type_num == FLOAT || $type_num == SMALLFLOAT)
   {
     return 2;
   }
-  
+
   return undef;
 }
 
@@ -1063,7 +1063,7 @@ sub _ix_numeric_precision_radix
 # document
 #         'returns the maximum length of character oriented column',
 #         'Synopsis: ansimaxlen(smallint, smallint) returns int';
-        
+
 sub _ix_max_length
 {
   my($type_num, $collength) = @_;
@@ -1072,7 +1072,7 @@ sub _ix_max_length
   {
     return $collength;
   }
-  
+
   if($type_num == VARCHAR || $type_num == NVARCHAR)
   {
     return $collength - (int($collength / 256)) * 256;
@@ -1166,7 +1166,7 @@ sub _ix_datetime_specific_type
   my($type_num, $collength) = @_;
 
   return  unless($type_num == DATETIME);
-  
+
   my $largest_qualifier  = $collength & 0xF0;
   my $smallest_qualifier = $collength & 0xF;
 

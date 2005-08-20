@@ -544,7 +544,7 @@ BEGIN
   ##
   ## Simple
   ##
-  
+
   #
   # Insert
   #
@@ -2622,7 +2622,7 @@ BEGIN
       }
     }
   }
-  
+
   #
   # Search with limit and offset
   #
@@ -2705,7 +2705,7 @@ BEGIN
       }
     }
   }
-  
+
   #
   # Iterate
   #
@@ -3166,7 +3166,7 @@ sub Run_Tests
       'CDBS' => \&accessor_simple_category_cdbs,
       'DBIC' => \&accessor_simple_category_dbic,
     });
-  
+
     Bench('Complex: accessor 1', $CPU_Time,
     {
       'RDBO' => \&accessor_complex_category_rdbo,
@@ -3174,7 +3174,7 @@ sub Run_Tests
       'CDBS' => \&accessor_complex_category_cdbs,
       'DBIC' => \&accessor_complex_category_dbic,
     });
-  
+
     Bench('Simple: accessor 2', $CPU_Time,
     {
       'RDBO' => \&accessor_simple_product_rdbo,
@@ -3182,7 +3182,7 @@ sub Run_Tests
       'CDBS' => \&accessor_simple_product_cdbs,
       'DBIC' => \&accessor_simple_product_dbic,
     });
-  
+
     Bench('Complex: accessor 2', $CPU_Time,
     {
       'RDBO' => \&accessor_complex_product_rdbo,

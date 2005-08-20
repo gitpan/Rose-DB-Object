@@ -523,7 +523,7 @@ sub get_objects
           my $subobject = $class->new(%subobject_args);
           local $subobject->{STATE_LOADING()} = 1;
           $subobject->init(%{$row{$class,$i}});
-                
+
           $object->$method($subobject);
         }
 
@@ -807,7 +807,7 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
 
 C<Rose::DB::Object::Manager> is a base class for classes that select rows from tables fronted by L<Rose::DB::Object>-derived classes.  Each row in the table(s) queried is converted into the equivalent L<Rose::DB::Object>-derived object.
 
-Class methods are provided for fetching objects all at once, one at a time through the use of an iterator, or just getting the object count.  Subclasses are expected to create syntactically pleasing wrappers for C<Rose::DB::Object::Manager> class methods.  A very minimal example is shown in the L<synopsis|SYNOPSIS> above.
+Class methods are provided for fetching objects all at once, one at a time through the use of an iterator, or just getting the object count.  Subclasses are expected to create syntactically pleasing wrappers for C<Rose::DB::Object::Manager> class methods.  A very minimal example is shown in the L<synopsis|/SYNOPSIS> above.
 
 =head1 CLASS METHODS
 
@@ -900,7 +900,7 @@ If true, C<db> will be passed to each L<Rose::DB::Object>-derived object when it
 
 Also fetch sub-objects associated with foreign keys in the primary table, where OBJECTS is a reference to an array of foreign key names, as defined by the L<Rose::DB::Object::Metadata> object for C<object_class>.
 
-Another table will be added to the query for each foreign key listed.  The "join" clauses will be added automatically based on the foreign key definitions.  Note that (obviously) each foreign key table has to have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|SYNOPSIS> for a simple example.
+Another table will be added to the query for each foreign key listed.  The "join" clauses will be added automatically based on the foreign key definitions.  Note that (obviously) each foreign key table has to have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|/SYNOPSIS> for a simple example.
 
 B<Note:> the C<with_objects> list currently cannot be used to simultaneously fetch two objects that both front the same database table, but are of different classes.  One workaround is to make one class use a synonym or alias for one of the tables.  Another option is to make one table a trivial view of the other.  The objective is to get the table names to be different for each different class (even if it's just a matter of letter case, if your database is not case-sensitive when it comes to table names).
 
@@ -908,7 +908,7 @@ B<Note:> the C<with_objects> list currently cannot be used to simultaneously fet
 
 The query parameters, passed as a reference to an array of name/value pairs.  These PARAMS are used to formulate the "where" clause of the SQL query that, in turn, is used to fetch the objects from the database.  Arbitrarily nested boolean logic is supported.
 
-For the complete list of valid parameter names and values, see the L<build_select()|Rose::DB::Object::QueryBuilder/build_select> function of the L<Rose::DB::Object::QueryBuilder> module.
+For the complete list of valid parameter names and values, see the L<build_select|Rose::DB::Object::QueryBuilder/build_select> function of the L<Rose::DB::Object::QueryBuilder> module.
 
 =back
 
@@ -926,9 +926,9 @@ Accepts the same arguments as C<get_objects()>, but return the SQL query string 
 
 =item B<make_manager_methods PARAMS>
 
-Create convenience wrappers for L<Rose::DB::Object::Manager>'s L<get_objects()|get_objects>, L<get_objects_iterator()|get_objects_iterator>, and L<get_objects_count()|get_objects_count> class methods in the target class.  These wrapper methods will not overwrite any existing methods in the target class.  If there is an existing method with the same name, a fatal error will occur.
+Create convenience wrappers for L<Rose::DB::Object::Manager>'s L<get_objects|/get_objects>, L<get_objects_iterator|/get_objects_iterator>, and L<get_objects_count|/get_objects_count> class methods in the target class.  These wrapper methods will not overwrite any existing methods in the target class.  If there is an existing method with the same name, a fatal error will occur.
 
-PARAMS can take several forms, depending on the calling context.  For a call to L<make_manager_methods()|/make_manager_methods> to succeed, the following information must be determined:
+PARAMS can take several forms, depending on the calling context.  For a call to L<make_manager_methods|/make_manager_methods> to succeed, the following information must be determined:
 
 =over 4
 
@@ -1077,7 +1077,7 @@ If a C<target_class> parameter is not passed, and if the calling class is not L<
 
 There's a lot of flexibility in this method's arguments (although some might use the word "confusion" instead), but the examples can be pared down to a few common usage scenarios.
 
-The first is the recommended technique, as seen in the L<synopsis|/SYNOPSIS>. Create a separate manager class that inherits from L<Rose::DB::Object::Manager>, override the C<object_class> method to specify the class of the objects being fetched, and then pass a lone base name argument to the call to L<make_manager_methods()|/make_manager_methods>.
+The first is the recommended technique, as seen in the L<synopsis|/SYNOPSIS>. Create a separate manager class that inherits from L<Rose::DB::Object::Manager>, override the C<object_class> method to specify the class of the objects being fetched, and then pass a lone base name argument to the call to L<make_manager_methods|/make_manager_methods>.
 
   package Product::Manager;
 
@@ -1090,7 +1090,7 @@ The first is the recommended technique, as seen in the L<synopsis|/SYNOPSIS>. Cr
 
 The second example is used to install object manager methods directly into a L<Rose::DB::Object>-derived class.  I do not recommend this practice; I consider it "semantically impure" for the class that represents a single object to also be the class that's used to fetch multiple objects.  Inevitably, classes grow, and I'd like the "object manager" class to be separate from the object class itself so they can grow happily in isolation, with no potential clashes.
 
-Also, keep in mind that L<Rose::DB::Object> and L<Rose::DB::Object::Manager> have separate L<error_mode> settings which must be synchronized or otherwise dealt with.  Another advantage of using a separate L<Rose::DB::Object::Manager> subclass (as described earlier) is that you can override the L<error_mode|Rose::DB::Object::Manager/error_mode> in your L<Rose::DB::Object::Manager> subclass only, rather than overriding the base class L<Rose::DB::Object::Manager error_mode|Rose::DB::Object::Manager/error_mode>, which may affect other classes.
+Also, keep in mind that L<Rose::DB::Object> and L<Rose::DB::Object::Manager> have separate L<error_mode|/error_mode> settings which must be synchronized or otherwise dealt with.  Another advantage of using a separate L<Rose::DB::Object::Manager> subclass (as described earlier) is that you can override the L<error_mode|Rose::DB::Object::Manager/error_mode> in your L<Rose::DB::Object::Manager> subclass only, rather than overriding the base class L<Rose::DB::Object::Manager error_mode|Rose::DB::Object::Manager/error_mode>, which may affect other classes.
 
 If none of that dissuades you, here's how to do it:
 
@@ -1101,7 +1101,7 @@ If none of that dissuades you, here's how to do it:
 
   __PACKAGE__->make_manager_methods('products');
 
-Finally, sometimes you don't want or need to use L<make_manager_methods()|/make_manager_methods> at all.  In fact, this method did not exist in earlier versions of this module.  The formerly recommended way to use this class is  still perfectly valid: subclass it and then call through to the base class methods.
+Finally, sometimes you don't want or need to use L<make_manager_methods|/make_manager_methods> at all.  In fact, this method did not exist in earlier versions of this module.  The formerly recommended way to use this class is  still perfectly valid: subclass it and then call through to the base class methods.
 
   package Product::Manager;
 
@@ -1123,7 +1123,7 @@ Finally, sometimes you don't want or need to use L<make_manager_methods()|/make_
     shift->get_objects_count(object_class => 'Product', @_);
   }
 
-Of course, these methods will all look very similar in each L<Rose::DB::Object::Manager>-derived class.  Creating these identically structured methods is exactly what L<make_manager_methods()|/make_manager_methods> automates for you.  
+Of course, these methods will all look very similar in each L<Rose::DB::Object::Manager>-derived class.  Creating these identically structured methods is exactly what L<make_manager_methods|/make_manager_methods> automates for you.  
 
 But sometimes you want to customize these methods, in which case the "longhand" technique above becomes essential.  For example, imagine that we want to extend the code in the L<synopsis|/SYNOPSIS>, adding support for a C<with_categories> parameter to the C<get_products()> method.  
 
@@ -1145,9 +1145,9 @@ But sometimes you want to customize these methods, in which case the "longhand" 
       %args, object_class => 'Product')
   }
 
-Here we've coerced the caller-friendly C<with_categories> boolean flag parameter into the C<with_objects =E<gt> [ 'category' ]> pair that L<Rose::DB::Object::Manager>'s L<get_objects()|/get_objects> method can understand.
+Here we've coerced the caller-friendly C<with_categories> boolean flag parameter into the C<with_objects =E<gt> [ 'category' ]> pair that L<Rose::DB::Object::Manager>'s L<get_objects|/get_objects> method can understand.
 
-This is the typical evolution of an object manager method.  It starts out as being auto-generated by L<make_manager_methods()|/make_manager_methods>, then becomes customized as new arguments are added.
+This is the typical evolution of an object manager method.  It starts out as being auto-generated by L<make_manager_methods|/make_manager_methods>, then becomes customized as new arguments are added.
 
 =back
 

@@ -62,7 +62,7 @@ Rose::DB::Object::Util - Utility functions for use in Rose::DB::Object subclasse
 
 L<Rose::DB::Object::Util> provides functions that are useful for developers who are subclassing L<Rose::DB::Object> or otherwise extending or modifying its behavior.
 
-L<Rose::DB::Object>s have some awareness of their current situation.  Certain optimizations rely on this awareness.  For example, when loading column values directly from the database, there's no reason to validate the format of the data or immediately "inflate" the values.  The L<is_loading> function will tell you when these steps can safely be skipped.
+L<Rose::DB::Object>s have some awareness of their current situation.  Certain optimizations rely on this awareness.  For example, when loading column values directly from the database, there's no reason to validate the format of the data or immediately "inflate" the values.  The L<is_loading|/is_loading> function will tell you when these steps can safely be skipped.
 
 Similarly, it may be useful to set these state characteristics in your code.  The C<set_sate_*> functions provide that ability.
 

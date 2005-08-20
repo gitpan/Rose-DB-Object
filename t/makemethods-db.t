@@ -3,7 +3,7 @@
 use strict;
 
 use Test::More tests => 39;
-  
+
 BEGIN 
 {
   require 't/test-lib.pl';
@@ -65,7 +65,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   ok($fo->save, "object save() 5 - $db_type");
 
   my $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 3, "get objects 1 - $db_type");
 
   is($objs->[0]->id, 2, "get objects 2 - $db_type");
@@ -78,7 +78,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   $o->other_objs(undef);
 
   $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 1, "get objects 5 - $db_type");
 
   is($objs->[0]->id, 4, "get objects 6 - $db_type");
@@ -89,7 +89,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   $o->other_objs(undef);
 
   $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 0, "get objects 7 - $db_type");
 }
 
@@ -144,7 +144,7 @@ SKIP: foreach my $db_type ('mysql')
   ok($fo->save, "object save() 5 - $db_type");
 
   my $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 3, "get objects 1 - $db_type");
 
   is($objs->[0]->id, 2, "get objects 2 - $db_type");
@@ -157,7 +157,7 @@ SKIP: foreach my $db_type ('mysql')
   $o->other_objs(undef);
 
   $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 1, "get objects 5 - $db_type");
 
   is($objs->[0]->id, 4, "get objects 6 - $db_type");
@@ -168,7 +168,7 @@ SKIP: foreach my $db_type ('mysql')
   $o->other_objs(undef);
 
   $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 0, "get objects 7 - $db_type");
 }
 
@@ -223,7 +223,7 @@ SKIP: foreach my $db_type (qw(informix))
   ok($fo->save, "object save() 5 - $db_type");
 
   my $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 3, "get objects 1 - $db_type");
 
   is($objs->[0]->id, 2, "get objects 2 - $db_type");
@@ -236,7 +236,7 @@ SKIP: foreach my $db_type (qw(informix))
   $o->other_objs(undef);
 
   $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 1, "get objects 5 - $db_type");
 
   is($objs->[0]->id, 4, "get objects 6 - $db_type");
@@ -247,7 +247,7 @@ SKIP: foreach my $db_type (qw(informix))
   $o->other_objs(undef);
 
   $objs = $o->other_objs;
-  
+
   ok($objs && ref $objs eq 'ARRAY' && @$objs == 0, "get objects 7 - $db_type");
 }
 
@@ -258,7 +258,7 @@ BEGIN
   #
 
   my $dbh;
-  
+
   eval 
   {
     $dbh = Rose::DB->new('pg_admin')->retain_dbh()
@@ -308,9 +308,9 @@ EOF
     );
 
     MyPgOtherObject->meta->alias_column(k2 => 'ktwo');
-    
+
     MyPgOtherObject->meta->initialize;
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -333,7 +333,7 @@ EOF
     sub init_db { Rose::DB->new('pg') }
 
     MyPgObject->meta->table('rose_db_object_test');
-      
+
     MyPgObject->meta->columns
     (
       'name',
@@ -408,7 +408,7 @@ EOF
     sub init_db { Rose::DB->new('mysql') }
 
     MyMySQLOtherObject->meta->table('rose_db_object_other');
-      
+
     MyMySQLOtherObject->meta->columns
     (
       id   => { primary_key => 1 },
@@ -419,7 +419,7 @@ EOF
     );
 
     MyMySQLOtherObject->meta->alias_column(k2 => 'ktwo');
-    
+
     MyMySQLOtherObject->meta->initialize;
 
     $dbh->do(<<"EOF");
@@ -456,7 +456,7 @@ EOF
 
     MyMySQLObject->meta->alias_column(fk1 => 'fkone');
     MyMySQLObject->meta->initialize;
-    
+
     Rose::DB::Object::MakeMethods::Generic->import
     (
       objects_by_key =>
@@ -529,9 +529,9 @@ EOF
     );
 
     MyInformixOtherObject->meta->alias_column(k2 => 'ktwo');
-    
+
     MyInformixOtherObject->meta->initialize;
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -554,7 +554,7 @@ EOF
     sub init_db { Rose::DB->new('informix') }
 
     MyInformixObject->meta->table('rose_db_object_test');
-      
+
     MyInformixObject->meta->columns
     (
       'name',
@@ -602,7 +602,7 @@ END
 
     $dbh->disconnect;
   }
-  
+
   if($HAVE_MYSQL)
   {
     # MySQL

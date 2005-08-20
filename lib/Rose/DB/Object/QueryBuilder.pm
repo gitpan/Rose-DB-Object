@@ -108,7 +108,7 @@ sub build_select
             s/^ +$//g;
             s/\s*\Z//;
           }
-        
+
           push(@clauses, "(\n" . $sql . "\n" . "$pad)");
         }
         else
@@ -256,7 +256,7 @@ sub build_select
   }
 
   my $where;
-  
+
   if($pretty)
   {
     my $pad = '  ' x $args{'_depth'};
@@ -430,7 +430,7 @@ sub _build_clause
             push(@new_vals, '?');
           }
         }
-          
+
         return '(' . join(' OR ', map { ($not ? "$not(" : '') . "$field $op $_" .
                                         ($not ? ')' : '') } @new_vals) . ')';
       }

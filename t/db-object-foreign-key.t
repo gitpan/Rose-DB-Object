@@ -3,7 +3,7 @@
 use strict;
 
 use Test::More tests => 129;
-  
+
 BEGIN 
 {
   require 't/test-lib.pl';
@@ -237,7 +237,7 @@ SKIP: foreach my $db_type ('mysql')
   ok($o4->not_found, "not_found() 2 - $db_type");
 
   ok($o->delete, "delete() - $db_type");
-  
+
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, 'alias_column() nonesuch');
 }
@@ -398,7 +398,7 @@ BEGIN
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
-  
+
     our $PG_HAS_CHKPASS = 1  unless($@);
 
     $dbh->do(<<"EOF");
@@ -422,7 +422,7 @@ EOF
     sub init_db { Rose::DB->new('pg') }
 
     MyPgOtherObject->meta->table('rose_db_object_other');
-      
+
     MyPgOtherObject->meta->columns
     (
       name => { type => 'varchar'},
@@ -432,9 +432,9 @@ EOF
     );
 
     MyPgOtherObject->meta->primary_key_columns([ qw(k1 k2 k3) ]);
-    
+
     MyPgOtherObject->meta->initialize;
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -453,7 +453,7 @@ CREATE TABLE rose_db_object_test
   fk3            INT,
   last_modified  TIMESTAMP,
   date_created   TIMESTAMP,
-  
+
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
 )
 EOF
@@ -469,7 +469,7 @@ EOF
     sub init_db { Rose::DB->new('pg') }
 
     MyPgObject->meta->table('rose_db_object_test');
-      
+
     MyPgObject->meta->columns
     (
       'name',
@@ -555,7 +555,7 @@ EOF
     sub init_db { Rose::DB->new('mysql') }
 
     MyMySQLOtherObject->meta->table('rose_db_object_other');
-      
+
     MyMySQLOtherObject->meta->columns
     (
       name => { type => 'varchar'},
@@ -567,7 +567,7 @@ EOF
     MyMySQLOtherObject->meta->primary_key_columns([ qw(k1 k2 k3) ]);
 
     MyMySQLOtherObject->meta->initialize;
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -634,7 +634,7 @@ EOF
   #
   # Informix
   #
-  
+
   eval
   {
     $dbh = Rose::DB->new('informix_admin')->retain_dbh()
@@ -674,7 +674,7 @@ EOF
     sub init_db { Rose::DB->new('informix') }
 
     MyInformixOtherObject->meta->table('rose_db_object_other');
-      
+
     MyInformixOtherObject->meta->columns
     (
       name => { type => 'varchar'},
@@ -684,9 +684,9 @@ EOF
     );
 
     MyInformixOtherObject->meta->primary_key_columns(qw(k1 k2 k3));
-    
+
     MyInformixOtherObject->meta->initialize;
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -704,7 +704,7 @@ CREATE TABLE rose_db_object_test
   fk3            INT,
   last_modified  DATETIME YEAR TO FRACTION(5),
   date_created   DATETIME YEAR TO FRACTION(5),
-  
+
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
 )
 EOF
@@ -720,7 +720,7 @@ EOF
     sub init_db { Rose::DB->new('informix') }
 
     MyInformixObject->meta->table('rose_db_object_test');
-      
+
     MyInformixObject->meta->columns
     (
       'name',
@@ -778,7 +778,7 @@ END
 
     $dbh->disconnect;
   }
-  
+
   if($HAVE_MYSQL)
   {
     # MySQL
@@ -796,10 +796,10 @@ END
     # Informix
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
-  
+
     $dbh->do('DROP TABLE rose_db_object_test');
     $dbh->do('DROP TABLE rose_db_object_other');
-  
+
     $dbh->disconnect;
   }
 }

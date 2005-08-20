@@ -11,7 +11,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.03';
+our $VERSION = '0.031';
 
 sub date
 {
@@ -497,7 +497,7 @@ The time zone name, which must be in a format that is understood by L<DateTime::
 
 Creates a get/set accessor method for a date (year, month, day) attribute.  When setting the attribute, the value is passed through the C<parse_date()> method of the object's C<db> attribute.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
-The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone()|DateTime/set_time_zone> method.
+The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone|DateTime/set_time_zone> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_date()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
 
@@ -591,7 +591,7 @@ Creates a get/set accessor method for a "datetime" attribute.  The exact granula
 
 When setting the attribute, the value is passed through the C<parse_TYPE()> method of the object's C<db> attribute, where C<TYPE> is the value of the C<type> option.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
-The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone()|DateTime/set_time_zone> method.
+The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone|DateTime/set_time_zone> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_TYPE()> method of the object's C<db> attribute before returning it, where C<TYPE> is the value of the C<type> option.  Otherwise, the value is returned as-is.
 
@@ -684,7 +684,7 @@ The time zone name, which must be in a format that is understood by L<DateTime::
 
 Creates a get/set accessor method for a "timestamp" (year, month, day, hour, minute, second, fractional seconds) attribute.  When setting the attribute, the value is passed through the C<parse_timestamp()> method of the object's C<db> attribute.  If that fails, the value is passed to L<Rose::DateTime::Util>'s C<parse_date()> function.  If that fails, a fatal error will occur.
 
-The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone()|DateTime/set_time_zone> method.
+The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the C<server_time_zone> value of the  object's C<db> attribute using L<DateTime>'s L<set_time_zone|DateTime/set_time_zone> method.
 
 When saving to the database, the method will pass the attribute value through the C<format_timestamp()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
 
@@ -736,11 +736,11 @@ Example:
 
 =item B<timestamp_with_time_zone>
 
-This is identical to the L<timestamp> method described above.
+This is identical to the L<timestamp|/timestamp> method described above.
 
 =item B<timestamp_without_time_zone>
 
-This is identical to the L<timestamp> method described above, but with the C<time_zone> parameter always set to the value "floating".  Any attempt to set the C<time_zone> parameter explicitly will cause a fatal error.
+This is identical to the L<timestamp|/timestamp> method described above, but with the C<time_zone> parameter always set to the value "floating".  Any attempt to set the C<time_zone> parameter explicitly will cause a fatal error.
 
 =back
 

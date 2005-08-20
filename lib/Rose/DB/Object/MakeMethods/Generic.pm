@@ -861,7 +861,7 @@ sub objects_by_key
     }
 
     $self->{$key} = $objs;
-    
+
     return wantarray ? @{$self->{$key}} : $self->{$key};
   };
 

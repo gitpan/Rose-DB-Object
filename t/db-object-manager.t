@@ -252,7 +252,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
   is($objs->[0]->bb1->name, 'two', "bb foreign object 3 - $db_type");
   is($objs->[0]->bb2->name, 'four', "bb foreign object 4 - $db_type");
-  
+
   $iterator =
     MyPgObjectManager->get_objectz_iterator(
       share_db     => 1,
@@ -271,7 +271,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
   is($o->bb1->name, 'two', "bb foreign object 5 - $db_type");
   is($o->bb2->name, 'four', "bb foreign object 6 - $db_type");
-  
+
   $objs = 
     Rose::DB::Object::Manager->get_objects(
       object_class => 'MyPgObject',
@@ -1344,7 +1344,7 @@ EOF
     );
 
     MyPgBB->meta->initialize;
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -1413,7 +1413,7 @@ EOF
           fk3 => 'k3',
         }
       },
-      
+
       bb1 =>
       {
         class => 'MyPgBB',
@@ -1623,7 +1623,7 @@ EOF
 
     package MyMySQLObjectManager;
     our @ISA = qw(Rose::DB::Object::Manager);
-  
+
     sub object_class { 'MyMySQLObject' }
     Rose::DB::Object::Manager->make_manager_methods('objectz');
 
@@ -1735,7 +1735,7 @@ CREATE TABLE rose_db_object_test
   b2             INT REFERENCES rose_db_object_bb (id),
   last_modified  DATETIME YEAR TO FRACTION(5),
   date_created   DATETIME YEAR TO FRACTION(5),
-  
+
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
 )
 EOF
@@ -1811,7 +1811,7 @@ EOF
 
     package MyInformixObjectManager;
     our @ISA = qw(Rose::DB::Object::Manager);
-  
+
     Rose::DB::Object::Manager->make_manager_methods(object_class => 'MyInformixObject',
                                                     base_name    => 'objectz');
   }
@@ -1851,10 +1851,10 @@ END
     # Informix
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
-  
+
     $dbh->do('DROP TABLE rose_db_object_test');
     $dbh->do('DROP TABLE rose_db_object_other');
-  
+
     $dbh->disconnect;
   }
 }

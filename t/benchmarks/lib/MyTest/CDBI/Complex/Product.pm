@@ -18,11 +18,11 @@ __PACKAGE__->has_a(date_created => 'DateTime',
 __PACKAGE__->has_a(last_modified => 'DateTime',
                    inflate => sub { $MyTest::CDBI::Base::DB->parse_datetime(shift) },
                    deflate => sub { $MyTest::CDBI::Base::DB->format_datetime(shift) });
-                   
+
 __PACKAGE__->has_a(published => 'DateTime',
                    inflate => sub { $MyTest::CDBI::Base::DB->parse_datetime(shift) },
                    deflate => sub { $MyTest::CDBI::Base::DB->format_datetime(shift) });
-                   
+
 __PACKAGE__->has_a(category_id => 'MyTest::CDBI::Complex::Category');
 
 1;

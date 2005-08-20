@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.069';
+our $VERSION = '0.0691';
 
 our $Debug = 0;
 
@@ -915,15 +915,15 @@ L<Rose::DB::Object> can parse, coerce, inflate, and deflate column values on you
 
 =head2 Configuration
 
-Before L<Rose::DB::Object> can do any useful work, you must register at least one L<Rose::DB> data source.  By default, L<Rose::DB::Object> instantiates a L<Rose::DB> object by passing no arguments to its constructor.  (See the L<db> method.)  If you register a L<Rose::DB> data source using the default type and domain, this will work fine.  Otherwise, you must override the L<init_db> method in your L<Rose::DB::Object> subclass and have it return the appropriate L<Rose::DB>-derived object.
+Before L<Rose::DB::Object> can do any useful work, you must register at least one L<Rose::DB> data source.  By default, L<Rose::DB::Object> instantiates a L<Rose::DB> object by passing no arguments to its constructor.  (See the L<db|/db> method.)  If you register a L<Rose::DB> data source using the default type and domain, this will work fine.  Otherwise, you must override the L<meta|/meta> method in your L<Rose::DB::Object> subclass and have it return the appropriate L<Rose::DB>-derived object.
 
-To define your own L<Rose::DB::Object>-derived class, you must describe the table that your class will act as a front-end for.    This is done through the L<Rose::DB::Object::Metadata> object associated with each L<Rose::DB::Object>-dervied class.  The metadata object is accessible via L<Rose::DB::Object>'s L<meta> method.
+To define your own L<Rose::DB::Object>-derived class, you must describe the table that your class will act as a front-end for.    This is done through the L<Rose::DB::Object::Metadata> object associated with each L<Rose::DB::Object>-dervied class.  The metadata object is accessible via L<Rose::DB::Object>'s L<meta|/meta> method.
 
-Metadata objects can be populated manually or automatically.  Both techniques are shown in the L<synopsis|SYNOPSIS> above.  The automatic mode works by asking the database itself for the information.  There are some caveats to this approach.  See the L<auto-initialization|Rose::DB::Object::Metadata/"AUTO-INITIALIZATION"> section of the L<Rose::DB::Object::Metadata> documentation for more information.
+Metadata objects can be populated manually or automatically.  Both techniques are shown in the L<synopsis|/SYNOPSIS> above.  The automatic mode works by asking the database itself for the information.  There are some caveats to this approach.  See the L<auto-initialization|Rose::DB::Object::Metadata/"AUTO-INITIALIZATION"> section of the L<Rose::DB::Object::Metadata> documentation for more information.
 
 =head2 Error Handling
 
-Error handling for L<Rose::DB::Object>-derived objects is controlled by the L<error_mode|Rose::DB::Object::Metadata/error_mode> method of the L<Rose::DB::Object::Metadata> object associated with the class (accessible via the L<meta> method).  The default setting is "fatal", which means that L<Rose::DB::Object> methods will L<croak|Carp/croak> if they encounter an error.
+Error handling for L<Rose::DB::Object>-derived objects is controlled by the L<error_mode|Rose::DB::Object::Metadata/error_mode> method of the L<Rose::DB::Object::Metadata> object associated with the class (accessible via the L<meta|/meta> method).  The default setting is "fatal", which means that L<Rose::DB::Object> methods will L<croak|Carp/croak> if they encounter an error.
 
 B<PLEASE NOTE:> The error return values described in the L<object method|/"OBJECT METHODS"> documentation are only relevant when the error mode is set to something "non-fatal."  In other words, if an error occurs, you'll never see any of those return values if the selected error mode L<die|perlfunc/die>s or L<croak|Carp/croak>s or otherwise throws an exception when an error occurs.
 
@@ -961,17 +961,17 @@ Return the name of the L<Rose::DB::Object::Metadata>-derived class used to store
 
 Get or set the L<Rose::DB> object used to access the database that contains the table whose rows are fronted by the L<Rose::DB::Object>-derived class.
 
-If it does not already exist, this object is created with a simple, argument-less call to C<Rose::DB-E<gt>new()>.  To override this default in a subclass, override the L<init_db> method and return the L<Rose::DB> to be used as the new default.
+If it does not already exist, this object is created with a simple, argument-less call to C<Rose::DB-E<gt>new()>.  To override this default in a subclass, override the L<init_db|/init_db> method and return the L<Rose::DB> to be used as the new default.
 
 =item B<init_db>
 
-Returns the L<Rose::DB>-derived object used to access the database in the absence of an explicit L<db> value.  The default implementation simply calls C<Rose::DB-E<gt>new()> with no arguments.
+Returns the L<Rose::DB>-derived object used to access the database in the absence of an explicit L<db|/db> value.  The default implementation simply calls C<Rose::DB-E<gt>new()> with no arguments.
 
 Override this method in your subclass in order to use a different default data source.
 
 =item B<dbh>
 
-Returns the L<DBI> database handle contained in L<db>.
+Returns the L<DBI> database handle contained in L<db|/db>.
 
 =item B<delete>
 
@@ -987,11 +987,11 @@ Load a row from the database table, initializing the object with the values from
 
 Returns true if the row was loaded successfully, undef if the row could not be loaded due to an error, or zero (0) if the row does not exist.
 
-PARAMS are optional name/value pairs.  If the parameter C<speculative> is passed with a true value, and if the load failed because the row was L<not found|not_found>, then the L<error_mode|Rose::DB::Object::Metadata/error_mode> setting is ignored and zero (0) is returned.
+PARAMS are optional name/value pairs.  If the parameter C<speculative> is passed with a true value, and if the load failed because the row was L<not found|/not_found>, then the L<error_mode|Rose::DB::Object::Metadata/error_mode> setting is ignored and zero (0) is returned.
 
 =item B<not_found>
 
-Returns true if the previous call to L<load> failed because a row in the database table with the specified primary or unique key did not exist, false otherwise.
+Returns true if the previous call to L<load|/load> failed because a row in the database table with the specified primary or unique key did not exist, false otherwise.
 
 =item B<meta>
 
@@ -1001,7 +1001,7 @@ See the L<Rose::DB::Object::Metadata> documentation for more information.
 
 =item B<save [PARAMS]>
 
-Save the current object to the database table.  In the absence of PARAMS, if the object was previously L<load>ed from the database, the row will be updated.  Otherwise, a new row will be created.
+Save the current object to the database table.  In the absence of PARAMS, if the object was previously L<load|/load>ed from the database, the row will be updated.  Otherwise, a new row will be created.
 
 PARAMS are name/value pairs.  Valid parameters are:
 
@@ -1009,11 +1009,11 @@ PARAMS are name/value pairs.  Valid parameters are:
 
 =item * C<insert>
 
-If set to a true value, then an insert is attempted, regardless of whether or not the object was previously L<load>ed from the database.
+If set to a true value, then an insert is attempted, regardless of whether or not the object was previously L<load|/load>ed from the database.
 
 =item * C<update>
 
-If set to a true value, then an update is attempted, regardless of whether or not the object was previously L<load>ed from the database.
+If set to a true value, then an update is attempted, regardless of whether or not the object was previously L<load|/load>ed from the database.
 
 =back
 
@@ -1055,7 +1055,7 @@ Here are examples of primary key column definitions that provide auto-generated 
 
 Other data definitions are possible, of course, but the three definitions above are used in the L<Rose::DB::Object> test suite and are therefore guaranteed to work.  If you have success with alternative approaches, patches and/or new tests are welcome.
 
-If your table has a multi-column primary key or does not use a column type that supports auto-generated values, you can define a custom primary key generator function using the L<primary_key_generator> method of the L<Rose::DB::Object::Metadata>-derived object that contains the metadata for this class.  Example:
+If your table has a multi-column primary key or does not use a column type that supports auto-generated values, you can define a custom primary key generator function using the L<primary_key_generator|Rose::DB::Object::Metadata/primary_key_generator> method of the L<Rose::DB::Object::Metadata>-derived object that contains the metadata for this class.  Example:
 
     package MyDBObject;
 
@@ -1093,7 +1093,7 @@ See the L<Rose::DB::Object::Metadata> documentation for more information on cust
 
 =head1 RESERVED METHODS
 
-As described in the L<Rose::DB::Object::Metadata> documentation, each column in the database table has an associated get/set accessor method in the L<Rose::DB::Object>.  Since the L<Rose::DB::Object> API already defines many methods (L<load>, L<save>, L<meta>, etc.), accessor methods for columns that share the name of an existing method pose a problem.  The solution is to alias such columns using L<Rose::DB::Object::Metadata>'s  L<alias_column> method. 
+As described in the L<Rose::DB::Object::Metadata> documentation, each column in the database table has an associated get/set accessor method in the L<Rose::DB::Object>.  Since the L<Rose::DB::Object> API already defines many methods (L<load|/load>, L<save|/save>, L<meta|/meta>, etc.), accessor methods for columns that share the name of an existing method pose a problem.  The solution is to alias such columns using L<Rose::DB::Object::Metadata>'s  L<alias_column|Rose::DB::Object::Metadata/alias_column> method. 
 
 Here is a list of method names reserved by the L<Rose::DB::Object> API.  If you have a column with one of these names, you must alias it.
 

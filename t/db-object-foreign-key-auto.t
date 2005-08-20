@@ -551,7 +551,7 @@ SKIP: foreach my $db_type ('mysql')
 
 
   ok($o->delete, "delete() - $db_type");
-  
+
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, 'alias_column() nonesuch');
 
@@ -1177,7 +1177,7 @@ BEGIN
   #
 
   my $dbh;
-  
+
   eval 
   {
     $dbh = Rose::DB->new('pg_admin')->retain_dbh()
@@ -1207,7 +1207,7 @@ BEGIN
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
-  
+
     our $PG_HAS_CHKPASS = 1  unless($@);
 
     $dbh->do(<<"EOF");
@@ -1276,7 +1276,7 @@ EOF
     sub init_db { Rose::DB->new('pg') }
     MyPgOtherObject4->meta->table('rose_db_object_other4');
     MyPgOtherObject4->meta->auto_initialize;    
-    
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -1298,7 +1298,7 @@ CREATE TABLE rose_db_object_test
   fother_id4     INT REFERENCES rose_db_object_other4 (id4),
   last_modified  TIMESTAMP,
   date_created   TIMESTAMP,
-  
+
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
 )
 EOF
@@ -1523,7 +1523,7 @@ EOF
 
     # BIT(5) column shows up as TINYINT(1)
     MyMySQLObject->meta->column(bits => { type => 'bitfield', bits => 5, default => 101 });
-    
+
     # BOOLEAN column shows up as TINYINT(1) even if you use the 
     # BOOLEAN keyword (which is not supported prior to MySQL 4.1,
     # so we're actually using TINYINT(1) in the definition above)
@@ -1547,7 +1547,7 @@ EOF
   #
   # Informix
   #
-  
+
   eval
   {
     $dbh = Rose::DB->new('informix_admin')->retain_dbh()
@@ -1657,7 +1657,7 @@ CREATE TABLE rose_db_object_test
   fother_id4     INT REFERENCES rose_db_object_other4 (id4),
   last_modified  DATETIME YEAR TO FRACTION(5),
   date_created   DATETIME YEAR TO FRACTION(5),
-  
+
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_other (k1, k2, k3)
 )
 EOF
@@ -1719,7 +1719,7 @@ END
 
     $dbh->disconnect;
   }
-  
+
   if($HAVE_MYSQL_WITH_INNODB)
   {
     # MySQL
@@ -1740,7 +1740,7 @@ END
     # Informix
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
-  
+
     $dbh->do('DROP TABLE rose_db_object_test');
     $dbh->do('DROP TABLE rose_db_object_other');
     $dbh->do('DROP TABLE rose_db_object_other2');

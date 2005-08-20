@@ -15,7 +15,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.046';
+our $VERSION = '0.0461';
 
 our $Debug = 0;
 
@@ -207,8 +207,11 @@ sub init_with_db
 {
   my($self, $db) = @_;
 
-  my $catalog = $db->catalog;
-  my $schema  = $db->schema;
+  # XXX: I'm cheating like crazy in this method for performance reasons,
+  # XXX: directly accessing hash keys.  I'll "fix" it if/when I have to...
+
+  my $catalog = $db->{'catalog'};
+  my $schema  = $db->{'schema'};
   my $changed = 0;
 
   UNDEF_IS_OK: # Avoid undef string comparison warnings
@@ -230,9 +233,12 @@ sub init_with_db
   if($changed)
   {
     $self->_clear_table_generated_values;
+  }
 
-    # Also clear the select few column-generated values that
-    # depend on the database
+  # If necessary, also clear the select few column-generated values that
+  # depend on the database driver.
+  if($db->{'driver'} ne $self->{'driver'})
+  {
     $self->{'column_names_string_sql'} = undef;
     $self->{'column_names_sql'} = undef;
   }
@@ -1870,25 +1876,25 @@ L<Rose::DB::Object::Metadata> objects also store information about the L<Rose::D
 
 L<Rose::DB::Object::Metadata> objects objects are per-class singletons; there is one L<Rose::DB::Object::Metadata> object for each L<Rose::DB::Object>-derived class.  Metadata objects are almost never explicitly instantiated.  Rather, there are automatically created and access through L<Rose::DB::Object>-derived objects' L<meta|Rose::DB::Object/meta> method.
 
-Once created, metadata objects can be populated manually or automatically.  Both techniques are shown in the L<synopsis|SYNOPSIS> above.  The automatic mode works by asking the database itself for the information.  There are some caveats to this approach.  See the L<auto-initialization|/"AUTO-INITIALIZATION"> section for more information.
+Once created, metadata objects can be populated manually or automatically.  Both techniques are shown in the L<synopsis|/SYNOPSIS> above.  The automatic mode works by asking the database itself for the information.  There are some caveats to this approach.  See the L<auto-initialization|/"AUTO-INITIALIZATION"> section for more information.
 
 L<Rose::DB::Object::Metadata> objects contain three categories of objects that are responsible for creating object methods in L<Rose::DB::Object>-derived classes: columns, foreign keys, and relationships.
 
-Column objects are subclasses of L<Rose::DB::Object::Metadata::Column>.  They are intended to store as much information as possible about each column.  The particular class of the column object created for a database column is determined by a L<mapping table|column_type_classes>.   The column class, in turn, is responsible for creating the accessor/mutator method(s) for the column.  When it creates these methods, the column class can use (or ignore) any information stored in the column object.
+Column objects are subclasses of L<Rose::DB::Object::Metadata::Column>.  They are intended to store as much information as possible about each column.  The particular class of the column object created for a database column is determined by a L<mapping table|/column_type_classes>.   The column class, in turn, is responsible for creating the accessor/mutator method(s) for the column.  When it creates these methods, the column class can use (or ignore) any information stored in the column object.
 
 Foreign key objects are of the class L<Rose::DB::Object::Metadata::ForeignKey>.  They store information about columns that refer to columns in other tables that are fronted by their own L<Rose::DB::Object>-derived classes.  A foreign key object is responsible for creating accessor method(s) to fetch the foreign object from the foreign table.
 
-Relationship objects are subclasses of L<Rose::DB::Object::Metadata::Relationship>.  They store information about a table's relationship to other tables that are fronted by their own L<Rose::DB::Object>-derived classes.  The particular class of the relationship object created for each relationship is determined by a L<mapping table|relationship_type_classes>.   A relationship object is responsible for creating accessor method(s) to fetch the foreign objects from the foreign table.
+Relationship objects are subclasses of L<Rose::DB::Object::Metadata::Relationship>.  They store information about a table's relationship to other tables that are fronted by their own L<Rose::DB::Object>-derived classes.  The particular class of the relationship object created for each relationship is determined by a L<mapping table|/relationship_type_classes>.   A relationship object is responsible for creating accessor method(s) to fetch the foreign objects from the foreign table.
 
 =head1 AUTO-INITIALIZATION
 
 Manual population of metadata objects can be tedious and repetitive.  Nearly all of the information stored in a L<Rose::DB::Object::Metadata> object exists in the database in some form.  It's reasonable to consider simply extracting this information from the database itself, rather than entering it all manually.  This automatic metadata extraction and subsequent L<Rose::DB::Object::Metadata> object population is called "auto-initialization."
 
-The example of auto-initialization in the L<synopsis|SYNOPSIS> above is the most succinct variant:
+The example of auto-initialization in the L<synopsis|/SYNOPSIS> above is the most succinct variant:
 
     $meta->auto_initialize;
 
-As you can read in the documentation for the L<auto_initialize> method, that's shorthand for individually auto-initializing each part of the metadata object: columns, the primary key, unique keys, and foreign keys.  But this brevity comes at a price.  There are many caveats to auto-initialization.
+As you can read in the documentation for the L<auto_initialize|/auto_initialize> method, that's shorthand for individually auto-initializing each part of the metadata object: columns, the primary key, unique keys, and foreign keys.  But this brevity comes at a price.  There are many caveats to auto-initialization.
 
 =head2 Caveats
 
@@ -1906,9 +1912,9 @@ First, auto-initialization cannot generate information that exists only in the m
 
 For example, if a foreign key constraint does not exist, the "one to one" relationship between rows in two different tables cannot be extracted from the database, and therefore cannot be auto-initialized.
 
-Similarly, in the L<synopsis|SYNOPSIS> above, the "one to many" relationship between the C<Product> and C<Price> classes cannot be auto-initialized because it lacks an unambiguous analog within the database.  Even assuming that the "prices" table (fronted by the C<Price>) class has a foreign key that points to the "products" table, the lack of a corresponding foreign key in the "products" table that points back to the "prices" table does not necessarily mean that the relationship is "one product to many prices."  It could be that the relationship is really "one product to one price" and the foreign key constraint was omitted from the "products" table for performance reasons (to give just one example).
+Similarly, in the L<synopsis|/SYNOPSIS> above, the "one to many" relationship between the C<Product> and C<Price> classes cannot be auto-initialized because it lacks an unambiguous analog within the database.  Even assuming that the "prices" table (fronted by the C<Price>) class has a foreign key that points to the "products" table, the lack of a corresponding foreign key in the "products" table that points back to the "prices" table does not necessarily mean that the relationship is "one product to many prices."  It could be that the relationship is really "one product to one price" and the foreign key constraint was omitted from the "products" table for performance reasons (to give just one example).
 
-As it turns out, the relationship really is "one product to many prices", but this is something that only the programmer knows for sure.  Therefore, this information must be specified manually, as shown near the bottom of the L<synopsis|SYNOPSIS>.
+As it turns out, the relationship really is "one product to many prices", but this is something that only the programmer knows for sure.  Therefore, this information must be specified manually, as shown near the bottom of the L<synopsis|/SYNOPSIS>.
 
 Even within the realm of information that, by all rights, should be available in the database, there are limitations.  Although there is a handy L<DBI> API for extracting metadata from databases, unfortunately, very few DBI drivers support it fully.  Some don't support it at all.  In almost all cases, some manual work is required to (often painfully) extract information from the database's "system tables" or "catalog."
 
@@ -1952,7 +1958,7 @@ Remember that the auto-initialization process can only consider the metadata act
 
 Again, this is just one example of the kind of detail that can be lost in the process of converting your table definition into metadata that is stored in the database.  Admittedly, MySQL is perhaps the worst case-scenario, having a well-deserved reputation for disregarding the wishes of table definitions.  (The use of implicit default values for "NOT NULL" columns is yet another example.)
 
-Thankfully, there is a solution to this dilemma.  Remember that auto-initialization is actually a multi-step process hiding behind that single call to the L<auto_initialize> method.  To correct the sins of the database, simply break the auto-initialization process into its components.  For example, here's how to correctly auto-initialize the "mytable" example above:
+Thankfully, there is a solution to this dilemma.  Remember that auto-initialization is actually a multi-step process hiding behind that single call to the L<auto_initialize|/auto_initialize> method.  To correct the sins of the database, simply break the auto-initialization process into its components.  For example, here's how to correctly auto-initialize the "mytable" example above:
 
     # Make a first pass at column setup
     $meta->auto_init_columns;
@@ -1972,7 +1978,7 @@ Thankfully, there is a solution to this dilemma.  Remember that auto-initializat
     # Do everything else
     $meta->auto_initialize;
 
-Note that L<auto_initialize> was called at the end.  Without the C<replace_existing> parameter, this call will preserve any existing metadata, rather than overwriting it, so our "corrections" are safe.
+Note that L<auto_initialize|/auto_initialize> was called at the end.  Without the C<replace_existing> parameter, this call will preserve any existing metadata, rather than overwriting it, so our "corrections" are safe.
 
 =head3 Maintenance
 
@@ -1986,7 +1992,7 @@ The trade-off may be well worth it, but it's still something to think about.  Th
 
 =head2 Code Generation
 
-As described in the L<section above|CAVEATS>, auto-initializing metadata at runtime by querying the database has many caveats.  An alternate approach is to query the database for metadata just once, and then generate the equivalent Perl code which can be pasted directly into the class definition in place of the call to L<auto_initialize|auto_initialize>.
+As described in the L<section above|/Caveats>, auto-initializing metadata at runtime by querying the database has many caveats.  An alternate approach is to query the database for metadata just once, and then generate the equivalent Perl code which can be pasted directly into the class definition in place of the call to L<auto_initialize|/auto_initialize>.
 
 Like the auto-initialization process itself, perl code generation has a convenient wrapper method as well as separate methods for the individual parts.  All of the perl code generation methods begin with "perl_", and they support some rudimentary code formatting options to help the code conform to you preferred style.  Examples can be found with the documentation for each perl_* method.
 
@@ -2085,7 +2091,7 @@ This class method should return a reference to a subroutine that maps column nam
 
 If defined, the subroutine should take two arguments: the metadata object and the column name.  It should return a method name.
 
-Note that the mapper will not be called for columns that are explicitly aliased (e.g., with the L<alias_column> method).
+Note that the mapper will not be called for columns that are explicitly aliased (e.g., with the L<alias_column|/alias_column> method).
 
 =item B<relationship_type_class TYPE>
 
@@ -2124,7 +2130,7 @@ Any object method is a valid parameter name, but PARAMS I<must> include a value 
 
 =item B<add_column ARGS>
 
-This is an alias for the L<add_columns> method.
+This is an alias for the L<add_columns|/add_columns> method.
 
 =item B<add_columns ARGS>
 
@@ -2136,11 +2142,11 @@ If an argument is a plain scalar, it is taken as the name of a scalar column.  A
 
 Otherwise, only name/value pairs are considered, where the name is taken as the column name and the value must be a reference to a hash.
 
-If the hash contains the key "primary_key" with a true value, then the column is marked as a L<primary_key_member|Rose::DB::Object::Metadata::Column/is_primary_key_member> and the column name is added to the list of primary key columns by calling the L<add_primary_key_column> method with the column name as its argument.
+If the hash contains the key "primary_key" with a true value, then the column is marked as a L<primary_key_member|Rose::DB::Object::Metadata::Column/is_primary_key_member> and the column name is added to the list of primary key columns by calling the L<add_primary_key_column|/add_primary_key_column> method with the column name as its argument.
 
-If the hash contains the key "alias", then the value of that key is used as the alias for the column.  This is a shorthand equivalent to explicitly calling the L<alias_column> column method.
+If the hash contains the key "alias", then the value of that key is used as the alias for the column.  This is a shorthand equivalent to explicitly calling the L<alias_column|/alias_column> column method.
 
-Then the L<column_type_class> method is called with the value of the "type" hash key as its argument (or "scalar" if that key is missing), returning the name of a column class.  Finally, a new column object of that class is constructed and is passed all the remaining pairs in the hash reference, along with the name and type of the column.  That column object is then added to the list of columns.
+Then the L<column_type_class|/column_type_class> method is called with the value of the "type" hash key as its argument (or "scalar" if that key is missing), returning the name of a column class.  Finally, a new column object of that class is constructed and is passed all the remaining pairs in the hash reference, along with the name and type of the column.  That column object is then added to the list of columns.
 
 This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
 
@@ -2175,7 +2181,7 @@ Example:
 
 =item B<add_foreign_keys ARGS>
 
-Add foreign keys as specified by ARGS.  Each foreign key must have a L<name|Rose::DB::Object::Metadata::ForeignKey/name> that is unique among all other foreign keys in this L<class>.
+Add foreign keys as specified by ARGS.  Each foreign key must have a L<name|Rose::DB::Object::Metadata::ForeignKey/name> that is unique among all other foreign keys in this L<class|/class>.
 
 Foreign keys can be specified in ARGS in several ways.
 
@@ -2210,11 +2216,11 @@ Example:
       Rose::DB::Object::Metadata::ForeignKey->new(...),
     );
 
-For each foreign key added, a corresponding "one to one" relationship with the same name is added if it does not already exist.  The class of the relationship is chosen by calling L<relationship_type_class> with the argument "one to one".
+For each foreign key added, a corresponding "one to one" relationship with the same name is added if it does not already exist.  The class of the relationship is chosen by calling L<relationship_type_class|/relationship_type_class> with the argument "one to one".
 
 =item B<add_primary_key_column COLUMN>
 
-This method is an alias for L<add_primary_key_columns>.
+This method is an alias for L<add_primary_key_columns|/add_primary_key_columns>.
 
 =item B<add_primary_key_columns COLUMNS>
 
@@ -2222,11 +2228,11 @@ Add COLUMNS to the list of columns that make up the primary key.  COLUMNS can be
 
 =item B<add_relationship ARGS>
 
-This is an alias for the L<add_relationships> method.
+This is an alias for the L<add_relationships|/add_relationships> method.
 
 =item B<add_relationships ARGS>
 
-Add relationships as specified by ARGS.  Each relationship must have a L<name|Rose::DB::Object::Metadata::Relationship/name> that is unique among all other relationships in this L<class>.
+Add relationships as specified by ARGS.  Each relationship must have a L<name|Rose::DB::Object::Metadata::Relationship/name> that is unique among all other relationships in this L<class|/class>.
 
 Relationships can be specified in ARGS in several ways.
 
@@ -2234,7 +2240,7 @@ If an argument is a subclass of L<Rose::DB::Object::Metadata::Relationship>, it 
 
 Otherwise, only name/value pairs are considered, where the name is taken as the relationship name and the value must be a reference to a hash.
 
-Then the L<relationship_type_class> method is called with the value of the C<type> hash key as its argument, returning the name of a relationship class.  Finally, a new relationship object of that class is constructed and is passed all the pairs in the hash reference, along with the name and type of the relationship.  That relationship object is then added to the list of relationships.
+Then the L<relationship_type_class|/relationship_type_class> method is called with the value of the C<type> hash key as its argument, returning the name of a relationship class.  Finally, a new relationship object of that class is constructed and is passed all the pairs in the hash reference, along with the name and type of the relationship.  That relationship object is then added to the list of relationships.
 
 This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
 
@@ -2264,7 +2270,7 @@ Example:
 
 =item B<add_unique_key KEY>
 
-This method is an alias for L<add_unique_key>.
+This method is an alias for L<add_unique_key|/add_unique_key>.
 
 =item B<add_unique_keys KEYS>
 
@@ -2272,25 +2278,25 @@ Add new unique keys specified by KEYS.  Unique keys can be specified in KEYS in 
 
 If an argument is a L<Rose::DB::Object::Metadata::UniqueKey> object (or subclass thereof), then its L<parent|Rose::DB::Object::Metadata::UniqueKey/parent> is set to the metadata object itself, and it is added.
 
-Otherwise, an argument must be a reference to an array of column names that make up a unique key.  A new L<Rose::DB::Object::Metadata::UniqueKey> is created, with its L<parent|Rose::DB::Object::Metadata::UniqueKey/parent> set to the metadata object itself, and then the unique key object is added to this list of unique keys for this L<class>.
+Otherwise, an argument must be a reference to an array of column names that make up a unique key.  A new L<Rose::DB::Object::Metadata::UniqueKey> is created, with its L<parent|Rose::DB::Object::Metadata::UniqueKey/parent> set to the metadata object itself, and then the unique key object is added to this list of unique keys for this L<class|/class>.
 
 =item B<alias_column NAME, ALIAS>
 
 Use ALIAS instead of NAME as the accessor method name for column named NAME.  It is sometimes necessary to use an alias for a column because the column name  conflicts with an existing L<Rose::DB::Object> method name.
 
-For example, imagine a column named "save".  The L<Rose::DB::Object> API already defines a method named L<save>, so obviously that name can't be used for the accessor method for the "save" column.  To solve this, make an alias:
+For example, imagine a column named "save".  The L<Rose::DB::Object> API already defines a method named L<save|Rose::DB::Object/save>, so obviously that name can't be used for the accessor method for the "save" column.  To solve this, make an alias:
 
     $meta->alias_column(save => 'save_flag');
 
-See the L<Rose::DB::Object> documentation or call the L<method_name_is_reserved> method to determine if a method name is reserved.
+See the L<Rose::DB::Object> documentation or call the L<method_name_is_reserved|/method_name_is_reserved> method to determine if a method name is reserved.
 
 B<Note:> if a primary key column is aliased, a method named after the actual column name will I<also> be created.  So aliasing a primary key column in an attempt to keep it from conflicting with a reserved method name will not work.
 
 =item B<allow_inline_column_values [BOOL]>
 
-Get or set the boolean flag that indicates whether or not the associated L<Rose::DB::Object>-derived class should try to inline column values that L<DBI> does not handle correctly when they are bound to placeholders using L<bind_columns>.  The default value is false.
+Get or set the boolean flag that indicates whether or not the associated L<Rose::DB::Object>-derived class should try to inline column values that L<DBI> does not handle correctly when they are bound to placeholders using L<bind_columns|DBI/bind_columns>.  The default value is false.
 
-Enabling this flag reduces the performance of the L<update> and L<insert> operations on the L<Rose::DB::Object>-derived object.  But it is sometimes necessary to enable the flag because some L<DBI> drivers do not (or cannot) always do the right thing when binding values to placeholders in SQL statements.  For example, consider the following SQL for the Informix database:
+Enabling this flag reduces the performance of the L<update|Rose::DB::Object/update> and L<insert|Rose::DB::Object/insert> operations on the L<Rose::DB::Object>-derived object.  But it is sometimes necessary to enable the flag because some L<DBI> drivers do not (or cannot) always do the right thing when binding values to placeholders in SQL statements.  For example, consider the following SQL for the Informix database:
 
     CREATE TABLE test (d DATETIME YEAR TO SECOND);
     INSERT INTO test (d) VALUES (CURRENT);
@@ -2330,7 +2336,7 @@ All formats of the DURATION argument are converted to seconds.  Days are exactly
 
 If an object was read from the database the specified number of seconds ago or earlier, it is purged from the cache and reloaded from the database the next time it is loaded.
 
-A L<cached_objects_expire_in> value of undef or zero means that nothing will ever expire from the object cache for the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.  This is the default.
+A L<cached_objects_expire_in|/cached_objects_expire_in> value of undef or zero means that nothing will ever expire from the object cache for the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.  This is the default.
 
 =item B<catalog [CATALOG]>
 
@@ -2338,7 +2344,7 @@ Get or set the database catalog name.  This attribute is not applicable to any o
 
 =item B<class [CLASS]>
 
-Get or set the L<Rose::DB::object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by L<make_methods>).
+Get or set the L<Rose::DB::object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by L<make_methods|/make_methods>).
 
 =item B<class_for PARAMS>
 
@@ -2354,23 +2360,23 @@ Get or set the column named NAME.  If just NAME is passed, the L<Rose::DB::Objec
 
 If both NAME and COLUMN are passed, then COLUMN must be a L<Rose::DB::Object::Metadata::Column>-derived object.  COLUMN has its L<name|Rose::DB::Object::Metadata::Column/name> set to NAME, and is then stored as the column metadata object for NAME, replacing any existing column.
 
-If both NAME and HASHREF are passed, then the combination of NAME and HASHREF must form a name/value pair suitable for passing to the L<add_columns> method.  The new column specified by NAME and HASHREF replaces any existing column.
+If both NAME and HASHREF are passed, then the combination of NAME and HASHREF must form a name/value pair suitable for passing to the L<add_columns|/add_columns> method.  The new column specified by NAME and HASHREF replaces any existing column.
 
 =item B<columns [ARGS]>
 
-Get or set the full list of columns.  If ARGS are passed, the column list is cleared and then ARGS are passed to the L<add_columns> method.
+Get or set the full list of columns.  If ARGS are passed, the column list is cleared and then ARGS are passed to the L<add_columns|/add_columns> method.
 
 Returns a list of column objects in list context, or a reference to an array of column objects in scalar context.
 
 =item B<column_accessor_method COLUMN>
 
-Returns the name of the "get" method for COLUMN.  This is currently just an alias for L<column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to get the column value.
+Returns the name of the "get" method for COLUMN.  This is currently just an alias for L<column_method|/column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to get the column value.
 
 =item B<column_aliases [MAP]>
 
 Get or set the hash that maps column names to their aliases.  If passed MAP (a list of name/value pairs or a reference to a hash) then MAP replaces the current alias mapping.  Returns a reference to the hash that maps column names to their aliases.
 
-Note that modifying this map has no effect if L<initialize> or L<make_methods> has already been called for the current L<class>.
+Note that modifying this map has no effect if L<initialize|/initialize> or L<make_methods|/make_methods> has already been called for the current L<class|/class>.
 
 =item B<column_method COLUMN>
 
@@ -2380,15 +2386,15 @@ Returns the name of the get/set accessor method for COLUMN.  If the column is no
 
 Get or set the hash that maps column names to their get/set accessor method names.  If passed MAP (a list of name/value pairs or a reference to a hash) then MAP replaces the current method mapping.
 
-Note that modifying this map has no effect if L<initialize> or L<make_methods> has already been called for the current L<class>.
+Note that modifying this map has no effect if L<initialize|/initialize> or L<make_methods|/make_methods> has already been called for the current L<class|/class>.
 
 =item B<column_method_names>
 
-Returns a list (in list context) or a reference to an array (in scalar context) of method names for all columns, ordered according to the order that the column names are returned from the L<column_names> method.
+Returns a list (in list context) or a reference to an array (in scalar context) of method names for all columns, ordered according to the order that the column names are returned from the L<column_names|/column_names> method.
 
 =item B<column_mutator_method COLUMN>
 
-Returns the name of the "set" method for COLUMN.  This is currently just an alias for L<column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to set the column value.
+Returns the name of the "set" method for COLUMN.  This is currently just an alias for L<column_method|/column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to set the column value.
 
 =item B<column_names>
 
@@ -2396,15 +2402,15 @@ Returns a list (in list context) or a reference to an array (in scalar context) 
 
 =item B<column_name_to_method_name_mapper [CODEREF]>
 
-Get or set the code reference to the subroutine used to map column names to  method names.  If undefined, then the L<init_column_name_to_method_name_mapper> class method is called in order to initialize it.  If still undefined or false, then the column name is used as the method name.
+Get or set the code reference to the subroutine used to map column names to  method names.  If undefined, then the L<init_column_name_to_method_name_mapper|/init_column_name_to_method_name_mapper> class method is called in order to initialize it.  If still undefined or false, then the column name is used as the method name.
 
 If defined, the CODEREF subroutine should take two arguments: the metadata object and the column name.  It should return a method name.
 
-Note that the mapper will not be called for columns that are explicitly aliased (e.g., with the L<alias_column> method).
+Note that the mapper will not be called for columns that are explicitly aliased (e.g., with the L<alias_column|/alias_column> method).
 
 =item B<db>
 
-Returns the L<Rose::DB>-derived object associated with this metadata object's L<class>.  A fatal error will occur if L<class> is undefined or if the L<Rose::DB> object could not be created.
+Returns the L<Rose::DB>-derived object associated with this metadata object's L<class|/class>.  A fatal error will occur if L<class|/class> is undefined or if the L<Rose::DB> object could not be created.
 
 =item B<delete_column NAME>
 
@@ -2436,7 +2442,7 @@ Delete all of the unique key definitions.
 
 =item B<error_mode [MODE]>
 
-Get or set the error mode of the L<Rose::DB::Object> that fronts the table described by this L<Rose::DB::Object::Metadata> object.  If the error mode is false, then it defaults to the return value of the L<init_error_mode> object method, which is "fatal" by default.
+Get or set the error mode of the L<Rose::DB::Object> that fronts the table described by this L<Rose::DB::Object::Metadata> object.  If the error mode is false, then it defaults to the return value of the C<init_error_mode> method, which is "fatal" by default.
 
 The error mode determines what happens when a L<Rose::DB::Object> method encounters an error.  The "return" error mode causes the methods to behave as described in the L<Rose::DB::Object> documentation.  All other error modes cause an action to be performed before (possibly) returning as per the documentation (depending on whether or not the "action" is some variation on "throw an exception.")
 
@@ -2480,31 +2486,37 @@ If passed a VALUE that is a reference to a hash, a new L<Rose::DB::Object::Metad
 
 If VALUE is a L<Rose::DB::Object::Metadata::ForeignKey>->derived object, it has its C<name> set to NAME and then is stored under that name.
 
+=item B<foreign_keys [ARGS]>
+
+Get or set the full list of foreign keys.  If ARGS are passed, the foreign key list is cleared and then ARGS are passed to the L<add_foreign_keys|/add_foreign_keys> method.
+
+Returns a list of foreign key objects in list context, or a reference to an array of foreign key objects in scalar context.
+
 =item B<fq_table_sql>
 
 Returns the fully-qualified table name in a form suitable for use in an SQL statement.
 
 =item B<generate_primary_key_value DB>
 
-This method is an alias for L<generate_primary_key_values>.
+This method is an alias for L<generate_primary_key_values|/generate_primary_key_values>.
 
 =item B<generate_primary_key_values DB>
 
-Given the L<Rose::DB>-derived object DB, generate a new primary key column value for the table described by this metadata object.  If a L<primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value returned.
+Given the L<Rose::DB>-derived object DB, generate a new primary key column value for the table described by this metadata object.  If a L<primary_key_generator|/primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value returned.
 
-If no L<primary_key_generator> is defined, a new primary key value will be generated, if possible, using the native facilities of the current database.  Note that this may not be possible for databases that auto-generate such values only after an insertion.  In that case, undef will be returned.
+If no L<primary_key_generator|/primary_key_generator> is defined, a new primary key value will be generated, if possible, using the native facilities of the current database.  Note that this may not be possible for databases that auto-generate such values only after an insertion.  In that case, undef will be returned.
 
 =item B<initialize [ARGS]>
 
-Initialize the L<Rose::DB::object>-derived class associated with this metadata object by creating accessor methods for each column and foreign key.  The L<table> name and the L<primary_key_columns> must be defined or a fatal error will occur.
+Initialize the L<Rose::DB::object>-derived class associated with this metadata object by creating accessor methods for each column and foreign key.  The L<table|/table> name and the L<primary_key_columns|/primary_key_columns> must be defined or a fatal error will occur.
 
-If any column name in the primary key or any of the unique keys does not exist in the list of L<columns>, then that primary or unique key is deleted.  (As per the above, this will trigger a fatal error if any column in the primary key is not in the column list.)
+If any column name in the primary key or any of the unique keys does not exist in the list of L<columns|/columns>, then that primary or unique key is deleted.  (As per the above, this will trigger a fatal error if any column in the primary key is not in the column list.)
 
-ARGS, if any, are passed to the call to L<make_methods> that actually creates the methods.
+ARGS, if any, are passed to the call to L<make_methods|/make_methods> that actually creates the methods.
 
 =item B<make_methods [ARGS]>
 
-Create object methods in L<class> for each L<column|columns>, L<foreign key|foreign_keys>, and L<relationship|relationship>.  This is done by calling L<make_column_methods>, L<make_foreign_key_methods>, and L<make_relationship_methods>, in that order.
+Create object methods in L<class|/class> for each L<column|/columns>, L<foreign key|/foreign_keys>, and L<relationship|/relationship>.  This is done by calling L<make_column_methods|/make_column_methods>, L<make_foreign_key_methods|/make_foreign_key_methods>, and L<make_relationship_methods|/make_relationship_methods>, in that order.
 
 ARGS are name/value pairs which are passed on to the other C<make_*_methods> calls.  They are all optional.  Valid ARGS are:
 
@@ -2524,7 +2536,7 @@ In the absence of one of these parameters, any method name that conflicts with a
 
 =item B<make_column_methods [ARGS]>
 
-Create accessor/mutator methods in L<class> for each L<column|columns>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
+Create accessor/mutator methods in L<class|/class> for each L<column|/columns>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
 
 =over 4
 
@@ -2538,11 +2550,11 @@ If set to a true value, override any existing method with the same name.
 
 =back
 
-For each column, the corresponding method name is determined by passing the column name to L<column_method>.  If the method name is reserved (according to L<method_name_is_reserved>, a fatal error will occur.  The object method is created by calling the column object's L<make_method> method.
+For each column, the corresponding method name is determined by passing the column name to L<column_method|/column_method>.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>, a fatal error will occur.  The object method is created by calling the column object's L<make_method|Rose::DB::Object::Metadata::Column/make_method> method.
 
 =item B<make_foreign_key_methods [ARGS]>
 
-Create object methods in L<class> for each L<foreign key|foreign_keys>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
+Create object methods in L<class|/class> for each L<foreign key|/foreign_keys>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
 
 =over 4
 
@@ -2556,13 +2568,13 @@ If set to a true value, override any existing method with the same name.
 
 =back
 
-For each foreign key, the corresponding method name is determined by calling the L<method_name> method on the foreign key metadata object.  If the method name is reserved (according to L<method_name_is_reserved>), a fatal error will occur.  The object method is created by calling the foreign key metadata object's L<make_method> method.
+For each foreign key, the corresponding method name is determined by calling the L<method_name|Rose::DB::Object::Metadata::ForeignKey/method_name> method on the foreign key metadata object.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>), a fatal error will occur.  The object method is created by calling the foreign key metadata object's L<make_method|Rose::DB::Object::Metadata::ForeignKey/make_method> method.
 
 Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship/foreign_key> attribute of each "one to one" relationship object to be the corresponding foreign key object.
 
 =item B<make_relationship_methods [ARGS]>
 
-Create object methods in L<class> for each L<relationship|relationships>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
+Create object methods in L<class|/class> for each L<relationship|/relationships>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
 
 =over 4
 
@@ -2576,7 +2588,7 @@ If set to a true value, override any existing method with the same name.
 
 =back
 
-For each relationship, the corresponding method name is determined by calling the L<method_name> method on the relationship metadata object.  If the method name is reserved (according to L<method_name_is_reserved>), a fatal error will occur.  The object method is created by calling the relationship metadata object's L<make_method> method.
+For each relationship, the corresponding method name is determined by calling the L<method_name|Rose::DB::Object::Metadata::Relationship/method_name> method on the relationship metadata object.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>), a fatal error will occur.  The object method is created by calling the relationship metadata object's L<make_method|Rose::DB::Object::Metadata::Relationship/make_method> method.
 
 Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship/foreign_key> attribute of each "one to one" relationship object to be the corresponding foreign key object.
 
@@ -2588,7 +2600,7 @@ Returns the name of the column manipulated by the get/set accessor method named 
 
 =item B<method_name_from_column_name [NAME]>
 
-Given the column name NAME, returns the corresponding method name that would be generated for it, either via the default rules or through a custom-defined L<column_name_to_method_name_mapper>.
+Given the column name NAME, returns the corresponding method name that would be generated for it, either via the default rules or through a custom-defined L<column_name_to_method_name_mapper|/column_name_to_method_name_mapper>.
 
 =item B<method_name_is_reserved NAME, CLASS>
 
@@ -2602,13 +2614,13 @@ Get or set the L<Rose::DB::Object::Metadata::PrimaryKey> object that stores the 
 
 Get or set the list of of columns that make up the primary key.  COLUMNS should be a list of column names or L<Rose::DB::Object::Metadata::Column>-derived objects.
 
-Returns all of the columns that make up the primary key.  Each column is a L<Rose::DB::Object::Metadata::Column>-derived column object if a L<column> object with the same name exists, or just the column name otherwise.  In scalar context, a reference to an array of columns is returned.  In list context, a list is returned.
+Returns all of the columns that make up the primary key.  Each column is a L<Rose::DB::Object::Metadata::Column>-derived column object if a L<column|/column> object with the same name exists, or just the column name otherwise.  In scalar context, a reference to an array of columns is returned.  In list context, a list is returned.
 
 This method is just a shortcut for the code:
 
     $meta->primary_key->columns(...);
 
-See the L<primary_key> method and the L<Rose::DB::Object::Metadata::PrimaryKey> class for more information.
+See the L<primary_key|/primary_key> method and the L<Rose::DB::Object::Metadata::PrimaryKey> class for more information.
 
 =item B<primary_key_column_names [NAMES]>
 
@@ -2620,17 +2632,17 @@ This method is just a shortcut for the code:
 
     $meta->primary_key->column_names(...);
 
-See the L<primary_key> method and the L<Rose::DB::Object::Metadata::PrimaryKey> class for more information.
+See the L<primary_key|/primary_key> method and the L<Rose::DB::Object::Metadata::PrimaryKey> class for more information.
 
 =item B<primary_key_generator [CODEREF]>
 
 Get or set the subroutine used to generate new primary key values for the primary key columns of this table.  The subroutine will be passed two arguments: the current metadata object and the L<Rose::DB>-derived object that points to the current database.
 
-The subroutine is expected to return a list of values, one for each primary key column.  The values must be in the same order as the corresponding columns returned by L<primary_key_columns>. (i.e., the first value belongs to the first column returned by L<primary_key_columns>, the second value belongs to the second column, and so on.)
+The subroutine is expected to return a list of values, one for each primary key column.  The values must be in the same order as the corresponding columns returned by L<primary_key_columns|/primary_key_columns>. (i.e., the first value belongs to the first column returned by L<primary_key_columns|/primary_key_columns>, the second value belongs to the second column, and so on.)
 
 =item B<primary_key_sequence_name [NAME]>
 
-Get or set the name of the sequence used to populate the primary key column.  This method is only applicable to single-column primary keys.  Multi-column keys must set a custom L<primary_key_generator>.
+Get or set the name of the sequence used to populate the primary key column.  This method is only applicable to single-column primary keys.  Multi-column keys must set a custom L<primary_key_generator|/primary_key_generator>.
 
 If you do not set this value, it will be derived for you based on the name of the first primary key column.  In the common case, you do not need to be concerned about this method.  If you are using the built-in SERIAL or AUTO_INCREMENT type in your database for your single-column primary key, everything should just work.
 
@@ -2640,11 +2652,11 @@ Get or set the relationship named NAME.  If just NAME is passed, the L<Rose::DB:
 
 If both NAME and RELATIONSHIP are passed, then RELATIONSHIP must be a L<Rose::DB::Object::Metadata::Relationship>-derived object.  RELATIONSHIP has its L<name|Rose::DB::Object::Metadata::Relationship/name> set to NAME, and is then stored as the relationship metadata object for NAME, replacing any existing relationship.
 
-If both NAME and HASHREF are passed, then the combination of NAME and HASHREF must form a name/value pair suitable for passing to the L<add_relationships> method.  The new relationship specified by NAME and HASHREF replaces any existing relationship.
+If both NAME and HASHREF are passed, then the combination of NAME and HASHREF must form a name/value pair suitable for passing to the L<add_relationships|/add_relationships> method.  The new relationship specified by NAME and HASHREF replaces any existing relationship.
 
 =item B<relationships [ARGS]>
 
-Get or set the full list of relationships.  If ARGS are passed, the relationship list is cleared and then ARGS are passed to the L<add_relationships> method.
+Get or set the full list of relationships.  If ARGS are passed, the relationship list is cleared and then ARGS are passed to the L<add_relationships|/add_relationships> method.
 
 Returns a list of relationship objects in list context, or a reference to an array of relationship objects in scalar context.
 
@@ -2654,11 +2666,11 @@ Get or set the database schema name.  This attribute is only applicable to Postg
 
 =item B<table [TABLE]>
 
-Get or set the name of the database table.  The table name should not include any sort of prefix to indicate the L<schema> or L<catalog>; there are separate attributes for those values.
+Get or set the name of the database table.  The table name should not include any sort of prefix to indicate the L<schema|/schema> or L<catalog|/catalog>; there are separate attributes for those values.
 
 =item B<unique_keys KEYS>
 
-Get or set the list of unique keys for this table.  If KEYS is passed, any existing keys will be deleted and KEYS will be passed to the L<add_unique_keys> method.
+Get or set the list of unique keys for this table.  If KEYS is passed, any existing keys will be deleted and KEYS will be passed to the L<add_unique_keys|/add_unique_keys> method.
 
 Returns the list (in list context) or reference to an array (in scalar context) of L<Rose::DB::Object::Metadata::UniqueKey> objects.
 
@@ -2678,7 +2690,7 @@ Returns a list (in list context) or a reference to an array (in scalar context) 
 
 These methods are associated with the L<auto-initialization|/"AUTO-INITIALIZATION"> process.  Calling any of them will cause the auto-initialization code to be loaded, which costs memory.  This should be considered an implementation detail for now.
 
-Regardless of the implementation details, you should still avoid calling any of these methods unless you plan to do some auto-initialization.  No matter how generic they may seem (e.g., L<default_perl_indent>), rest assured that none of these methods are remotely useful I<unless> you are doing auto-initialization.
+Regardless of the implementation details, you should still avoid calling any of these methods unless you plan to do some auto-initialization.  No matter how generic they may seem (e.g., L<default_perl_indent|/default_perl_indent>), rest assured that none of these methods are remotely useful I<unless> you are doing auto-initialization.
 
 =head2 CLASS METHODS
 
@@ -2694,7 +2706,7 @@ Get or set the default integer number of spaces used for each level of indenting
 
 =item B<default_perl_unique_key_style [STYLE]>
 
-Get or set the default style of the unique key initialization used in the Perl code generated by the L<perl_unique_keys_definition> method.  STYLE must be "array" or "object".  The default value is "array".  See the L<perl_unique_keys_definition> method for examples of the two styles.
+Get or set the default style of the unique key initialization used in the Perl code generated by the L<perl_unique_keys_definition|/perl_unique_keys_definition> method.  STYLE must be "array" or "object".  The default value is "array".  See the L<perl_unique_keys_definition|/perl_unique_keys_definition> method for examples of the two styles.
 
 =back
 
@@ -2704,7 +2716,7 @@ Get or set the default style of the unique key initialization used in the Perl c
 
 =item B<auto_generate_columns>
 
-Auto-generate L<Rose::DB::Object::Metadata::Column>-derived objects for each column in the table.  Note that this method does not modify the metadata object's list of L<columns>.  It simply returns a list of column objects.    Calling this method in void context will cause a fatal error.
+Auto-generate L<Rose::DB::Object::Metadata::Column>-derived objects for each column in the table.  Note that this method does not modify the metadata object's list of L<columns|/columns>.  It simply returns a list of column objects.    Calling this method in void context will cause a fatal error.
 
 Returns a list of column objects (in list context) or a reference to a hash of column objects, keyed by column name (in scalar context).  The hash reference return value is intended to allow easy modification of the auto-generated column objects.  Example:
 
@@ -2718,35 +2730,35 @@ Returns a list of column objects (in list context) or a reference to a hash of c
     # Finally, set the column list
     $meta->columns(values %$columns);
 
-If you do not want to modify the auto-generated columns, you should use the L<auto_init_columns> method instead.
+If you do not want to modify the auto-generated columns, you should use the L<auto_init_columns|/auto_init_columns> method instead.
 
 A fatal error will occur unless at least one column was auto-generated.
 
 =item B<auto_generate_foreign_keys [PARAMS]>
 
-Auto-generate L<Rose::DB::Object::Metadata::ForeignKey> objects for each foreign key in the table.  Note that this method does not modify the metadata object's list of L<foreign_keys>.  It simply returns a list of foreign key objects.  Calling this method in void context will cause a fatal error.  A warning will be issued if a foreign key could not be generated because no L<Rose::DB::Object>-derived class was found for the foreign table.
+Auto-generate L<Rose::DB::Object::Metadata::ForeignKey> objects for each foreign key in the table.  Note that this method does not modify the metadata object's list of L<foreign_keys|/foreign_keys>.  It simply returns a list of foreign key objects.  Calling this method in void context will cause a fatal error.  A warning will be issued if a foreign key could not be generated because no L<Rose::DB::Object>-derived class was found for the foreign table.
 
 PARAMS are optional name/value pairs.  If a C<no_warnings> parameter is passed with a true value, then the warning described above will not be issued.
 
 Returns a list of foreign key objects (in list context) or a reference to an array of foreign key objects (in scalar context).
 
-If you do not want to inspect or modify the auto-generated foreign keys, but just want them to populate the metadata object's L<foreign_keys> list, you should use the L<auto_init_foreign_keys> method instead.
+If you do not want to inspect or modify the auto-generated foreign keys, but just want them to populate the metadata object's L<foreign_keys|/foreign_keys> list, you should use the L<auto_init_foreign_keys|/auto_init_foreign_keys> method instead.
 
 B<Note:> This method works with MySQL only when using the InnoDB storage type.
 
 =item B<auto_generate_unique_keys>
 
-Auto-generate L<Rose::DB::Object::Metadata::UniqueKey> objects for each unique key in the table.  Note that this method does not modify the metadata object's list of L<unique_keys>.  It simply returns a list of unique key objects.  Calling this method in void context will cause a fatal error.
+Auto-generate L<Rose::DB::Object::Metadata::UniqueKey> objects for each unique key in the table.  Note that this method does not modify the metadata object's list of L<unique_keys|/unique_keys>.  It simply returns a list of unique key objects.  Calling this method in void context will cause a fatal error.
 
 Returns a list of unique key objects (in list context) or a reference to an array of unique key objects (in scalar context).
 
-If you do not want to inspect or modify the auto-generated unique keys, but just want them to populate the metadata object's L<unique_keys> list, you should use the L<auto_init_unique_keys> method instead.
+If you do not want to inspect or modify the auto-generated unique keys, but just want them to populate the metadata object's L<unique_keys|/unique_keys> list, you should use the L<auto_init_unique_keys|/auto_init_unique_keys> method instead.
 
 =item B<auto_retrieve_primary_key_column_names>
 
-Returns a list (in list context) or a reference to an array (in scalar context) of the names of the columns that make up the primary key for this table.  Note that this method does not modify the metadata object's L<primary_key>.  It simply returns a list of column names.  Calling this method in void context will cause a fatal error.
+Returns a list (in list context) or a reference to an array (in scalar context) of the names of the columns that make up the primary key for this table.  Note that this method does not modify the metadata object's L<primary_key|/primary_key>.  It simply returns a list of column names.  Calling this method in void context will cause a fatal error.
 
-This method is rarely called explicitly.  Usually, you will use the L<auto_init_primary_key> method instead.
+This method is rarely called explicitly.  Usually, you will use the L<auto_init_primary_key_columns|/auto_init_primary_key_columns> method instead.
 
 A fatal error will occur unless at least one column name can be retrieved.
 
@@ -2764,29 +2776,29 @@ Auto-initialize the entire metadata object.  This is a wrapper for the individua
 
 PARAMS are optional name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated columns, unique keys, and foreign keys entirely replace any existing columns, unique keys, and foreign keys, respectively.
 
-During initialization, if one of the columns has a method name that clashes with a L<reserved method name|Rose::DB::Object/"RESERVED METHODS">, then the L<reserved_method_name_fixer> will be called to remedy the situation.  If the name still conflicts, then a fatal error will occur.
+During initialization, if one of the columns has a method name that clashes with a L<reserved method name|Rose::DB::Object/"RESERVED METHODS">, then the L<reserved_method_name_fixer|/reserved_method_name_fixer> will be called to remedy the situation.  If the name still conflicts, then a fatal error will occur.
 
 A fatal error will occur if auto-initialization fails.
 
 =item B<auto_init_columns [PARAMS]>
 
-Auto-generate L<Rose::DB::Object::Metadata::Column> objects for this table, then populate the list of L<columns>.  PARAMS are optional name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated columns replace any existing columns.  Otherwise, any existing columns are left as-is.
+Auto-generate L<Rose::DB::Object::Metadata::Column> objects for this table, then populate the list of L<columns|/columns>.  PARAMS are optional name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated columns replace any existing columns.  Otherwise, any existing columns are left as-is.
 
 =item B<auto_init_foreign_keys [PARAMS]>
 
-Auto-generate L<Rose::DB::Object::Metadata::ForeignKey> objects for this table, then populate the list of L<foreign_keys>.  PARAMS are optional name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated foreign keys replace any existing foreign keys.  Otherwise, any existing foreign keys are left as-is.
+Auto-generate L<Rose::DB::Object::Metadata::ForeignKey> objects for this table, then populate the list of L<foreign_keys|/foreign_keys>.  PARAMS are optional name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated foreign keys replace any existing foreign keys.  Otherwise, any existing foreign keys are left as-is.
 
 B<PLEASE NOTE:> In order for this method to work correctly, the L<Rose::DB::Object>-derived classes for all referenced tables must be loaded I<before> this method is called on behalf of the referring class.
 
-This method is currently a non-functional when working with Informix and MySQL databases.
+B<Note:> This method works with MySQL only when using the InnoDB storage type.
 
 =item B<auto_init_primary_key_columns>
 
-Auto-retrieve the names of the columns that make up the primary key for this table, then populate the list of L<primary_key_column_names>.  A fatal error will occur unless at least one primary key column name could be retrieved.
+Auto-retrieve the names of the columns that make up the primary key for this table, then populate the list of L<primary_key_column_names|/primary_key_column_names>.  A fatal error will occur unless at least one primary key column name could be retrieved.
 
 =item B<auto_init_unique_keys [PARAMS]>
 
-Auto-generate L<Rose::DB::Object::Metadata::UniqueKey> objects for this table, then populate the list of L<unique_keys>.  PARAMS are name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated unique keys replace any existing unique keys.  Otherwise, any existing unique keys are left as-is.
+Auto-generate L<Rose::DB::Object::Metadata::UniqueKey> objects for this table, then populate the list of L<unique_keys|/unique_keys>.  PARAMS are name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated unique keys replace any existing unique keys.  Otherwise, any existing unique keys are left as-is.
 
 =item B<foreign_key_name_generator [CODEREF]>
 
@@ -2810,7 +2822,7 @@ If the foreign key has only one column, and if the name of that column ends with
       ...
     );
 
-The foreign key name would be "category", which is the name of the referring column ("category_id") with an underscore and the name of the referenced column ("_" . "id") removed from the end of it.
+The foreign key name would be "category", which is the name of the referring column ("category_id") with an underscore and the name of the referenced column ("_id") removed from the end of it.
 
 If the foreign key has only one column, but it does not meet the criteria described above, then "_object" is appended to the name of the referring column and the resulting string is used as the foreign key name.
 
@@ -2818,7 +2830,7 @@ If the foreign key has more than one column, then the foreign key name is genera
 
 In all of the scenarios above, if the generated foreign key name is still not unique within the class, then a number is appended to the end of the name.  That number is incremented until the name is unique.
 
-In practice, rather than setting a custom foreign key name generator, it's usually easier to simply set the foreign key name(s) manually after auto-initializing the foreign keys (but I<before> calling L<initialize> or L<auto_initialize>, of course).
+In practice, rather than setting a custom foreign key name generator, it's usually easier to simply set the foreign key name(s) manually after auto-initializing the foreign keys (but I<before> calling L<initialize|/initialize> or L<auto_initialize|/auto_initialize>, of course).
 
 =item B<reserved_method_name_fixer [CODEREF]>
 
@@ -2834,11 +2846,11 @@ Auto-initialize the columns, primary key, foreign keys, and unique keys, then re
 
 =item * braces STYLE
 
-The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces> class method.
+The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
 =item * indent INT
 
-The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent> class method.
+The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
 =item * isa CLASSES
 
@@ -2846,7 +2858,7 @@ The list of base classes to use in the generated class definition.  CLASSES shou
 
 =back
 
-This method is simply a wrapper (with some glue) for the following methods: L<perl_columns_definition>, L<perl_primary_key_columns_definition>, L<perl_unique_keys_definition>, and L<perl_foreign_keys_definition>.  The "braces" and "indent" parameters are passed on to these other methods.
+This method is simply a wrapper (with some glue) for the following methods: L<perl_columns_definition|/perl_columns_definition>, L<perl_primary_key_columns_definition|/perl_primary_key_columns_definition>, L<perl_unique_keys_definition|/perl_unique_keys_definition>, and L<perl_foreign_keys_definition|/perl_foreign_keys_definition>.  The "braces" and "indent" parameters are passed on to these other methods.
 
 Here's a complete example, which also serves as an example of the individual "perl_*" methods that this method wraps.  First, the table definitions.
 
@@ -2967,15 +2979,15 @@ Auto-initialize the columns, then return the Perl source code that is equivalent
 
 =item * braces STYLE
 
-The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces> class method.
+The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
 =item * indent INT
 
-The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent> class method.
+The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
 =back
 
-See the larger example in the documentation for the L<perl_class_definition> method to see what the generated Perl code looks like.
+See the larger example in the documentation for the L<perl_class_definition|/perl_class_definition> method to see what the generated Perl code looks like.
 
 =item B<perl_foreign_keys_definition [PARAMS]>
 
@@ -2985,21 +2997,21 @@ Auto-initialize the foreign keys, then return the Perl source code that is equiv
 
 =item * braces STYLE
 
-The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces> class method.
+The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
 =item * indent INT
 
-The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent> class method.
+The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
 =back
 
-See the larger example in the documentation for the L<perl_class_definition> method to see what the generated Perl code looks like.
+See the larger example in the documentation for the L<perl_class_definition|/perl_class_definition> method to see what the generated Perl code looks like.
 
 =item B<perl_primary_key_columns_definition>
 
 Auto-initialize the primary key column names, then return the Perl source code that is equivalent to the auto-initialization.
 
-See the larger example in the documentation for the L<perl_class_definition> method to see what the generated Perl code looks like.
+See the larger example in the documentation for the L<perl_class_definition|/perl_class_definition> method to see what the generated Perl code looks like.
 
 =item B<perl_unique_keys_definition [PARAMS]>
 
@@ -3009,15 +3021,15 @@ Auto-initialize the unique keys, then return the Perl source code that is equiva
 
 =item * braces STYLE
 
-The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces> class method.
+The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
 =item * indent INT
 
-The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent> class method.
+The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
 =item * style STYLE
 
-Determines the style the initialization used in the generated Perl code.  STYLE must be "array" or "object".  The default is determined by the return value of the class method L<default_perl_unique_key_style>.
+Determines the style the initialization used in the generated Perl code.  STYLE must be "array" or "object".  The default is determined by the return value of the class method L<default_perl_unique_key_style|/default_perl_unique_key_style>.
 
 The "array" style passes references to arrays of column names:
 

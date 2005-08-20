@@ -61,13 +61,13 @@ sub auto_generate_unique_keys
   eval
   {
     $class = $self->class or die "Missing class!";
-  
+
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
     my $schema = $self->schema;
     $schema = $db->default_implicit_schema  unless(defined $schema);
- 
+
     my $table = lc $self->table;
 
     my($relation_id, $column_nums, $key_name);
@@ -120,7 +120,7 @@ sub auto_generate_unique_keys
   # This sort order is part of the API, and is essential to make the
   # test suite work.
   @unique_keys = sort { lc $a->name cmp lc $b->name } @unique_keys;
-  
+
   return wantarray ? @unique_keys : \@unique_keys;
 }
 

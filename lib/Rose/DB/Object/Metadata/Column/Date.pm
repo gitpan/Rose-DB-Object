@@ -37,7 +37,7 @@ sub parse_value
   shift; 
   my $db = shift;
   my $dt = $db->parse_date(@_);
-  
+
   unless($dt)
   {
     $dt = Rose::DateTime::Util::parse_date($_[0], $db->server_time_zone)

@@ -18,7 +18,7 @@ __PACKAGE__->inflate_column(date_created => {
 __PACKAGE__->inflate_column(last_modified => {
                    inflate => sub { $MyTest::CDBI::Base::DB->parse_datetime(shift) },
                    deflate => sub { $MyTest::CDBI::Base::DB->format_datetime(shift) } });
-                   
+
 __PACKAGE__->inflate_column(published => {
                    inflate => sub { $MyTest::CDBI::Base::DB->parse_datetime(shift) },
                    deflate => sub { $MyTest::CDBI::Base::DB->format_datetime(shift) } });

@@ -2,16 +2,12 @@ package Rose::DB::Object::Std;
 
 use strict;
 
-use Carp();
-
 use Rose::DB::Object::Std::Metadata;
 
 use Rose::DB::Object;
 our @ISA = qw(Rose::DB::Object);
 
-use Rose::DB::Object::Constants qw(META_ATTR_NAME);
-
-our $VERSION = '0.02';
+our $VERSION = '0.021';
 
 our $Debug = 0;
 
@@ -204,7 +200,7 @@ You do have to correctly define the "id" column in the database, however.  Here 
 
 Other data definitions are possible, of course, but the three definitions above are used in the C<Rose::DB::Object::Std> test suite and are therefore guaranteed to work.  If you have success with alternative approaches, patches and/or new tests are welcome.
 
-To achieve much of this functionality, C<Rose::DB::Object::Std> uses L<Rose::DB::Object::Std::Metadata> objects.  The C<meta()> method will create these form you.  You should not need to do anything special if you use the idimoatic approach to defining metadata as shown in the L<synopsis|SYNOPSIS>.  
+To achieve much of this functionality, C<Rose::DB::Object::Std> uses L<Rose::DB::Object::Std::Metadata> objects.  The C<meta()> method will create these form you.  You should not need to do anything special if you use the idimoatic approach to defining metadata as shown in the L<synopsis|/SYNOPSIS>.  
 
 =head1 METHODS
 
