@@ -9,6 +9,14 @@ our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
 our $VERSION = '0.02';
 
+use overload
+(
+  # "Undo" inherited overloaded stringification.  
+  # (Using "no overload ..." didn't seem to work.)
+  '""' => sub { overload::StrVal($_[0]) },
+   fallback => 1,
+);
+
 __PACKAGE__->add_method_maker_argument_names
 (
   qw(share_db class key_columns)
@@ -38,6 +46,16 @@ sub method_maker_class { 'Rose::DB::Object::MakeMethods::Generic' }
 sub method_maker_type  { 'object_by_key' }
 
 sub type { 'foreign key' }
+
+sub id
+{
+  my($self) = shift;
+
+  my $key_columns = $self->key_columns;
+
+  return $self->class . ' ' . 
+    join("\0", map { join("\1", lc $_, lc $key_columns->{$_}) } sort keys %$key_columns);
+}
 
 sub perl_hash_definition
 {
@@ -69,7 +87,7 @@ sub perl_hash_definition
   }
 
   $def .= $indent_txt . 'key_columns => ' . ($braces eq 'bsd' ? "\n" : '');
-  
+
   my $hash = perl_hashref(hash => $key_columns, indent => $indent * 2, inline => 0);
 
   for($hash)
@@ -123,9 +141,45 @@ Get or set the class name of the L<Rose::DB::Object>-derived object that encapsu
 
 If passed a local column name LOCAL, return the corresponding column name in the foreign table.  If passed both a local column name LOCAL and a foreign column name FOREIGN, set the local/foreign mapping and return the foreign column name.
 
-=item B<key_columns [HASH|HASHREF]>
+=item B<key_columns [HASH | HASHREF]>
 
 Get or set a reference to a hash that maps local column names to foreign column names in the table referenced by the foreign key.
+
+=item B<make_method PARAMS>
+
+Create an object method used to fetch the L<Rose::DB::Object>-derived object referred to by the foreign key.  To do this, the C<make_methods()> class method of the L<method_maker_class> is called.  PARAMS are name/value pairs.  Valid PARAMS are:
+
+=over 4
+
+=item C<options HASHREF>
+
+A reference to a hash of options that will be passed as the first argument to the call to the C<make_methods()> class method of the L<method_maker_class>.  This parameter is required, and the HASHREF must include a value for the key C<target_class>, which C<make_methods()> needs in order to determine where to make the method.
+
+=back
+
+The call to C<make_methods()> looks something like this:
+
+    my $method_name = $self->method_name;
+
+    # Use "name" if "method_name" is undefined
+    unless(defined $method_name)
+    {
+      # ...and set "method_name" so it's defined now
+      $method_name = $self->method_name($self->name);
+    }
+
+    $self->method_maker_class->make_methods(
+      $args{'options'}, 
+      $self->method_maker_type => 
+      [
+        $method_name => scalar $self->method_maker_arguments
+      ]);
+
+where C<$args{'options'}> is the value of the "options" PARAM.
+
+The L<method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
+
+More than one method may be created, but there must be at least one accessor method created, and its name must match the L<method_name> (or L<name> if L<method_name> is undefined).
 
 =item B<method_maker_class>
 
@@ -134,6 +188,14 @@ Returns L<Rose::DB::Object::MakeMethods::Generic>.
 =item B<method_maker_type>
 
 Returns C<object_by_key>.
+
+=item B<method_name [NAME]>
+
+Get or set the name of the object method to be created for this foreign key.  This may be left undefined if the desired method name is stored in L<name> instead.  Once the method is actually created, the L<method_name> will be set.
+
+=item B<name [NAME]>
+
+Get or set the name of the foreign key.  This name must be unique among all other foreign keys for a given L<Rose::DB::Object>-derived class.
 
 =item B<share_db [BOOL]>
 

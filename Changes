@@ -1,9 +1,21 @@
+0.068 (08.19.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Enabled multiple joins with the same table in the manager,
+      provided that each occurrence of multi-joined table has the
+      same Rose::DB::Object class fronting it.
+    * Added support for the "alias" parameter to hash-style column
+      definitions.
+    * Fixed a bug that caused nearly everything to fail if a 
+      column_name_to_method_name_mapper was used.
+    * Moved some class methods out of the object methods section of the
+      documentation, where they shouldn't have been in the first place.
+
 0.0671 (08.15.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Fixed more MySQL case sensitivity bugs.  (Thanks Uwe!)
     * Changed objects_by_key query_args parameter to be an array ref
       instead of a hash ref to match the manager change from long ago.
-    * Upaded makemethods.t to use MySQL if Postgres is not available.
+    * Updated makemethods.t to use MySQL if Postgres is not available.
 
 0.067 (08.14.2005) - John Siracusa <siracusa@mindspring.com>
 

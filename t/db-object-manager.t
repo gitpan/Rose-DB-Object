@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 171;
+use Test::More tests => 201;
 
 BEGIN 
 {
@@ -19,7 +19,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 {
-  skip("Postgres tests", 54)  unless($HAVE_PG);
+  skip("Postgres tests", 64)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -190,6 +190,22 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
   ok($fo->save, "object save() 6 - $db_type");
 
+  $fo = MyPgBB->new(id   => 1,
+                    name => 'one');
+  ok($fo->save, "bb object save() 1 - $db_type");
+
+  $fo = MyPgBB->new(id   => 2,
+                    name => 'two');
+  ok($fo->save, "bb object save() 2 - $db_type");
+
+  $fo = MyPgBB->new(id   => 3,
+                    name => 'three');
+  ok($fo->save, "bb object save() 3 - $db_type");
+
+  $fo = MyPgBB->new(id   => 4,
+                    name => 'four');
+  ok($fo->save, "bb object save() 4 - $db_type");
+
   my $o5 = MyPgObject->new(id         => 5,
                            name       => 'Betty',  
                            flag       => 'f',
@@ -202,6 +218,8 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
                            fkone      => 1,
                            fk2        => 2,
                            fk3        => 3,
+                           b1         => 2,
+                           b2         => 4,
                            last_modified => '2001-01-10 20:34:56',
                            date_created  => '2002-05-10 10:34:56');
 
@@ -212,36 +230,48 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->k2 == 2 && $fo1->k3 == 3,
      "foreign object 1 - $db_type");
 
+  $fo1 = $o5->bb1;
+  ok($fo1 && ref $fo1 && $fo1->id == 2, "bb foreign object 1 - $db_type");
+
+  $fo1 = $o5->bb2;
+  ok($fo1 && ref $fo1 && $fo1->id == 4, "bb foreign object 2 - $db_type");
+
   $objs = 
     MyPgObjectManager->get_objectz(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
       [
-        id         => { ge => 2 },
+        't1.id'    => { ge => 2 },
         't1.name'  => { like => '%tt%' },
       ],
-      with_objects => [ 'other_obj' ]);
+      with_objects => [ 'other_obj', 'bb1', 'bb2' ]);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyPgOtherObject', "foreign object 2 - $db_type");
   is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
 
+  is($objs->[0]->bb1->name, 'two', "bb foreign object 3 - $db_type");
+  is($objs->[0]->bb2->name, 'four', "bb foreign object 4 - $db_type");
+  
   $iterator =
     MyPgObjectManager->get_objectz_iterator(
       share_db     => 1,
       query_is_sql => 1,
       query        =>
       [
-        id         => { ge => 2 },
+        't1.id'    => { ge => 2 },
         't1.name'  => { like => '%tt%' },
       ],
-      with_objects => [ 'other_obj' ]);
+      with_objects => [ 'other_obj', 'bb1', 'bb2' ]);
 
   $o = $iterator->next;
 
   ok(ref $o->{'other_obj'} eq 'MyPgOtherObject', "foreign object 4 - $db_type");
   is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
 
+  is($o->bb1->name, 'two', "bb foreign object 5 - $db_type");
+  is($o->bb2->name, 'four', "bb foreign object 6 - $db_type");
+  
   $objs = 
     Rose::DB::Object::Manager->get_objects(
       object_class => 'MyPgObject',
@@ -387,7 +417,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 55)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 65)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -549,6 +579,22 @@ SKIP: foreach my $db_type ('mysql')
 
   ok($fo->save, "object save() 6 - $db_type");
 
+  $fo = MyMySQLBB->new(id   => 1,
+                       name => 'one');
+  ok($fo->save, "bb object save() 1 - $db_type");
+
+  $fo = MyMySQLBB->new(id   => 2,
+                       name => 'two');
+  ok($fo->save, "bb object save() 2 - $db_type");
+
+  $fo = MyMySQLBB->new(id   => 3,
+                       name => 'three');
+  ok($fo->save, "bb object save() 3 - $db_type");
+
+  $fo = MyMySQLBB->new(id   => 4,
+                       name => 'four');
+  ok($fo->save, "bb object save() 4 - $db_type");
+
   my $o5 = MyMySQLObject->new(id         => 5,
                               name       => 'Betty',  
                               flag       => 'f',
@@ -561,6 +607,8 @@ SKIP: foreach my $db_type ('mysql')
                               fkone      => 1,
                               fk2        => 2,
                               fk3        => 3,
+                              b1         => 2,
+                              b2         => 4,
                               last_modified => '2001-01-10 20:34:56',
                               date_created  => '2002-05-10 10:34:56');
 
@@ -571,34 +619,46 @@ SKIP: foreach my $db_type ('mysql')
   ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->k2 == 2 && $fo1->k3 == 3,
      "foreign object 1 - $db_type");
 
+  $fo1 = $o5->bb1;
+  ok($fo1 && ref $fo1 && $fo1->id == 2, "bb foreign object 1 - $db_type");
+
+  $fo1 = $o5->bb2;
+  ok($fo1 && ref $fo1 && $fo1->id == 4, "bb foreign object 2 - $db_type");
+
   $objs = 
     MyMySQLObject->get_objectz(
       object_class => 'MyMySQLObject',
       share_db     => 1,
       query        =>
       [
-        id         => { ge => 2 },
+        't1.id'    => { ge => 2 },
         't1.name'  => { like => '%tt%' },
       ],
-      with_objects => [ 'other_obj' ]);
+      with_objects => [ 'other_obj', 'bb1', 'bb2' ]);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyMySQLOtherObject', "foreign object 2 - $db_type");
   is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
+
+  is($objs->[0]->bb1->name, 'two', "bb foreign object 3 - $db_type");
+  is($objs->[0]->bb2->name, 'four', "bb foreign object 4 - $db_type");
 
   $iterator =
     MyMySQLObjectManager->get_objectz_iterator(
       share_db     => 1,
       query        =>
       [
-        id         => { ge => 2 },
+        't1.id'    => { ge => 2 },
         't1.name'  => { like => '%tt%' },
       ],
-      with_objects => [ 'other_obj' ]);
+      with_objects => [ 'other_obj', 'bb1', 'bb2' ]);
 
   $o = $iterator->next;
 
   ok(ref $o->{'other_obj'} eq 'MyMySQLOtherObject', "foreign object 4 - $db_type");
   is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
+
+  is($o->bb1->name, 'two', "bb foreign object 5 - $db_type");
+  is($o->bb2->name, 'four', "bb foreign object 6 - $db_type");
 
   $objs = 
     MyMySQLObjectManager->get_objectz(
@@ -741,7 +801,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 60)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 70)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -945,6 +1005,22 @@ SKIP: foreach my $db_type (qw(informix))
 
   ok($fo->save, "object save() 6 - $db_type");
 
+  $fo = MyInformixBB->new(id   => 1,
+                          name => 'one');
+  ok($fo->save, "bb object save() 1 - $db_type");
+
+  $fo = MyInformixBB->new(id   => 2,
+                          name => 'two');
+  ok($fo->save, "bb object save() 2 - $db_type");
+
+  $fo = MyInformixBB->new(id   => 3,
+                          name => 'three');
+  ok($fo->save, "bb object save() 3 - $db_type");
+
+  $fo = MyInformixBB->new(id   => 4,
+                          name => 'four');
+  ok($fo->save, "bb object save() 4 - $db_type");
+
   my $o5 = MyInformixObject->new(id         => 5,
                                  name       => 'Betty',  
                                  flag       => 'f',
@@ -957,6 +1033,8 @@ SKIP: foreach my $db_type (qw(informix))
                                  fkone      => 1,
                                  fk2        => 2,
                                  fk3        => 3,
+                                 b1         => 2,
+                                 b2         => 4,
                                  last_modified => '2001-01-10 20:34:56',
                                  date_created  => '2002-05-10 10:34:56');
 
@@ -967,12 +1045,18 @@ SKIP: foreach my $db_type (qw(informix))
   ok($fo1 && ref $fo1 && $fo1->k1 == 1 && $fo1->k2 == 2 && $fo1->k3 == 3,
      "foreign object 1 - $db_type");
 
+  $fo1 = $o5->bb1;
+  ok($fo1 && ref $fo1 && $fo1->id == 2, "bb foreign object 1 - $db_type");
+
+  $fo1 = $o5->bb2;
+  ok($fo1 && ref $fo1 && $fo1->id == 4, "bb foreign object 2 - $db_type");
+
   $objs = 
     MyInformixObjectManager->get_objectz(
       share_db     => 1,
       query        =>
       [
-        id         => { ge => 2 },
+        't1.id'    => { ge => 2 },
         't1.name'  => { like => '%tt%' },
       ],
       with_objects => [ 'other_obj' ]);
@@ -980,12 +1064,15 @@ SKIP: foreach my $db_type (qw(informix))
   ok(ref $objs->[0]->{'other_obj'} eq 'MyInformixOtherObject', "foreign object 2 - $db_type");
   is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
 
+  is($objs->[0]->bb1->name, 'two', "bb foreign object 3 - $db_type");
+  is($objs->[0]->bb2->name, 'four', "bb foreign object 4 - $db_type");
+
   $iterator =
     MyInformixObject->get_objectz_iterator(
       share_db     => 1,
       query        =>
       [
-        id         => { ge => 2 },
+        't1.id'    => { ge => 2 },
         't1.name'  => { like => '%tt%' },
       ],
       with_objects => [ 'other_obj' ]);
@@ -994,6 +1081,9 @@ SKIP: foreach my $db_type (qw(informix))
 
   ok(ref $o->{'other_obj'} eq 'MyInformixOtherObject', "foreign object 4 - $db_type");
   is($o->other_obj->k2, 2, "foreign object 5 - $db_type");
+
+  is($o->bb1->name, 'two', "bb foreign object 5 - $db_type");
+  is($o->bb2->name, 'four', "bb foreign object 6 - $db_type");
 
   $objs = 
     MyInformixObjectManager->get_objectz(
@@ -1187,6 +1277,7 @@ BEGIN
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test');
       $dbh->do('DROP TABLE rose_db_object_other');
+      $dbh->do('DROP TABLE rose_db_object_bb');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     }
 
@@ -1212,7 +1303,15 @@ CREATE TABLE rose_db_object_other
 )
 EOF
 
-    # Create test foreign subclass
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_bb
+(
+  id    INT NOT NULL PRIMARY KEY,
+  name  VARCHAR(32)
+)
+EOF
+
+    # Create test foreign subclasses
 
     package MyPgOtherObject;
 
@@ -1232,6 +1331,20 @@ EOF
 
     MyPgOtherObject->meta->initialize;
 
+    package MyPgBB;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    MyPgBB->meta->table('rose_db_object_bb');
+
+    MyPgBB->meta->columns
+    (
+      id   => { type => 'int', primary_key => 1 },
+      name => { type => 'varchar'},
+    );
+
+    MyPgBB->meta->initialize;
+    
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -1248,6 +1361,8 @@ CREATE TABLE rose_db_object_test
   fk1            INT,
   fk2            INT,
   fk3            INT,
+  b1             INT REFERENCES rose_db_object_bb (id),
+  b2             INT REFERENCES rose_db_object_bb (id),
   last_modified  TIMESTAMP,
   date_created   TIMESTAMP,
 
@@ -1280,6 +1395,8 @@ EOF
       fk1      => { type => 'int' },
       fk2      => { type => 'int' },
       fk3      => { type => 'int' },
+      b1       => { type => 'int' },
+      b2       => { type => 'int' },
       last_modified => { type => 'timestamp' },
       date_created  => { type => 'timestamp' },
     );
@@ -1295,6 +1412,18 @@ EOF
           fk2 => 'k2',
           fk3 => 'k3',
         }
+      },
+      
+      bb1 =>
+      {
+        class => 'MyPgBB',
+        key_columns => { b1 => 'id' },
+      },
+
+      bb2 =>
+      {
+        class => 'MyPgBB',
+        key_columns => { b2 => 'id' },
       },
     );
 
@@ -1343,6 +1472,7 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test');
+      $dbh->do('DROP TABLE rose_db_object_bb');
       $dbh->do('DROP TABLE rose_db_object_other');
     }
 
@@ -1358,7 +1488,15 @@ CREATE TABLE rose_db_object_other
 )
 EOF
 
-    # Create test foreign subclass
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_bb
+(
+  id    INT NOT NULL PRIMARY KEY,
+  name  VARCHAR(32)
+)
+EOF
+
+    # Create test foreign subclasses
 
     package MyMySQLOtherObject;
 
@@ -1378,6 +1516,20 @@ EOF
 
     MyMySQLOtherObject->meta->initialize;
 
+    package MyMySQLBB;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    MyMySQLBB->meta->table('rose_db_object_bb');
+
+    MyMySQLBB->meta->columns
+    (
+      id   => { type => 'int', primary_key => 1 },
+      name => { type => 'varchar'},
+    );
+
+    MyMySQLBB->meta->initialize;
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -1393,6 +1545,8 @@ CREATE TABLE rose_db_object_test
   fk1            INT,
   fk2            INT,
   fk3            INT,
+  b1             INT,
+  b2             INT,
   last_modified  TIMESTAMP,
   date_created   DATETIME
 )
@@ -1422,6 +1576,8 @@ EOF
       fk1      => { type => 'int' },
       fk2      => { type => 'int' },
       fk3      => { type => 'int' },
+      b1       => { type => 'int' },
+      b2       => { type => 'int' },
       last_modified => { type => 'timestamp' },
       date_created  => { type => 'datetime' },
     );
@@ -1437,6 +1593,18 @@ EOF
           fk2 => 'k2',
           fk3 => 'k3',
         }
+      },
+
+      bb1 =>
+      {
+        class => 'MyMySQLBB',
+        key_columns => { b1 => 'id' },
+      },
+
+      bb2 =>
+      {
+        class => 'MyMySQLBB',
+        key_columns => { b2 => 'id' },
       },
     );
 
@@ -1491,6 +1659,7 @@ EOF
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test');
       $dbh->do('DROP TABLE rose_db_object_other');
+      $dbh->do('DROP TABLE rose_db_object_bb');
     }
 
     $dbh->do(<<"EOF");
@@ -1505,7 +1674,15 @@ CREATE TABLE rose_db_object_other
 )
 EOF
 
-    # Create test foreign subclass
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_bb
+(
+  id    INT NOT NULL PRIMARY KEY,
+  name  VARCHAR(32)
+)
+EOF
+
+    # Create test foreign subclasses
 
     package MyInformixOtherObject;
 
@@ -1525,6 +1702,20 @@ EOF
 
     MyInformixOtherObject->meta->initialize;
 
+    package MyInformixBB;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    MyInformixBB->meta->table('rose_db_object_bb');
+
+    MyInformixBB->meta->columns
+    (
+      id   => { type => 'int', primary_key => 1 },
+      name => { type => 'varchar'},
+    );
+
+    MyInformixBB->meta->initialize;
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -1540,6 +1731,8 @@ CREATE TABLE rose_db_object_test
   fk1            INT,
   fk2            INT,
   fk3            INT,
+  b1             INT REFERENCES rose_db_object_bb (id),
+  b2             INT REFERENCES rose_db_object_bb (id),
   last_modified  DATETIME YEAR TO FRACTION(5),
   date_created   DATETIME YEAR TO FRACTION(5),
   
@@ -1571,6 +1764,8 @@ EOF
       fk1      => { type => 'int' },
       fk2      => { type => 'int' },
       fk3      => { type => 'int' },
+      b1       => { type => 'int' },
+      b2       => { type => 'int' },
       last_modified => { type => 'timestamp' },
       date_created  => { type => 'timestamp' },
     );
@@ -1586,6 +1781,18 @@ EOF
           fk2 => 'k2',
           fk3 => 'k3',
         }
+      },
+
+      bb1 =>
+      {
+        class => 'MyInformixBB',
+        key_columns => { b1 => 'id' },
+      },
+
+      bb2 =>
+      {
+        class => 'MyInformixBB',
+        key_columns => { b2 => 'id' },
       },
     );
 
@@ -1622,6 +1829,7 @@ END
 
     $dbh->do('DROP TABLE rose_db_object_test');
     $dbh->do('DROP TABLE rose_db_object_other');
+    $dbh->do('DROP TABLE rose_db_object_bb');
 
     $dbh->disconnect;
   }

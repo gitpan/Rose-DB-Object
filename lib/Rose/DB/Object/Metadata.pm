@@ -13,8 +13,9 @@ use Rose::DB::Object::Metadata::PrimaryKey;
 use Rose::DB::Object::Metadata::UniqueKey;
 use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
+use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.045';
+our $VERSION = '0.046';
 
 our $Debug = 0;
 
@@ -23,13 +24,13 @@ use Rose::Object::MakeMethods::Generic
   scalar => 
   [
     'class',
-    'column_name_to_method_name_mapper',
   ],
 
   'scalar --get_set_init' =>
   [
     'db',
     'primary_key',
+    'column_name_to_method_name_mapper',
   ],
 
   boolean => 
@@ -48,6 +49,10 @@ use Rose::Class::MakeMethods::Generic
 
     auto_helper_classes      => { interface => 'get_set_all' },
     delete_auto_helper_class => { interface => 'delete', hash_key => 'auto_helper_classes' },
+
+    relationship_type_classes => { interface => 'get_set_all' },
+    relationship_type_class   => { interface => 'get_set', hash_key => 'relationship_type_classes' },
+    delete_relationship_type_class => { interface => 'delete', hash_key => 'relationship_type_classes' },
 
     class_registry => => { interface => 'get_set_all' },
   ],
@@ -112,6 +117,14 @@ __PACKAGE__->column_type_classes
 
   'chkpass'   => 'Rose::DB::Object::Metadata::Column::Pg::Chkpass',
 );
+
+__PACKAGE__->relationship_type_classes
+(
+  'one to one'  => 'Rose::DB::Object::Metadata::Relationship::OneToOne',
+  'one to many' => 'Rose::DB::Object::Metadata::Relationship::OneToMany',
+);
+
+sub init_column_name_to_method_name_mapper() { 0 }
 
 our %Objects;
 
@@ -214,7 +227,16 @@ sub init_with_db
     }
   }
 
-  $self->_clear_table_generated_values  if($changed);
+  if($changed)
+  {
+    $self->_clear_table_generated_values;
+
+    # Also clear the select few column-generated values that
+    # depend on the database
+    $self->{'column_names_string_sql'} = undef;
+    $self->{'column_names_sql'} = undef;
+  }
+
   return;
 }
 
@@ -471,28 +493,15 @@ sub sync_keys_to_columns
   return;
 }
 
+
 sub column
 {
   my($self, $name) = (shift, shift);
 
   if(@_)
   {
-    my $spec = shift;
-
-    if(ref $spec eq 'HASH')
-    {
-      $self->delete_column($name);
-      return $self->add_column($name => $spec);
-    }
-    elsif(UNIVERSAL::isa($spec, 'Rose::DB::Object::Metadata::Column'))
-    {
-      $spec->name($name);
-      return $self->{'columns'}{$name} = $spec;
-    }
-    else
-    {
-      Carp::croak "Invalid column specification: $_[0]";
-    }
+    $self->delete_column($name);
+    $self->add_column($name => @_);
   }
 
   return $self->{'columns'}{$name}  if($self->{'columns'}{$name});
@@ -522,14 +531,19 @@ sub add_columns
 
   $self->_clear_column_generated_values;
 
-  while(@_)
+  ARG: while(@_)
   {
     my $name = shift;
 
     if(UNIVERSAL::isa($name, 'Rose::DB::Object::Metadata::Column'))
     {
-      $name->parent($self);
-      $self->{'columns'}{$name->name} = $name;
+      my $column = $name;
+
+      Carp::croak "Relationship $column lacks a name()"
+        unless($column->name =~ /\S/);
+
+      $column->parent($self);
+      $self->{'columns'}{$column->name} = $column;
       next;
     }
 
@@ -543,9 +557,26 @@ sub add_columns
       next;
     }
 
-    if(ref $_[0] eq 'HASH')
+    if(UNIVERSAL::isa($_[0], 'Rose::DB::Object::Metadata::Column'))
+    {
+      my $column = $_[0];
+      $column->name($name);
+      $column->parent($self);
+      $self->{'columns'}{$name} = $column;
+    }
+    elsif(ref $_[0] eq 'HASH')
     {
       my $info = shift;
+
+      if(exists $info->{'alias'})
+      {
+        Carp::croak "Cannot specify both 'alias' and 'method_name' properties"
+          if(defined $info->{'method_name'});
+
+        $info->{'method_name'} = delete $info->{'alias'};
+      }
+
+      my $alias_name = $info->{'method_name'};
 
       if($info->{'primary_key'})
       {
@@ -566,6 +597,11 @@ sub add_columns
       $Debug && warn $self->class, " - adding $name $column_class\n";
       $self->{'columns'}{$name} = 
         $column_class->new(%$info, name => $name, parent => $self);
+
+      if(defined $alias_name)
+      {
+        $self->alias_column($name, $alias_name);
+      }
     }
     else
     {
@@ -573,6 +609,124 @@ sub add_columns
     }
   }
 }
+
+*add_column = \&add_columns;
+
+sub relationship
+{
+  my($self, $name) = (shift, shift);
+
+  if(@_)
+  {
+    $self->delete_relationship($name);
+    $self->add_relationship($name => @_);
+  }
+
+  return $self->{'relationships'}{$name}  if($self->{'relationships'}{$name});
+  return undef;
+}
+
+sub delete_relationship
+{
+  my($self, $name) = @_;
+  delete $self->{'relationships'}{$name};
+  return;
+}
+
+sub relationships
+{
+  my($self) = shift;
+
+  if(@_)
+  {
+    $self->delete_relationships;
+    $self->add_relationships(@_);
+  }
+
+  return wantarray ?
+    (sort { $a->name cmp $b->name } values %{$self->{'relationships'} ||= {}}) :
+    [ sort { $a->name cmp $b->name } values %{$self->{'relationships'} ||= {}} ];
+}
+
+sub delete_relationships
+{
+  my($self, $name) = @_;
+  $self->{'relationships'} = {};
+  return;
+}
+
+sub add_relationships
+{
+  my($self) = shift;
+
+  my $class = ref $self;
+
+  ARG: while(@_)
+  {
+    my $name = shift;
+
+    if(UNIVERSAL::isa($name, 'Rose::DB::Object::Metadata::Relationship'))
+    {
+      my $relationship = $name;
+
+      Carp::croak "Relationship $relationship lacks a name()"
+        unless($relationship->name =~ /\S/);
+
+      if(defined $self->{'relationships'}{$relationship->name})
+      {
+        Carp::croak $self->class, " already has a relationship named '", 
+                    $relationship->name, "'";
+      }
+
+      $relationship->parent($self);
+      $self->{'relationships'}{$relationship->name} = $relationship;
+      next;
+    }
+
+    unless(ref $_[0])
+    {
+      Carp::croak "No relationship specificaton found for relationship name '$name'";
+    }
+
+    if(UNIVERSAL::isa($_[0], 'Rose::DB::Object::Metadata::Relationship'))
+    {
+      my $relationship = $_[0];
+      $relationship->name($name);
+      $relationship->parent($self);
+      $self->{'relationships'}{$name} = $relationship;
+    }
+    elsif(ref $_[0] eq 'HASH')
+    {
+      my $info = shift;
+
+      if(defined $self->{'relationships'}{$name})
+      {
+        Carp::croak $self->class, " already has a relationship named '$name'";
+      }
+
+      my $type = $info->{'type'} or 
+        Carp::croak "Missing type parameter for relationship '$name'";
+
+      my $relationship_class = $class->relationship_type_class($type)
+        or Carp::croak "No relationship class set for relationship type '$type'";
+
+      unless($self->relationship_class_is_loaded($relationship_class))
+      {
+        $self->load_relationship_class($relationship_class);
+      }
+
+      $Debug && warn $self->class, " - adding $name $relationship_class\n";
+      $self->{'relationships'}{$name} = 
+        $relationship_class->new(%$info, name => $name, parent => $self);
+    }
+    else
+    {
+      Carp::croak "Invalid relationship name or specification: $_[0]";
+    }
+  }
+}
+
+*add_relationship = \&add_relationships;
 
 my %Class_Loaded;
 
@@ -590,7 +744,19 @@ sub load_column_class
 
 sub column_class_is_loaded { $Class_Loaded{$_[1]} }
 
-*add_column = \&add_columns;
+sub load_relationship_class
+{
+  my($self, $relationship_class) = @_;
+
+  eval "require $relationship_class";
+
+  Carp::croak "Could not load relationship class '$relationship_class' - $@"
+    if($@);
+
+  $Class_Loaded{$relationship_class}++;
+}
+
+sub relationship_class_is_loaded { $Class_Loaded{$_[1]} }
 
 sub add_foreign_keys
 {
@@ -602,7 +768,28 @@ sub add_foreign_keys
 
     if(UNIVERSAL::isa($name, 'Rose::DB::Object::Metadata::ForeignKey'))
     {
-      $self->{'foreign_keys'}{$name->name} = $name;
+      my $fk = $name;
+
+      Carp::croak "Foreign key $fk lacks a name()"
+        unless($fk->name =~ /\S/);
+
+      if(defined $self->{'foreign_keys'}{$fk->name})
+      {
+        Carp::croak $self->class, " already has a foreign key named '", 
+                    $fk->name, "'";
+      }
+
+      $self->{'foreign_keys'}{$fk->name} = $fk;
+
+      unless(defined $self->relationship($fk->name))
+      {
+        $self->add_relationship(
+          $self->relationship_type_class('one to one')->new(
+            name        => $fk->name, 
+            class       => $fk->class,
+            foreign_key => $fk));
+      }
+
       next;
     }
 
@@ -610,9 +797,23 @@ sub add_foreign_keys
     {
       my $info = shift;
 
+      if(defined $self->{'foreign_keys'}{$name})
+      {
+        Carp::croak $self->class, " already has a foreign key named '$name'";
+      }
+
       $Debug && warn $self->class, " - adding $name foreign key\n";
-      $self->{'foreign_keys'}{$name} = 
+      my $fk = $self->{'foreign_keys'}{$name} = 
         Rose::DB::Object::Metadata::ForeignKey->new(%$info, name => $name);
+
+      unless(defined $self->relationship($name))
+      {
+        $self->add_relationship(
+          $self->relationship_type_class('one to one')->new(
+            name        => $name,
+            class       => $fk->class,
+            foreign_key => $fk));
+      }
     }
     else
     {
@@ -627,10 +828,21 @@ sub foreign_key
 {
   my($self, $name) = (shift, shift);
 
-  $self->add_foreign_keys($name => shift)  if(@_);
+  if(@_)
+  {
+    $self->delete_foreign_key($name);
+    $self->add_foreign_key($name => @_);
+  }
 
   return $self->{'foreign_keys'}{$name}  if($self->{'foreign_keys'}{$name});
   return undef;
+}
+
+sub delete_foreign_key
+{
+  my($self, $name) = @_;
+  delete $self->{'foreign_keys'}{$name};
+  return;
 }
 
 sub foreign_keys
@@ -703,9 +915,9 @@ sub register_class
   my $reg = $self->class_registry;
 
   # Combine keys using $;, which is "\034" (0x1C) by default. But just to
-  # make sure, we'll localize it.  What we're looking for is a value that
-  # wont' show up in a catalog, schema, or table name, so I'm guarding
-  # against someone changing it to "-" elsewhere in the code or whatever.
+  # make sure, I'll localize it.  What I'm looking for is a value that
+  # won't show up in a catalog, schema, or table name, so I'm guarding
+  # against someone changing it to "-" (or whatever) elsewhere in the code.
   local $; = "\034";
 
    # Register with all available information
@@ -726,10 +938,10 @@ sub class_for
   my $catalog = $args{'catalog'};
   my $schema  = $args{'schema'};
 
-  $catalog  = NULL_CATALOG  unless(defined $catalog);
-  $schema   = NULL_SCHEMA   unless(defined $schema);
+  $catalog = NULL_CATALOG  unless(defined $catalog);
+  $schema  = NULL_SCHEMA   unless(defined $schema);
 
-  my $table   = $args{'table'} 
+  my $table = $args{'table'} 
     or Carp::croak "Missing required table parameter";
 
   my $reg = $self->class_registry;
@@ -754,18 +966,18 @@ sub class_for
 #             $_[0]->{'made_methods'}{$_[1]};
 #}
 
-sub make_methods
+sub make_column_methods
 {
   my($self) = shift;
   my(%args) = @_;
 
-  my $class =  $self->class;
+  my $class = $self->class;
 
   my %opts = 
   (
     target_class => $class, 
     ($args{'preserve_existing'} ? (preserve_existing => 1) : ()),
-    ($args{'replace_existing'} ? (override_existing => 1) : ()),
+    ($args{'replace_existing'}  ? (override_existing => 1) : ()),
   );
 
   my $aliases = $self->column_aliases;
@@ -819,9 +1031,49 @@ sub make_methods
 
     $column->make_method(options => \%opts);
 
+    # Primary key columns can be aliased, but we make a column-named 
+    # method anyway.
+    if($method ne $name)
+    {
+      foreach my $column ($self->primary_key_column_names)
+      {
+        if($name eq $column)
+        {
+          if(my $reason = $self->method_name_is_reserved($name, $class))
+          {
+            Carp::croak
+              "Cannot create method for primary key column '$name' ",
+              "- $reason  Although primary keys may be aliased, doing so ",
+              "will not avoid conflicts with reserved method names because a ",
+              "method named after the primary key column itself must also be ",         
+              "created.";
+          }
+
+          no strict 'refs';
+          *{"${class}::$name"} = \&{"${class}::$method"};
+        }
+      }
+    }
   }
 
   $self->column_methods(\%methods);
+}
+
+sub make_foreign_key_methods
+{
+  my($self) = shift;
+  my(%args) = @_;
+
+  my $class = $self->class;
+
+  my %opts = 
+  (
+    target_class => $class, 
+    ($args{'preserve_existing'} ? (preserve_existing => 1) : ()),
+    ($args{'replace_existing'}  ? (override_existing => 1) : ()),
+  );
+
+  my %methods;
 
   foreach my $foreign_key ($self->foreign_keys)
   {
@@ -831,14 +1083,124 @@ sub make_methods
     if(my $reason = $self->method_name_is_reserved($method, $class))
     {
       Carp::croak "Cannot create method '$method' - $reason  ",
-                  "Use alias_column() to map it to another name."
+                  "Choose a different foreign key name."
     }
 
     # Let the method maker handle this, I suppose...
     #next  if($class->can($method) && $args{'preserve_existing'});
 
+    $methods{$foreign_key->name} = $method;
+
     $foreign_key->make_method(options => \%opts);
+
+    # Keep foreign keys and their corresponding "one to one"
+    # relationships in sync.
+    my $fk_id = $foreign_key->id;
+
+    foreach my $relationship ($self->relationships)
+    {
+      next  unless($relationship->type eq 'one to one');
+
+      if($fk_id eq $relationship->id)
+      {
+        $relationship->foreign_key($foreign_key);
+        $relationship->method_name($method);
+      }
+    }
   }
+
+  $self->foreign_key_methods(\%methods);
+}
+
+sub make_relationship_methods
+{
+  my($self) = shift;
+  my(%args) = @_;
+
+  my $class = $self->class;
+
+  my %opts = 
+  (
+    target_class => $class, 
+    ($args{'preserve_existing'} ? (preserve_existing => 1) : ()),
+    ($args{'replace_existing'}  ? (override_existing => 1) : ()),
+  );
+
+  my %methods;
+
+  foreach my $relationship ($self->relationships)
+  {
+    my $method = $relationship->method_name || 
+                 $relationship->method_name($relationship->name);
+
+    if(my $reason = $self->method_name_is_reserved($method, $class))
+    {
+      Carp::croak "Cannot create method '$method' - $reason  ",
+                  "Choose a different relationship name."
+    }
+
+    # Preserve existing foreign key method with the same name
+    if($relationship->type eq 'one to one')
+    {
+      my $rel_id = $relationship->id;
+
+      foreach my $fk ($self->foreign_keys)
+      {
+        if($rel_id eq $fk->id)
+        {
+          my $fk_method = $self->foreign_key_method($fk->name) || $fk->method_name;
+
+          if(defined $fk_method && $fk_method eq $method)
+          {
+            $methods{$relationship->name} = $fk_method;
+            last;
+          }
+        }
+      }
+    }
+
+    unless(defined $methods{$relationship->name})
+    {
+      # Let the method maker handle this, I suppose...
+      #next  if($class->can($method) && $args{'preserve_existing'});
+
+      $methods{$relationship->name} = $method;
+
+      $relationship->make_method(options => \%opts);
+    }
+
+    # Keep "one to one" relationships and their corresponding 
+    # foreign keys in sync.
+    if($relationship->type eq 'one to one')
+    {
+      my $rel_id = $relationship->id;
+
+      foreach my $fk ($self->foreign_keys)
+      {
+        if(!defined $fk->method_name && $rel_id eq $fk->id)
+        {
+          $fk->method_name($method);
+          $relationship->foreign_key($fk);
+          $self->foreign_key_method($fk->name => $method);
+          last;
+        }
+      }
+    }
+  }
+
+  # Pointless, so removed...
+  #$self->relationship_methods(\%methods);
+
+  return;
+}
+
+sub make_methods
+{
+  my($self) = shift;
+
+  $self->make_column_methods(@_);
+  $self->make_foreign_key_methods(@_);
+  $self->make_relationship_methods(@_);
 }
 
 sub generate_primary_key_values
@@ -940,10 +1302,22 @@ sub column_names
   return wantarray ? @{$self->{'column_names'}} : $self->{'column_names'};
 }
 
+sub column_names_string_sql
+{
+  my($self) = shift;
+
+  return $self->{'column_names_string_sql'} ||= 
+    join(', ', sort { $a cmp $b } map { $_->name_sql } $self->columns);
+}
+
 sub column_names_sql
 {
   my($self) = shift;
-  return $self->{'column_names_sql'} ||= join(', ', $self->column_names);
+
+  $self->{'column_names_sql'} ||= 
+    [ map { $_->name_sql } sort { $a->name cmp $b->name } $self->columns ];
+
+  return wantarray ? @{$self->{'column_names_sql'}} : $self->{'column_names_sql'};
 }
 
 sub method_column
@@ -965,8 +1339,12 @@ sub method_column
 sub column_method_names
 {
   my($self) = shift;
-  $self->{'column_method_names'} ||= [ map { $self->column_method($_) } $self->column_names ];
-  return wantarray ? @{$self->{'column_method_names'}} : $self->{'column_method_names'};
+
+  $self->{'column_method_names'} ||= 
+    [ map { $self->column_method($_) } $self->column_names ];
+
+  return wantarray ? @{$self->{'column_method_names'}} :
+                     $self->{'column_method_names'};
 }
 
 *column_accessor_method_names = \&column_method_names;
@@ -985,13 +1363,15 @@ sub alias_column
   Carp::croak "Pointless alias for '$name' to '$new_name' for table ", $self->table
     unless($name ne $new_name);
 
-  foreach my $column ($self->primary_key_column_names)
-  {
-    if($name eq $column)
-    {
-      Carp::croak "Cannot alias primary key column '$name'";
-    }
-  }
+  # We now allow this, but create a duplicate method using the real
+  # column name anyway in make_column_methods().
+  #foreach my $column ($self->primary_key_column_names)
+  #{
+  #  if($name eq $column)
+  #  {
+  #    Carp::croak "Cannot alias primary key column '$name'";
+  #  }
+  #}
 
   $self->_clear_column_generated_values;
 
@@ -1026,6 +1406,24 @@ sub column_methods
 *column_accessor_methods = \&column_methods;
 *column_mutator_methods  = \&column_methods;
 
+sub foreign_key_method
+{
+  my($self, $name, $method) = @_;
+
+  if(@_ > 2)
+  {
+    return $self->{'foreign_key_methods'}{$name} = $method;
+  }
+
+  return $self->{'foreign_key_methods'}{$name};
+}
+
+sub foreign_key_methods
+{
+  return $_[0]->{'foreign_key_methods'}  unless(@_ > 1);
+  return $_[0]->{'foreign_key_methods'} = (ref $_[1] eq 'HASH') ? $_[1] : { @_[1 .. $#_] };
+}
+
 sub fq_table_sql
 {
   my($self) = shift;
@@ -1041,7 +1439,7 @@ sub load_sql
 
   no warnings;
   return $self->{'load_sql'}{join("\0", @$key_columns)} ||= 
-    'SELECT ' . $self->column_names_sql . ' FROM ' .
+    'SELECT ' . $self->column_names_string_sql . ' FROM ' .
     $self->fq_table_sql . ' WHERE ' .
     join(' AND ',  map { "$_ = ?" } @$key_columns);
 }
@@ -1054,7 +1452,7 @@ sub load_sql_with_null_key
 
   no warnings;
   return 
-    'SELECT ' . $self->column_names_sql . ' FROM ' .
+    'SELECT ' . $self->column_names_string_sql . ' FROM ' .
     $self->fq_table_sql . ' WHERE ' .
     join(' AND ',  map { defined $key_values->[$i++] ? "$_ = ?" : "$_ IS NULL" }
     @$key_columns);
@@ -1076,15 +1474,16 @@ sub update_sql
   no warnings;
   return $self->{'update_sql'}{$cache_key} = 
     'UPDATE ' . $self->fq_table_sql . " SET \n" .
-    join(",\n", map { "    $_ = ?" } grep { !$key{$_} } $self->column_names) .
-    "\nWHERE " . join(' AND ', map { "$_ = ?" } @$key_columns);
+    join(",\n", map { '    ' . $self->column($_)->name_sql . ' = ?' } 
+                grep { !$key{$_} } $self->column_names) .
+    "\nWHERE " . 
+    join(' AND ', map { $self->column($_)->name_sql . ' = ?' } @$key_columns);
 }
 
-# This is nonsensical right now because the primary key 
-# always has to be non-null, and any update will use the 
-# primary key instead of a unique key.  But I'll leave the
-# code here (commented out) just in case.
-
+# This is nonsensical right now because the primary key always has to be
+# non-null, and any update will use the primary key instead of a unique
+# key. But I'll leave the code here (commented out) just in case.
+#
 # sub update_sql_with_null_key
 # {
 #   my($self, $key_columns, $key_values) = @_;
@@ -1095,12 +1494,14 @@ sub update_sql
 #   no warnings;
 #   return
 #     'UPDATE ' . $self->fq_table_sql . " SET \n" .
-#     join(",\n", map { "    $_ = ?" } grep { !$key{$_} } $self->column_names) .
+#     join(",\n", map { '    ' . $self->column($_)->name_sql . ' = ?' } 
+#                 grep { !$key{$_} } $self->column_names) .
 #     "\nWHERE " . join(' AND ', map { defined $key_values->[$i++] ? "$_ = ?" : "$_ IS NULL" }
-#     @$key_columns);
+#     map { $self->column($_)->name_sql } @$key_columns);
 # }
 #
 # Ditto for this version of update_sql_with_inlining which handles null keys
+#
 # sub update_sql_with_inlining
 # {
 #   my($self, $obj, $key_columns, $key_values) = @_;
@@ -1121,11 +1522,11 @@ sub update_sql
 #     
 #     if($column->should_inline_value($db, $value))
 #     {
-#       push(@updates, "  $column = $value");
+#       push(@updates, '  ' . $column->name_sql . " = $value");
 #     }
 #     else
 #     {
-#       push(@updates, "  $column = ?");
+#       push(@updates, '  ' . $column->name_sql . ' = ?');
 #       push(@bind, $value);
 #     }
 #   }
@@ -1139,7 +1540,7 @@ sub update_sql
 #      'UPDATE ' . $self->fq_table_sql . " SET \n") .
 #     join(",\n", @updates) . "\nWHERE " . 
 #     join(' AND ', map { defined $key_values->[$i++] ? "$_ = ?" : "$_ IS NULL" }
-#                   @$key_columns),
+#                   map { $self->column($_)->name_sql } @$key_columns),
 #     \@bind
 #   );
 # }
@@ -1164,11 +1565,11 @@ sub update_sql_with_inlining
 
     if($column->should_inline_value($db, $value))
     {
-      push(@updates, "  $column = $value");
+      push(@updates, '  ' . $column->name_sql . " = $value");
     }
     else
     {
-      push(@updates, "  $column = ?");
+      push(@updates, '  ' . $column->name_sql . ' = ?');
       push(@bind, $value);
     }
   }
@@ -1181,7 +1582,7 @@ sub update_sql_with_inlining
     ($self->{'update_sql_with_inlining_start'} ||= 
      'UPDATE ' . $self->fq_table_sql . " SET \n") .
     join(",\n", @updates) . "\nWHERE " . 
-    join(' AND ', map { "$_ = ?" } @$key_columns),
+    join(' AND ', map { $self->column($_)->name_sql . ' = ?' } @$key_columns),
     \@bind
   );
 }
@@ -1193,7 +1594,7 @@ sub insert_sql
   no warnings;
   return $self->{'insert_sql'} ||= 
     'INSERT INTO ' . $self->fq_table_sql . "\n(\n" .
-    join(",\n", map { "  $_" } $self->column_names) .
+    join(",\n", map { "  $_" } $self->column_names_sql) .
     "\n)\nVALUES\n(\n" . join(",\n", map { "  ?" } $self->column_names) .
     "\n)";
 }
@@ -1233,7 +1634,7 @@ sub insert_sql_with_inlining
   (
     ($self->{'insert_sql_with_inlining_start'} ||=
     'INSERT INTO ' . $self->fq_table_sql . "\n(\n" .
-    join(",\n", map { "  $_" } $self->column_names) .
+    join(",\n", map { "  $_" } $self->column_names_sql) .
     "\n)\nVALUES\n(\n") . join(",\n", @places) . "\n)",
     \@bind
   );
@@ -1244,7 +1645,8 @@ sub delete_sql
   my($self) = shift;
   return $self->{'delete_sql'} ||= 
     'DELETE FROM ' . $self->fq_table_sql . ' WHERE ' .
-    join(' AND ', map { "$_ = ?" } $self->primary_key_column_names);
+    join(' AND ', map {  $self->column($_)->name_sql . ' = ?' } 
+                  $self->primary_key_column_names);
 }
 
 sub _clear_table_generated_values
@@ -1267,6 +1669,7 @@ sub _clear_column_generated_values
   $self->{'fq_table_sql'}        = undef;
   $self->{'column_names'}        = undef;
   $self->{'columns_names_sql'}   = undef;
+  $self->{'column_names_string_sql'} = undef;
   $self->{'column_method_names'} = undef;
   $self->{'method_columns'}      = undef;
   $self->{'load_sql'}   = undef;
@@ -1449,6 +1852,14 @@ Rose::DB::Object::Metadata - Database object metadata.
     },
   );
 
+  # This part cannot be done automatically
+  $meta->add_relationship
+  (
+    type       => 'one to many',
+    class      => 'Price',
+    column_map => { id => 'id_product' },
+  );
+
   ...
 
 =head1 DESCRIPTION
@@ -1460,6 +1871,14 @@ L<Rose::DB::Object::Metadata> objects also store information about the L<Rose::D
 L<Rose::DB::Object::Metadata> objects objects are per-class singletons; there is one L<Rose::DB::Object::Metadata> object for each L<Rose::DB::Object>-derived class.  Metadata objects are almost never explicitly instantiated.  Rather, there are automatically created and access through L<Rose::DB::Object>-derived objects' L<meta|Rose::DB::Object/meta> method.
 
 Once created, metadata objects can be populated manually or automatically.  Both techniques are shown in the L<synopsis|SYNOPSIS> above.  The automatic mode works by asking the database itself for the information.  There are some caveats to this approach.  See the L<auto-initialization|/"AUTO-INITIALIZATION"> section for more information.
+
+L<Rose::DB::Object::Metadata> objects contain three categories of objects that are responsible for creating object methods in L<Rose::DB::Object>-derived classes: columns, foreign keys, and relationships.
+
+Column objects are subclasses of L<Rose::DB::Object::Metadata::Column>.  They are intended to store as much information as possible about each column.  The particular class of the column object created for a database column is determined by a L<mapping table|column_type_classes>.   The column class, in turn, is responsible for creating the accessor/mutator method(s) for the column.  When it creates these methods, the column class can use (or ignore) any information stored in the column object.
+
+Foreign key objects are of the class L<Rose::DB::Object::Metadata::ForeignKey>.  They store information about columns that refer to columns in other tables that are fronted by their own L<Rose::DB::Object>-derived classes.  A foreign key object is responsible for creating accessor method(s) to fetch the foreign object from the foreign table.
+
+Relationship objects are subclasses of L<Rose::DB::Object::Metadata::Relationship>.  They store information about a table's relationship to other tables that are fronted by their own L<Rose::DB::Object>-derived classes.  The particular class of the relationship object created for each relationship is determined by a L<mapping table|relationship_type_classes>.   A relationship object is responsible for creating accessor method(s) to fetch the foreign objects from the foreign table.
 
 =head1 AUTO-INITIALIZATION
 
@@ -1483,7 +1902,15 @@ Also, don't forget that auto-initialization requires a database connection.  L<R
 
 =head3 Detail
 
-There is a handy L<DBI> API for extracting metadata from databases, but unfortunately, very few DBI drivers support it fully.  Some don't support it at all.  In almost all cases, some manual work is required to (often painfully) extract information from the database's "system tables" or "catalog."
+First, auto-initialization cannot generate information that exists only in the mind of the programmer.  The most common example is a relationship between two database tables that is either ambiguous or totally unexpressed by the database itself.  
+
+For example, if a foreign key constraint does not exist, the "one to one" relationship between rows in two different tables cannot be extracted from the database, and therefore cannot be auto-initialized.
+
+Similarly, in the L<synopsis|SYNOPSIS> above, the "one to many" relationship between the C<Product> and C<Price> classes cannot be auto-initialized because it lacks an unambiguous analog within the database.  Even assuming that the "prices" table (fronted by the C<Price>) class has a foreign key that points to the "products" table, the lack of a corresponding foreign key in the "products" table that points back to the "prices" table does not necessarily mean that the relationship is "one product to many prices."  It could be that the relationship is really "one product to one price" and the foreign key constraint was omitted from the "products" table for performance reasons (to give just one example).
+
+As it turns out, the relationship really is "one product to many prices", but this is something that only the programmer knows for sure.  Therefore, this information must be specified manually, as shown near the bottom of the L<synopsis|SYNOPSIS>.
+
+Even within the realm of information that, by all rights, should be available in the database, there are limitations.  Although there is a handy L<DBI> API for extracting metadata from databases, unfortunately, very few DBI drivers support it fully.  Some don't support it at all.  In almost all cases, some manual work is required to (often painfully) extract information from the database's "system tables" or "catalog."
 
 More troublingly, databases do not always provide all the metadata that a human could extract from the series of SQL statement that created the table in the first place.  Sometimes, the information just isn't in the database to be extracted, having been lost in the process of table creation.  Here's just one example.  Consider this MySQL table definition:
 
@@ -1569,256 +1996,6 @@ This hybrid approach to metadata population strikes a good balance between upfro
 
 =over 4
 
-=item B<for_class CLASS>
-
-Returns (or creates, if needed) the single L<Rose::DB::Object::Metadata> object associated with CLASS, where CLASS is the name of a L<Rose::DB::Object>-derived class.
-
-=back
-
-=head1 CONSTRUCTOR
-
-=over 4
-
-=item B<new PARAMS>
-
-Returns (or creates, if needed) the single L<Rose::DB::Object::Metadata> associated with a particular L<Rose::DB::Object>-derived class, modifying or initializing it according to PARAMS, where PARAMS are name/value pairs.
-
-Any object method is a valid parameter name, but PARAMS I<must> include a value for the C<class> parameter, since that's how L<Rose::DB::Object::Metadata> objects are mapped to their corresponding L<Rose::DB::Object>-derived class.
-
-=back
-
-=head1 OBJECT METHODS
-
-=over 4
-
-=item B<add_column ARGS>
-
-This is an alias for the L<add_columns> method.
-
-=item B<add_columns ARGS>
-
-Add the columns specified by ARGS to the list of columns for the table.  Columns can be specified in ARGS in several ways.
-
-If an argument is a subclass of L<Rose::DB::Object::Metadata::Column>, it is added as-is.
-
-If an argument is a plain scalar, it is taken as the name of a scalar column.  A column object of the class returned by the method call C<$obj-E<gt>column_type_class('scalar')> is constructed and then added.
-
-Otherwise, only name/value pairs are considered, where the name is taken as the column name and the value must be a reference to a hash.
-
-If the hash contains the key "primary_key" with a true value, then the column is marked as a L<primary_key_member|Rose::DB::Object::Metadata::Column/is_primary_key_member> and the column name is added to the list of primary key columns by calling the L<add_primary_key_column> method with the column name as its argument.
-
-Then the L<column_type_class> method is called with the value of the "type" hash key as its argument (or "scalar" if that key is missing), returning the name of a column class.  Finally, a new column object of that class is constructed and is passed all the remaining pairs in the hash reference, along with the name and type of the column.  That column object is then added to the list of columns.
-
-This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
-
-Example:
-
-    $meta->add_columns
-    (
-      # Add a scalar column
-      'name', 
-      #
-      # which is roughly equivalent to:
-      #
-      # $class = $meta->column_type_class('scalar');
-      # $col = $class->new(name => 'name');
-      # (then add $col to the list of columns)
-
-      # Add by name/hashref pair
-      age => { type => 'int', default => 5 },
-      #
-      # which is roughly equivalent to:
-      #
-      # $class = $meta->column_type_class('int');
-      # $col = $class->new(name    => 'age',
-      #                    type    => 'int', 
-      #                    default => 5, );
-      # (then add $col to the list of columns)
-
-      # Add a column object directly
-      Rose::DB::Object::Metadata::Column::Date->new(
-        name => 'start_date'),
-    );
-
-=item B<add_foreign_keys ARGS>
-
-Add foreign keys as specified by ARGS.  Foreign keys can be specified in ARGS in several ways.
-
-If an argument is a L<Rose::DB::Object::Metadata::ForeignKey> object (or subclass thereof), it is added as-is.
-
-Otherwise, only name/value pairs are considered, where the name is taken as the foreign key name and the value must be a reference to a hash.
-
-A new L<Rose::DB::Object::Metadata::ForeignKey> object is constructed and is passed all the pairs in the hash reference, along with the name of the foreign key as the value of the "name" parameter.  That foreign key object is then added to the list of foreign keys.
-
-This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
-
-Example:
-
-    $meta->add_foreign_keys
-    (      
-      # Add by name/hashref pair
-      category => 
-      {
-        class       => 'Category', 
-        key_columns => { category_id => 'id' },
-      },
-      #
-      # which is roughly equivalent to:
-      #
-      # $fk = Rose::DB::Object::Metadata::ForeignKey->new(
-      #         class       => 'Category', 
-      #         key_columns => { category_id => 'id' },
-      #         name        => 'category');
-      # (then add $fk to the list of foreign keys)
-
-      # Add a foreign key object directly
-      Rose::DB::Object::Metadata::ForeignKey->new(...),
-    );
-
-=item B<add_primary_key_column COLUMN>
-
-This method is an alias for L<add_primary_key_columns>.
-
-=item B<add_primary_key_columns COLUMNS>
-
-Add COLUMNS to the list of columns that make up the primary key.  COLUMNS can be a list or reference to an array of column names.
-
-=item B<add_unique_key KEY>
-
-This method is an alias for L<add_unique_key>.
-
-=item B<add_unique_keys KEYS>
-
-Add new unique keys specified by KEYS.  Unique keys can be specified in KEYS in two ways.
-
-If an argument is a L<Rose::DB::Object::Metadata::UniqueKey> object (or subclass thereof), then its L<parent|Rose::DB::Object::Metadata::UniqueKey/parent> is set to the metadata object itself, and it is added.
-
-Otherwise, an argument must be a reference to an array of column names that make up a unique key.  A new L<Rose::DB::Object::Metadata::UniqueKey> is created, with its L<parent|Rose::DB::Object::Metadata::UniqueKey/parent> set to the metadata object itself, and then the unique key object is added to this list of unique keys for this L<class>.
-
-=item B<alias_column NAME, ALIAS>
-
-Use ALIAS instead of NAME as the accessor method name for column named NAME.  Note that primary key columns cannot be aliased.  If the column NAME is part of the primary key, a fatal error will occur.
-
-It is sometimes necessary to use an alias for a column because the column name  conflicts with an existing L<Rose::DB::Object> method name.
-
-For example, imagine a column named "save".  The L<Rose::DB::Object> API already defines a method named L<save>, so obviously that name can't be used for the accessor method for the "save" column.  To solve this, make an alias:
-
-    $meta->alias_column(save => 'save_flag');
-
-See the L<Rose::DB::Object> documentation or call the L<method_name_is_reserved> method to determine if a method name is reserved.
-
-=item B<allow_inline_column_values [BOOL]>
-
-Get or set the boolean flag that indicates whether or not the associated L<Rose::DB::Object>-derived class should try to inline column values that L<DBI> does not handle correctly when they are bound to placeholders using L<bind_columns>.  The default value is false.
-
-Enabling this flag reduces the performance of the L<update> and L<insert> operations on the L<Rose::DB::Object>-derived object.  But it is sometimes necessary to enable the flag because some L<DBI> drivers do not (or cannot) always do the right thing when binding values to placeholders in SQL statements.  For example, consider the following SQL for the Informix database:
-
-    CREATE TABLE test (d DATETIME YEAR TO SECOND);
-    INSERT INTO test (d) VALUES (CURRENT);
-
-This is valid Informix SQL and will insert a row with the current date and time into the "test" table. 
-
-Now consider the following attempt to do the same thing using L<DBI> placeholders (assume the table was already created as per the CREATE TABLE statement above):
-
-    $sth = $dbh->prepare('INSERT INTO test (d) VALUES (?)');
-    $sth->execute('CURRENT'); # Error!
-
-What you'll end up with is an error like this:
-
-    DBD::Informix::st execute failed: SQL: -1262: Non-numeric 
-    character in datetime or interval.
-
-In other words, DBD::Informix has tried to quote the string "CURRENT", which has special meaning to Informix only when it is not quoted. 
-
-In order to make this work, the value "CURRENT" must be "inlined" rather than bound to a placeholder when it is the value of a "DATETIME YEAR TO SECOND" column in an Informix database.
-
-=item B<cached_objects_expire_in [DURATION]>
-
-This method is only applicable if this metadata object is associated with a L<Rose::DB::Object::Cached>-derived class.  It controls the expiration cached objects.
-
-If called with no arguments, the cache expiration limit in seconds is returned.  
-
-If passed a DURATION, the cache expiration is set.  Valid formats for DURATION are in the form "NUMBER UNIT" where NUMBER is a positive number and UNIT is one of the following:
-
-    s sec secs second seconds
-    m min mins minute minutes
-    h hr hrs hour hours
-    d day days
-    w wk wks week weeks
-    y yr yrs year years
-
-All formats of the DURATION argument are converted to seconds.  Days are exactly 24 hours, weeks are 7 days, and years are 365 days.
-
-If an object was read from the database the specified number of seconds ago or earlier, it is purged from the cache and reloaded from the database the next time it is loaded.
-
-A L<cached_objects_expire_in> value of undef or zero means that nothing will ever expire from the object cache for the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.  This is the default.
-
-=item B<catalog [CATALOG]>
-
-Get or set the database catalog name.  This attribute is not applicable to any of the supported databases, as far as I know.
-
-=item B<class [CLASS]>
-
-Get or set the L<Rose::DB::object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by L<make_methods>).
-
-=item B<class_for PARAMS>
-
-Returns the name of the L<Rose::DB::Object>-derived class associated with the C<catalog>, C<schema>, and C<table> specified by the name/value paris in PARAMS.  Catalog and/or schema maybe omitted if unknown or inapplicable, and the "best" match will be returned.  Returns undef if there is no class name registered under the specified PARAMS.
-
-=item B<clear_object_cache>
-
-Clear the memory cache for all objects of the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.
-
-=item B<column NAME [, COLUMN | HASHREF]>
-
-Get or set the column named NAME.  If just NAME is passed, the L<Rose::DB::Object::Metadata::Column>-derived column object for the column of that name is returned.  If no such column exists, undef is returned.
-
-If both NAME and COLUMN are passed, then COLUMN must be a L<Rose::DB::Object::Metadata::Column>-derived object.  COLUMN has its L<name> set to NAME, and is then stored as the column metadata object for NAME, replacing any existing column.
-
-If both NAME and HASHREF are passed, then the combination of NAME and HASHREF must form a name/value pair suitable for passing to the L<add_columns> method.  The new column specified by NAME and HASHREF replaces any existing column.
-
-=item B<columns [ARGS]>
-
-Get or set the full list of columns.  If ARGS are passed, the column list is cleared and then ARGS are passed to the L<add_columns> method.
-
-Returns a list of column objects in list context, or a reference to an array of column objects in scalar context.
-
-=item B<column_accessor_method COLUMN>
-
-Returns the name of the "get" method for COLUMN.  This is currently just an alias for L<column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to get the column value.
-
-=item B<column_aliases [MAP]>
-
-Get or set the hash that maps column names to their aliases.  If passed MAP (a list of name/value pairs or a reference to a hash) then MAP replaces the current alias mapping.  Returns a reference to the hash that maps column names to their aliases.
-
-Note that modifying this map has no effect if L<initialize> or L<make_methods> has already been called for the current L<class>.
-
-=item B<column_method COLUMN>
-
-Returns the name of the get/set accessor method for COLUMN.  If the column is not aliased, then the accessor name is the same as the column name.
-
-=item B<column_methods [MAP]>
-
-Get or set the hash that maps column names to their get/set accessor method names.  If passed MAP (a list of name/value pairs or a reference to a hash) then MAP replaces the current method mapping.
-
-Note that modifying this map has no effect if L<initialize> or L<make_methods> has already been called for the current L<class>.
-
-=item B<column_method_names>
-
-Returns a list (in list context) or a reference to an array (in scalar context) of method names for all columns, ordered according to the order that the column names are returned from the L<column_names> method.
-
-=item B<column_mutator_method COLUMN>
-
-Returns the name of the "set" method for COLUMN.  This is currently just an alias for L<column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to set the column value.
-
-=item B<column_names>
-
-Returns a list (in list context) or a reference to an array (in scalar context) of column names.
-
-=item B<column_name_to_method_name_mapper [CODEREF]>
-
-Get or set the code reference to the subroutine used to map column names to  method names.  If undefined, then the column name is used as the method name.  If defined, the subroutine should take two arguments: the metadata object and the column name.  It should return a method name.
-
 =item B<column_type_class TYPE>
 
 Given the column type string TYPE, return the name of the L<Rose::DB::Object::Metadata::Column>-derived class used to store metadata and create the accessor method(s) for columns of that type.
@@ -1826,6 +2003,8 @@ Given the column type string TYPE, return the name of the L<Rose::DB::Object::Me
 =item B<column_type_classes [MAP]>
 
 Get or set the hash that maps column type strings to the names of the L<Rose::DB::Object::Metadata::Column>-derived classes used to store metadata  and create accessor method(s) for columns of that type.
+
+This hash is class data.  If you want to modify it, I suggest making your own subclass of L<Rose::DB::Object::Metadata> and then setting that as the L<meta_class|Rose::DB::Object/meta_class> of your L<Rose::DB::Object> subclass.
 
 If passed MAP (a list of type/class pairs or a reference to a hash of the same) then MAP replaces the current column type mapping.  Returns a list of type/class pairs (in list context) or a reference to the hash of type/class mappings (in scalar context).
 
@@ -1896,6 +2075,333 @@ The default mapping of type names to class names is:
 
   chkpass   => Rose::DB::Object::Metadata::Column::Pg::Chkpass
 
+=item B<for_class CLASS>
+
+Returns (or creates, if needed) the single L<Rose::DB::Object::Metadata> object associated with CLASS, where CLASS is the name of a L<Rose::DB::Object>-derived class.
+
+=item B<init_column_name_to_method_name_mapper>
+
+This class method should return a reference to a subroutine that maps column names to method names, or false if it does not want to do any custom mapping.  The default implementation returns zero (0).
+
+If defined, the subroutine should take two arguments: the metadata object and the column name.  It should return a method name.
+
+Note that the mapper will not be called for columns that are explicitly aliased (e.g., with the L<alias_column> method).
+
+=item B<relationship_type_class TYPE>
+
+Given the relationship type string TYPE, return the name of the L<Rose::DB::Object::Metadata::Relationship>-derived class used to store metadata and create the accessor method(s) for relationships of that type.
+
+=item B<relationship_type_classes [MAP]>
+
+Get or set the hash that maps relationship type strings to the names of the L<Rose::DB::Object::Metadata::Relationship>-derived classes used to store metadata and create object methods fetch and/or manipulate objects from foreign tables.
+
+This hash is class data.  If you want to modify it, I suggest making your own subclass of L<Rose::DB::Object::Metadata> and then setting that as the L<meta_class|Rose::DB::Object/meta_class> of your L<Rose::DB::Object> subclass.
+
+If passed MAP (a list of type/class pairs or a reference to a hash of the same) then MAP replaces the current relationship type mapping.  Returns a list of type/class pairs (in list context) or a reference to the hash of type/class mappings (in scalar context).
+
+The default mapping of type names to class names is:
+
+  'one to one'  => Rose::DB::Object::Metadata::Relationship::OneToOne
+  'one to many' => Rose::DB::Object::Metadata::Relationship::OneToMany
+
+=back
+
+=head1 CONSTRUCTOR
+
+=over 4
+
+=item B<new PARAMS>
+
+Returns (or creates, if needed) the single L<Rose::DB::Object::Metadata> associated with a particular L<Rose::DB::Object>-derived class, modifying or initializing it according to PARAMS, where PARAMS are name/value pairs.
+
+Any object method is a valid parameter name, but PARAMS I<must> include a value for the C<class> parameter, since that's how L<Rose::DB::Object::Metadata> objects are mapped to their corresponding L<Rose::DB::Object>-derived class.
+
+=back
+
+=head1 OBJECT METHODS
+
+=over 4
+
+=item B<add_column ARGS>
+
+This is an alias for the L<add_columns> method.
+
+=item B<add_columns ARGS>
+
+Add the columns specified by ARGS to the list of columns for the table.  Columns can be specified in ARGS in several ways.
+
+If an argument is a subclass of L<Rose::DB::Object::Metadata::Column>, it is added as-is.
+
+If an argument is a plain scalar, it is taken as the name of a scalar column.  A column object of the class returned by the method call C<$obj-E<gt>column_type_class('scalar')> is constructed and then added.
+
+Otherwise, only name/value pairs are considered, where the name is taken as the column name and the value must be a reference to a hash.
+
+If the hash contains the key "primary_key" with a true value, then the column is marked as a L<primary_key_member|Rose::DB::Object::Metadata::Column/is_primary_key_member> and the column name is added to the list of primary key columns by calling the L<add_primary_key_column> method with the column name as its argument.
+
+If the hash contains the key "alias", then the value of that key is used as the alias for the column.  This is a shorthand equivalent to explicitly calling the L<alias_column> column method.
+
+Then the L<column_type_class> method is called with the value of the "type" hash key as its argument (or "scalar" if that key is missing), returning the name of a column class.  Finally, a new column object of that class is constructed and is passed all the remaining pairs in the hash reference, along with the name and type of the column.  That column object is then added to the list of columns.
+
+This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
+
+Example:
+
+    $meta->add_columns
+    (
+      # Add a scalar column
+      'name', 
+      #
+      # which is roughly equivalent to:
+      #
+      # $class = $meta->column_type_class('scalar');
+      # $col = $class->new(name => 'name');
+      # (then add $col to the list of columns)
+
+      # Add by name/hashref pair
+      age => { type => 'int', default => 5 },
+      #
+      # which is roughly equivalent to:
+      #
+      # $class = $meta->column_type_class('int');
+      # $col = $class->new(name    => 'age',
+      #                    type    => 'int', 
+      #                    default => 5, );
+      # (then add $col to the list of columns)
+
+      # Add a column object directly
+      Rose::DB::Object::Metadata::Column::Date->new(
+        name => 'start_date'),
+    );
+
+=item B<add_foreign_keys ARGS>
+
+Add foreign keys as specified by ARGS.  Each foreign key must have a L<name|Rose::DB::Object::Metadata::ForeignKey/name> that is unique among all other foreign keys in this L<class>.
+
+Foreign keys can be specified in ARGS in several ways.
+
+If an argument is a L<Rose::DB::Object::Metadata::ForeignKey> object (or subclass thereof), it is added as-is.
+
+Otherwise, only name/value pairs are considered, where the name is taken as the foreign key name and the value must be a reference to a hash.
+
+A new L<Rose::DB::Object::Metadata::ForeignKey> object is constructed and is passed all the pairs in the hash reference, along with the name of the foreign key as the value of the "name" parameter.  That foreign key object is then added to the list of foreign keys.
+
+This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
+
+Example:
+
+    $meta->add_foreign_keys
+    (      
+      # Add by name/hashref pair
+      category => 
+      {
+        class       => 'Category', 
+        key_columns => { category_id => 'id' },
+      },
+      #
+      # which is roughly equivalent to:
+      #
+      # $fk = Rose::DB::Object::Metadata::ForeignKey->new(
+      #         class       => 'Category', 
+      #         key_columns => { category_id => 'id' },
+      #         name        => 'category');
+      # (then add $fk to the list of foreign keys)
+
+      # Add a foreign key object directly
+      Rose::DB::Object::Metadata::ForeignKey->new(...),
+    );
+
+For each foreign key added, a corresponding "one to one" relationship with the same name is added if it does not already exist.  The class of the relationship is chosen by calling L<relationship_type_class> with the argument "one to one".
+
+=item B<add_primary_key_column COLUMN>
+
+This method is an alias for L<add_primary_key_columns>.
+
+=item B<add_primary_key_columns COLUMNS>
+
+Add COLUMNS to the list of columns that make up the primary key.  COLUMNS can be a list or reference to an array of column names.
+
+=item B<add_relationship ARGS>
+
+This is an alias for the L<add_relationships> method.
+
+=item B<add_relationships ARGS>
+
+Add relationships as specified by ARGS.  Each relationship must have a L<name|Rose::DB::Object::Metadata::Relationship/name> that is unique among all other relationships in this L<class>.
+
+Relationships can be specified in ARGS in several ways.
+
+If an argument is a subclass of L<Rose::DB::Object::Metadata::Relationship>, it is added as-is.
+
+Otherwise, only name/value pairs are considered, where the name is taken as the relationship name and the value must be a reference to a hash.
+
+Then the L<relationship_type_class> method is called with the value of the C<type> hash key as its argument, returning the name of a relationship class.  Finally, a new relationship object of that class is constructed and is passed all the pairs in the hash reference, along with the name and type of the relationship.  That relationship object is then added to the list of relationships.
+
+This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
+
+Example:
+
+    $meta->add_relationships
+    (      
+      # Add by name/hashref pair
+      category => 
+      {
+        type       => 'one to one',
+        class      => 'Category', 
+        column_map => { category_id => 'id' },
+      },
+      #
+      # which is roughly equivalent to:
+      #
+      # $rel = Rose::DB::Object::Metadata::Relationship->new(
+      #          class      => 'Category', 
+      #          column_map => { category_id => 'id' },
+      #          name       => 'category');
+      # (then add $rel to the list of relationships)
+
+      # Add a relationship object directly
+      Rose::DB::Object::Metadata::Relationship::OneToOne->new(...),
+    );
+
+=item B<add_unique_key KEY>
+
+This method is an alias for L<add_unique_key>.
+
+=item B<add_unique_keys KEYS>
+
+Add new unique keys specified by KEYS.  Unique keys can be specified in KEYS in two ways.
+
+If an argument is a L<Rose::DB::Object::Metadata::UniqueKey> object (or subclass thereof), then its L<parent|Rose::DB::Object::Metadata::UniqueKey/parent> is set to the metadata object itself, and it is added.
+
+Otherwise, an argument must be a reference to an array of column names that make up a unique key.  A new L<Rose::DB::Object::Metadata::UniqueKey> is created, with its L<parent|Rose::DB::Object::Metadata::UniqueKey/parent> set to the metadata object itself, and then the unique key object is added to this list of unique keys for this L<class>.
+
+=item B<alias_column NAME, ALIAS>
+
+Use ALIAS instead of NAME as the accessor method name for column named NAME.  It is sometimes necessary to use an alias for a column because the column name  conflicts with an existing L<Rose::DB::Object> method name.
+
+For example, imagine a column named "save".  The L<Rose::DB::Object> API already defines a method named L<save>, so obviously that name can't be used for the accessor method for the "save" column.  To solve this, make an alias:
+
+    $meta->alias_column(save => 'save_flag');
+
+See the L<Rose::DB::Object> documentation or call the L<method_name_is_reserved> method to determine if a method name is reserved.
+
+B<Note:> if a primary key column is aliased, a method named after the actual column name will I<also> be created.  So aliasing a primary key column in an attempt to keep it from conflicting with a reserved method name will not work.
+
+=item B<allow_inline_column_values [BOOL]>
+
+Get or set the boolean flag that indicates whether or not the associated L<Rose::DB::Object>-derived class should try to inline column values that L<DBI> does not handle correctly when they are bound to placeholders using L<bind_columns>.  The default value is false.
+
+Enabling this flag reduces the performance of the L<update> and L<insert> operations on the L<Rose::DB::Object>-derived object.  But it is sometimes necessary to enable the flag because some L<DBI> drivers do not (or cannot) always do the right thing when binding values to placeholders in SQL statements.  For example, consider the following SQL for the Informix database:
+
+    CREATE TABLE test (d DATETIME YEAR TO SECOND);
+    INSERT INTO test (d) VALUES (CURRENT);
+
+This is valid Informix SQL and will insert a row with the current date and time into the "test" table. 
+
+Now consider the following attempt to do the same thing using L<DBI> placeholders (assume the table was already created as per the CREATE TABLE statement above):
+
+    $sth = $dbh->prepare('INSERT INTO test (d) VALUES (?)');
+    $sth->execute('CURRENT'); # Error!
+
+What you'll end up with is an error like this:
+
+    DBD::Informix::st execute failed: SQL: -1262: Non-numeric 
+    character in datetime or interval.
+
+In other words, DBD::Informix has tried to quote the string "CURRENT", which has special meaning to Informix only when it is not quoted. 
+
+In order to make this work, the value "CURRENT" must be "inlined" rather than bound to a placeholder when it is the value of a "DATETIME YEAR TO SECOND" column in an Informix database.
+
+=item B<cached_objects_expire_in [DURATION]>
+
+This method is only applicable if this metadata object is associated with a L<Rose::DB::Object::Cached>-derived class.  It controls the expiration cached objects.
+
+If called with no arguments, the cache expiration limit in seconds is returned.  
+
+If passed a DURATION, the cache expiration is set.  Valid formats for DURATION are in the form "NUMBER UNIT" where NUMBER is a positive number and UNIT is one of the following:
+
+    s sec secs second seconds
+    m min mins minute minutes
+    h hr hrs hour hours
+    d day days
+    w wk wks week weeks
+    y yr yrs year years
+
+All formats of the DURATION argument are converted to seconds.  Days are exactly 24 hours, weeks are 7 days, and years are 365 days.
+
+If an object was read from the database the specified number of seconds ago or earlier, it is purged from the cache and reloaded from the database the next time it is loaded.
+
+A L<cached_objects_expire_in> value of undef or zero means that nothing will ever expire from the object cache for the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.  This is the default.
+
+=item B<catalog [CATALOG]>
+
+Get or set the database catalog name.  This attribute is not applicable to any of the supported databases, as far as I know.
+
+=item B<class [CLASS]>
+
+Get or set the L<Rose::DB::object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by L<make_methods>).
+
+=item B<class_for PARAMS>
+
+Returns the name of the L<Rose::DB::Object>-derived class associated with the C<catalog>, C<schema>, and C<table> specified by the name/value paris in PARAMS.  Catalog and/or schema maybe omitted if unknown or inapplicable, and the "best" match will be returned.  Returns undef if there is no class name registered under the specified PARAMS.
+
+=item B<clear_object_cache>
+
+Clear the memory cache for all objects of the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.
+
+=item B<column NAME [, COLUMN | HASHREF]>
+
+Get or set the column named NAME.  If just NAME is passed, the L<Rose::DB::Object::Metadata::Column>-derived column object for the column of that name is returned.  If no such column exists, undef is returned.
+
+If both NAME and COLUMN are passed, then COLUMN must be a L<Rose::DB::Object::Metadata::Column>-derived object.  COLUMN has its L<name|Rose::DB::Object::Metadata::Column/name> set to NAME, and is then stored as the column metadata object for NAME, replacing any existing column.
+
+If both NAME and HASHREF are passed, then the combination of NAME and HASHREF must form a name/value pair suitable for passing to the L<add_columns> method.  The new column specified by NAME and HASHREF replaces any existing column.
+
+=item B<columns [ARGS]>
+
+Get or set the full list of columns.  If ARGS are passed, the column list is cleared and then ARGS are passed to the L<add_columns> method.
+
+Returns a list of column objects in list context, or a reference to an array of column objects in scalar context.
+
+=item B<column_accessor_method COLUMN>
+
+Returns the name of the "get" method for COLUMN.  This is currently just an alias for L<column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to get the column value.
+
+=item B<column_aliases [MAP]>
+
+Get or set the hash that maps column names to their aliases.  If passed MAP (a list of name/value pairs or a reference to a hash) then MAP replaces the current alias mapping.  Returns a reference to the hash that maps column names to their aliases.
+
+Note that modifying this map has no effect if L<initialize> or L<make_methods> has already been called for the current L<class>.
+
+=item B<column_method COLUMN>
+
+Returns the name of the get/set accessor method for COLUMN.  If the column is not aliased, then the accessor name is the same as the column name.
+
+=item B<column_methods [MAP]>
+
+Get or set the hash that maps column names to their get/set accessor method names.  If passed MAP (a list of name/value pairs or a reference to a hash) then MAP replaces the current method mapping.
+
+Note that modifying this map has no effect if L<initialize> or L<make_methods> has already been called for the current L<class>.
+
+=item B<column_method_names>
+
+Returns a list (in list context) or a reference to an array (in scalar context) of method names for all columns, ordered according to the order that the column names are returned from the L<column_names> method.
+
+=item B<column_mutator_method COLUMN>
+
+Returns the name of the "set" method for COLUMN.  This is currently just an alias for L<column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to set the column value.
+
+=item B<column_names>
+
+Returns a list (in list context) or a reference to an array (in scalar context) of column names.
+
+=item B<column_name_to_method_name_mapper [CODEREF]>
+
+Get or set the code reference to the subroutine used to map column names to  method names.  If undefined, then the L<init_column_name_to_method_name_mapper> class method is called in order to initialize it.  If still undefined or false, then the column name is used as the method name.
+
+If defined, the CODEREF subroutine should take two arguments: the metadata object and the column name.  It should return a method name.
+
+Note that the mapper will not be called for columns that are explicitly aliased (e.g., with the L<alias_column> method).
+
 =item B<db>
 
 Returns the L<Rose::DB>-derived object associated with this metadata object's L<class>.  A fatal error will occur if L<class> is undefined or if the L<Rose::DB> object could not be created.
@@ -1911,6 +2417,18 @@ Delete all of the columns.
 =item B<delete_column_type_class TYPE>
 
 Delete the type/class mapping entry for the column type TYPE.
+
+=item B<delete_relationship NAME>
+
+Delete the relationship named NAME.
+
+=item B<delete_relationships>
+
+Delete all of the relationships.
+
+=item B<delete_relationship_type_class TYPE>
+
+Delete the type/class mapping entry for the relationship type TYPE.
 
 =item B<delete_unique_keys>
 
@@ -1986,7 +2504,9 @@ ARGS, if any, are passed to the call to L<make_methods> that actually creates th
 
 =item B<make_methods [ARGS]>
 
-Create accessor methods in L<class> for each column and foreign key.  ARGS are name/value pairs, and are all optional.  Valid parameters are:
+Create object methods in L<class> for each L<column|columns>, L<foreign key|foreign_keys>, and L<relationship|relationship>.  This is done by calling L<make_column_methods>, L<make_foreign_key_methods>, and L<make_relationship_methods>, in that order.
+
+ARGS are name/value pairs which are passed on to the other C<make_*_methods> calls.  They are all optional.  Valid ARGS are:
 
 =over 4
 
@@ -1996,15 +2516,71 @@ If set to a true value, a method will not be created if there is already an exis
 
 =item * C<replace_existing>
 
-If set to a true value, override any existing methods with the same name.
+If set to a true value, override any existing method with the same name.
 
 =back
 
 In the absence of one of these parameters, any method name that conflicts with an existing method name will cause a fatal error.
 
-For each column, the corresponding accessor method name is determined by passing the column name to L<column_method>.  If the method name is reserved (according to L<method_name_is_reserved>, a fatal error will occur.  The accessor method is created by calling the column object's L<make_method> method.
+=item B<make_column_methods [ARGS]>
 
-For each foreign key, the corresponding accessor method name is determined by calling the L<method_name> method on the foreign key metadata object.  If the method name is reserved (according to L<method_name_is_reserved>), a fatal error will occur.  The accessor method is created by calling the foreign key metadata object's L<make_method> method.
+Create accessor/mutator methods in L<class> for each L<column|columns>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
+
+=over 4
+
+=item * C<preserve_existing>
+
+If set to a true value, a method will not be created if there is already an existing method with the same named.
+
+=item * C<replace_existing>
+
+If set to a true value, override any existing method with the same name.
+
+=back
+
+For each column, the corresponding method name is determined by passing the column name to L<column_method>.  If the method name is reserved (according to L<method_name_is_reserved>, a fatal error will occur.  The object method is created by calling the column object's L<make_method> method.
+
+=item B<make_foreign_key_methods [ARGS]>
+
+Create object methods in L<class> for each L<foreign key|foreign_keys>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
+
+=over 4
+
+=item * C<preserve_existing>
+
+If set to a true value, a method will not be created if there is already an existing method with the same named.
+
+=item * C<replace_existing>
+
+If set to a true value, override any existing method with the same name.
+
+=back
+
+For each foreign key, the corresponding method name is determined by calling the L<method_name> method on the foreign key metadata object.  If the method name is reserved (according to L<method_name_is_reserved>), a fatal error will occur.  The object method is created by calling the foreign key metadata object's L<make_method> method.
+
+Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship/foreign_key> attribute of each "one to one" relationship object to be the corresponding foreign key object.
+
+=item B<make_relationship_methods [ARGS]>
+
+Create object methods in L<class> for each L<relationship|relationships>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
+
+=over 4
+
+=item * C<preserve_existing>
+
+If set to a true value, a method will not be created if there is already an existing method with the same named.
+
+=item * C<replace_existing>
+
+If set to a true value, override any existing method with the same name.
+
+=back
+
+For each relationship, the corresponding method name is determined by calling the L<method_name> method on the relationship metadata object.  If the method name is reserved (according to L<method_name_is_reserved>), a fatal error will occur.  The object method is created by calling the relationship metadata object's L<make_method> method.
+
+Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship/foreign_key> attribute of each "one to one" relationship object to be the corresponding foreign key object.
+
+If a relationship corresponds exactly to a foreign key, and that foreign key already made an object method, then the relationship is not asked to make its own method.
 
 =item B<method_column METHOD>
 
@@ -2057,6 +2633,20 @@ The subroutine is expected to return a list of values, one for each primary key 
 Get or set the name of the sequence used to populate the primary key column.  This method is only applicable to single-column primary keys.  Multi-column keys must set a custom L<primary_key_generator>.
 
 If you do not set this value, it will be derived for you based on the name of the first primary key column.  In the common case, you do not need to be concerned about this method.  If you are using the built-in SERIAL or AUTO_INCREMENT type in your database for your single-column primary key, everything should just work.
+
+=item B<relationship NAME [, RELATIONSHIP | HASHREF]>
+
+Get or set the relationship named NAME.  If just NAME is passed, the L<Rose::DB::Object::Metadata::Relationship>-derived relationship object for that NAME is returned.  If no such relationship exists, undef is returned.
+
+If both NAME and RELATIONSHIP are passed, then RELATIONSHIP must be a L<Rose::DB::Object::Metadata::Relationship>-derived object.  RELATIONSHIP has its L<name|Rose::DB::Object::Metadata::Relationship/name> set to NAME, and is then stored as the relationship metadata object for NAME, replacing any existing relationship.
+
+If both NAME and HASHREF are passed, then the combination of NAME and HASHREF must form a name/value pair suitable for passing to the L<add_relationships> method.  The new relationship specified by NAME and HASHREF replaces any existing relationship.
+
+=item B<relationships [ARGS]>
+
+Get or set the full list of relationships.  If ARGS are passed, the relationship list is cleared and then ARGS are passed to the L<add_relationships> method.
+
+Returns a list of relationship objects in list context, or a reference to an array of relationship objects in scalar context.
 
 =item B<schema [SCHEMA]>
 

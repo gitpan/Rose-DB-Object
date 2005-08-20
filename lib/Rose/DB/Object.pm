@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.0671';
+our $VERSION = '0.068';
 
 our $Debug = 0;
 
@@ -202,7 +202,7 @@ sub load
 
     if($rows > 0)
     {
-      if($meta->column_aliases)
+      if($meta->column_aliases || $meta->column_name_to_method_name_mapper)
       {
         my $methods = $meta->column_methods;
 
@@ -380,7 +380,7 @@ sub update
 
       my %key = map { ($_ => 1) } @key_columns;
 
-      if($meta->column_aliases)
+      if($meta->column_aliases || $meta->column_name_to_method_name_mapper)
       {
         my $methods = $meta->column_methods;
 
@@ -471,7 +471,7 @@ sub insert
       return undef;
     }
 
-    if($meta->column_aliases)
+    if($meta->column_aliases || $meta->column_name_to_method_name_mapper)
     {
       my $methods = $meta->column_methods;
 
@@ -526,7 +526,7 @@ sub insert
           join(', ', (map { $self->$_() } $meta->column_method_names)), "\n";
       }
 
-      if($meta->column_aliases)
+      if($meta->column_aliases || $meta->column_name_to_method_name_mapper)
       {
         $sth->execute(map { $self->$_() } $meta->column_method_names);
       }
@@ -660,7 +660,7 @@ __END__
 
 =head1 NAME
 
-Rose::DB::Object - Object representation of a single row in a database table.
+Rose::DB::Object - Extensible, high performance RDBMS-OO mapper.
 
 =head1 SYNOPSIS
 
@@ -682,6 +682,17 @@ Rose::DB::Object - Object representation of a single row in a database table.
   our @ISA = qw(Rose::DB::Object);
 
   __PACKAGE__->meta->table('categories');
+
+  __PACKAGE__->meta->auto_initialize;
+
+  ...
+
+  package Price;
+
+  use Rose::DB::Object;
+  our @ISA = qw(Rose::DB::Object);
+
+  __PACKAGE__->meta->table('prices');
 
   __PACKAGE__->meta->auto_initialize;
 
@@ -715,6 +726,27 @@ Rose::DB::Object - Object representation of a single row in a database table.
   );
 
   __PACKAGE__->meta->add_unique_key('name');
+
+  __PACKAGE__->meta->initialize;
+
+  ...
+
+  package Price;
+
+  use Rose::DB::Object;
+  our @ISA = qw(Rose::DB::Object);
+
+  __PACKAGE__->meta->table('prices');
+
+  __PACKAGE__->meta->columns
+  (
+    id         => { type => 'int', primary_key => 1 },
+    price      => { type => 'decimal' },
+    region     => { type => 'char', length => 3 },
+    product_id => { type => 'int' }
+  );
+
+  __PACKAGE__->meta->add_unique_key('product_id', 'region');
 
   __PACKAGE__->meta->initialize;
 
@@ -762,6 +794,18 @@ Rose::DB::Object - Object representation of a single row in a database table.
     },
   );
 
+  # This part cannot be done automatically.
+  # perldoc Rose::DB::Object::Metadata to find out why.
+  __PACKAGE__->meta->relationships
+  (
+    prices =>
+    {
+      type       => 'one to many',
+      class      => 'Price',
+      column_map => { id => 'id_product' },
+    },
+  );
+
   __PACKAGE__->meta->initialize;
 
   ...
@@ -784,11 +828,20 @@ Rose::DB::Object - Object representation of a single row in a database table.
   $product = Product->new(id => 123);
   $product->load;
 
+  # Load foreign object via "one to one" relationship
   print $product->category->name;
 
   $product->end_date->add(days => 45);
 
   $product->save;
+
+  ...
+
+  $product = Product->new(id => 456);
+  $product->load;
+
+  # Load foreign objects via "one to many" relationship
+  print join ' ', $product->prices;
 
   ...
 
@@ -814,7 +867,7 @@ L<Rose::DB::Object> objects can represent rows in almost any database table, sub
 
 Although the list above contains the only hard and fast rules, there may be other realities that you'll need to work around.
 
-The most common example is the existence of a column name in the database table that conflicts with the name of a method in the L<Rose::DB::Object> API.  There are two possible work-arounds: either explicitly alias the column, or define a L<mapping function|Rose::DB::Object::Metadata/column_name_to_method_name_mapper>.  See the L<alias_column|Rose::DB::Object::Metadata/alias_column> and L<column_name_to_method_name_mapper|Rose::DB::Object::Metadata/column_name_to_method_name_mapper> methods in the L<Rose::DB::Object::Metadata> documentation for more details.
+The most common example is the existence of a column name in the database table that conflicts with the name of a method in the L<Rose::DB::Object> API.  There are two possible workarounds: either explicitly alias the column, or define a L<mapping function|Rose::DB::Object::Metadata/column_name_to_method_name_mapper>.  See the L<alias_column|Rose::DB::Object::Metadata/alias_column> and L<column_name_to_method_name_mapper|Rose::DB::Object::Metadata/column_name_to_method_name_mapper> methods in the L<Rose::DB::Object::Metadata> documentation for more details.
 
 There are also varying degrees of support for data types in each database server supported by L<Rose::DB>.  If you have a table that uses a data type not supported by an existing L<Rose::DB::Object::Metadata::Column>-derived class, you will have to write your own column class and then map it to a type name using L<Rose::DB::Object::Metadata>'s L<column_type_class|Rose::DB::Object::Metadata/column_type_class> method, yada yada.  (Or, of course, you can map the new type to an existing column class.)
 
@@ -1059,7 +1112,7 @@ Here is a list of method names reserved by the L<Rose::DB::Object> API.  If you 
     save
     update
 
-Note that not all of these methods are public.  These methods do not suddently become public just because you now know their names!  Remember the stated policy of the L<Rose> web application framework: if a method is not documented, it does not exist.  (And no, the list of method names above does not constitute "documentation")
+Note that not all of these methods are public.  These methods do not suddenly become public just because you now know their names!  Remember the stated policy of the L<Rose> web application framework: if a method is not documented, it does not exist.  (And no, the list of method names above does not constitute "documentation")
 
 =head1 AUTHOR
 

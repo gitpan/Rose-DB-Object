@@ -2,13 +2,16 @@
 
 use strict;
 
-use Test::More tests => 264;
-  
+use Test::More tests => 263;
+
 BEGIN 
 {
   require 't/test-lib.pl';
   use_ok('Rose::DB::Object');
+  use_ok('Rose::DB::Object::Util');
 }
+
+Rose::DB::Object::Util->import(':all');
 
 our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
@@ -41,6 +44,8 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   $o->save_col(7);
 
   ok($o->save, "save() 1 - $db_type");
+
+  ok(is_in_db($o), "is_in_db - $db_type");
 
   is($o->id, 1, "auto-generated primary key - $db_type");
 
@@ -189,11 +194,12 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, "alias_column() nonesuch - $db_type");
 
-  eval { $o->meta->alias_column(id => 'foo') };
-  ok($@, "alias_column() primary key - $db_type");
+  # This is okay now
+  #eval { $o->meta->alias_column(id => 'foo') };
+  #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyPgObject->new(id => 777);
-                          
+
   $o->meta->error_mode('fatal');
 
   $o->dbh->{'PrintError'} = 0;
@@ -208,7 +214,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   eval { $o->save };
   ok($@, "save() fatal - $db_type");
-  
+
   $o->meta->error_mode('return');
 }
 
@@ -218,7 +224,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 65)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 64)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -339,11 +345,12 @@ SKIP: foreach my $db_type ('mysql')
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, "alias_column() nonesuch - $db_type");
 
-  eval { $o->meta->alias_column(id => 'foo') };
-  ok($@, "alias_column() primary key - $db_type");
+  # This is okay now
+  #eval { $o->meta->alias_column(id => 'foo') };
+  #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyMySQLObject->new(id => 777);
-                          
+
   $o->meta->error_mode('fatal');
 
   $o->dbh->{'PrintError'} = 0;
@@ -364,7 +371,7 @@ SKIP: foreach my $db_type ('mysql')
   $o->meta->error_mode('return');
 
   $o = MyMPKMySQLObject->new(name => 'John');
-  
+
   ok($o->save, "save() 1 multi-value primary key with generated values - $db_type");
 
   is($o->k1, 1, "save() verify 1 multi-value primary key with generated values - $db_type");
@@ -384,7 +391,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 66)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 65)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -522,7 +529,7 @@ SKIP: foreach my $db_type ('informix')
 
   ok($o->save, "save() 4 - $db_type");
   $o->save_col(50);
-  
+
   ok($o->save, "save() 5 - $db_type");
 
   $ouk = MyInformixObject->new(save_col => 50);
@@ -531,11 +538,12 @@ SKIP: foreach my $db_type ('informix')
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, "alias_column() nonesuch - $db_type");
 
-  eval { $o->meta->alias_column(id => 'foo') };
-  ok($@, "alias_column() primary key - $db_type");
+  # This is okay now
+  #eval { $o->meta->alias_column(id => 'foo') };
+  #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyInformixObject->new(id => 777);
-                          
+
   $o->meta->error_mode('fatal');
 
   $o->dbh->{'PrintError'} = 0;
@@ -550,7 +558,7 @@ SKIP: foreach my $db_type ('informix')
 
   eval { $o->save };
   ok($@, "save() fatal - $db_type");
-  
+
   $o->meta->error_mode('return');
 }
 
@@ -561,7 +569,7 @@ BEGIN
   #
 
   my $dbh;
-  
+
   eval 
   {
     $dbh = Rose::DB->new('pg_admin')->retain_dbh()
@@ -589,7 +597,7 @@ BEGIN
       $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     };
-  
+
     our $PG_HAS_CHKPASS = 1  unless($@);
 
     $dbh->do(<<"EOF");
@@ -599,13 +607,13 @@ CREATE TABLE rose_db_object_test
   k1             INT,
   k2             INT,
   k3             INT,
-  @{[ $PG_HAS_CHKPASS ? 'password CHKPASS,' : '' ]}
+  @{[ $PG_HAS_CHKPASS ? 'passwd CHKPASS,' : '' ]}
   name           VARCHAR(32) NOT NULL,
   code           CHAR(6),
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
-  bits           BIT(5) NOT NULL DEFAULT B'00101',
+  bitz           BIT(5) NOT NULL DEFAULT B'00101',
   start          DATE,
   save           INT,
   nums           INT[],
@@ -623,13 +631,13 @@ CREATE TABLE rose_db_object_private.rose_db_object_test
   k1             INT,
   k2             INT,
   k3             INT,
-  @{[ $PG_HAS_CHKPASS ? 'password CHKPASS,' : '' ]}
+  @{[ $PG_HAS_CHKPASS ? 'passwd CHKPASS,' : '' ]}
   name           VARCHAR(32) NOT NULL,
   code           CHAR(6),
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
-  bits           BIT(5) NOT NULL DEFAULT B'00101',
+  bitz           BIT(5) NOT NULL DEFAULT B'00101',
   start          DATE,
   save           INT,
   nums           INT[],
@@ -660,14 +668,14 @@ EOF
       k1       => { type => 'int' },
       k2       => { type => 'int' },
       k3       => { type => 'int' },
-      ($PG_HAS_CHKPASS ? (password => { type => 'chkpass' }) : ()),
+      ($PG_HAS_CHKPASS ? (passwd => { type => 'chkpass', alias => 'password' }) : ()),
       flag     => { type => 'boolean', default => 1 },
       flag2    => { type => 'boolean' },
       status   => { default => 'active' },
       start    => { type => 'date', default => '12/24/1980' },
       save     => { type => 'scalar' },
       nums     => { type => 'array' },
-      bits     => { type => 'bitfield', bits => 5, default => 101 },
+      bitz     => { type => 'bitfield', bits => 5, default => 101, alias => 'bits' },
       #last_modified => { type => 'timestamp' },
       date_created  => { type => 'timestamp' },
     );
@@ -689,7 +697,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() no override');
 
     MyPgObject->meta->initialize(preserve_existing => 1);
-    
+
     Test::More::is(MyPgObject->meta->column('id')->is_primary_key_member, 1, 'is_primary_key_member - pg');
     Test::More::is(MyPgObject->meta->column('id')->primary_key_position, 1, 'primary_key_position 1 - pg');
     Test::More::ok(!defined MyPgObject->meta->column('k1')->primary_key_position, 'primary_key_position 2 - pg');
@@ -731,13 +739,13 @@ CREATE TABLE rose_db_object_test
   flag           TINYINT(1) NOT NULL,
   flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'active',
-  bits           BIT(5) NOT NULL DEFAULT '00101',
+  bitz           BIT(5) NOT NULL DEFAULT '00101',
   nums           VARCHAR(255),
   start          DATE,
   save           INT,
   last_modified  TIMESTAMP,
   date_created   TIMESTAMP,
-  
+
   UNIQUE(k1, k2, k3)
 )
 EOF
@@ -748,11 +756,11 @@ CREATE TABLE rose_db_object_test2
   k1             INT NOT NULL,
   k2             INT NOT NULL,
   name           VARCHAR(32),
-  
+
   UNIQUE(k1, k2)
 )
 EOF
-    
+
     $dbh->disconnect;
 
     # Create test subclass
@@ -779,7 +787,7 @@ EOF
       start    => { type => 'date', default => '12/24/1980' },
       save     => { type => 'scalar' },
       nums     => { type => 'array' },
-      bits     => { type => 'bitfield', bits => 5, default => 101 },
+      bitz     => { type => 'bitfield', bits => 5, default => 101, alias => 'bits' },
       last_modified => { type => 'timestamp' },
       date_created  => { type => 'timestamp' },
     );
@@ -804,24 +812,24 @@ EOF
     Test::More::ok(!defined MyMySQLObject->meta->column('k1')->primary_key_position, 'primary_key_position 3 - mysql');
 
     package MyMPKMySQLObject;
-    
+
     use Rose::DB::Object;
 
     our @ISA = qw(Rose::DB::Object);
 
     sub init_db { Rose::DB->new('mysql') }
-  
+
     MyMPKMySQLObject->meta->table('rose_db_object_test2');
-  
+
     MyMPKMySQLObject->meta->columns
     (
       k1          => { type => 'int', not_null => 1 },
       k2          => { type => 'int', not_null => 1 },
       name        => { type => 'varchar', length => 32 },
     );
-  
+
     MyMPKMySQLObject->meta->primary_key_columns('k1', 'k2');
-  
+
     MyMPKMySQLObject->meta->initialize;
 
     my $i = 1;
@@ -832,7 +840,7 @@ EOF
 
       my $k1 = $i++;
       my $k2 = $i++;
-      
+
       return $k1, $k2;
     });
   }
@@ -870,7 +878,7 @@ CREATE TABLE rose_db_object_test
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
   status         VARCHAR(32) DEFAULT 'active',
-  bits           VARCHAR(5) DEFAULT '00101' NOT NULL,
+  bitz           VARCHAR(5) DEFAULT '00101' NOT NULL,
   nums           VARCHAR(255),
   start          DATE,
   save           INT,
@@ -906,7 +914,7 @@ EOF
       start    => { type => 'date', default => '12/24/1980' },
       save     => { type => 'scalar' },
       nums     => { type => 'array' },
-      bits     => { type => 'bitfield', bits => 5, default => 101 },
+      bitz     => { type => 'bitfield', bits => 5, default => 101, alias => 'bits' },
       names    => { type => 'set' },
       last_modified => { type => 'timestamp' },
       date_created  => { type => 'datetime year to fraction(5)' },
@@ -951,7 +959,7 @@ END
 
     $dbh->disconnect;
   }
-  
+
   if($HAVE_MYSQL)
   {
     # MySQL

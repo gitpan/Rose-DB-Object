@@ -3,17 +3,16 @@ package Rose::DB::Object::Metadata::Column;
 use strict;
 
 use Carp();
-use Scalar::Util();
 
 use Rose::DB::Object::Metadata::Util qw(:all);
 
-use Rose::DB::Object::Metadata::Object;
-our @ISA = qw(Rose::DB::Object::Metadata::Object);
+use Rose::DB::Object::Metadata::MethodMaker;
+our @ISA = qw(Rose::DB::Object::Metadata::MethodMaker);
 
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.03';
+our $VERSION = '0.032';
 
 use overload
 (
@@ -21,23 +20,16 @@ use overload
    fallback => 1,
 );
 
-use Rose::Class::MakeMethods::Set
-(
-  inherited_set => 'method_maker_argument_name'
-);
+__PACKAGE__->add_method_maker_argument_names(qw(default type));
 
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
   scalar => 
   [
-    'name',
-    'method_name',
-    'type',
-    'default',
     __PACKAGE__->method_maker_argument_names,
   ],
-  
+
   boolean => 
   [
     'manager_uses_method',
@@ -46,16 +38,50 @@ Rose::Object::MakeMethods::Generic->make_methods
   ],
 );
 
-__PACKAGE__->add_method_maker_argument_names(qw(default type));
-
 *primary_key = \&is_primary_key_member;
 
-*accessor_method_name = \&method_name;
-*mutator_method_name  = \&method_name;
+*accessor_method_name = \&Rose::DB::Object::Metadata::MethodMaker::method_name;
+*mutator_method_name  = \&Rose::DB::Object::Metadata::MethodMaker::method_name;
+
+sub alias { shift->method_name(@_) }
 
 sub type { 'scalar' }
 
 sub should_inline_value { 0 }
+
+sub name
+{
+  my($self) = shift;
+
+  if(@_)
+  {
+    $self->name_sql(undef);
+    return $self->{'name'} = shift;
+  }
+
+  return $self->{'name'};
+}
+
+sub name_sql
+{
+  my($self) = shift;
+
+  return $self->{'name_sql'} = shift  if(@_);
+
+  if(defined $self->{'name_sql'})
+  {
+    return $self->{'name_sql'};
+  }
+
+  if(my $parent = $self->parent)
+  {
+    return $self->{'name_sql'} = $parent->db->quote_column_name($self->{'name'});
+  }
+  else
+  {
+    return $self->{'name'};
+  }
+}
 
 sub parse_value  { $_[2] }
 sub format_value { $_[2] }
@@ -110,7 +136,7 @@ sub perl_column_defintion_attributes
   {
     my $val = $self->can($attr) ? $self->$attr() : next;
 
-    if((!defined $val || ref $val || $attr =~ /^(?:name|is_primary_key_member|primary_key_position)$/) ||
+    if((!defined $val || ref $val || $attr =~ /^(?:name(?:_sql)?|is_primary_key_member|primary_key_position)$/) ||
        ($attr eq 'method_name' && $self->method_name eq $self->name) ||
        ($attr eq 'not_null' && !$self->not_null))
     {
@@ -175,58 +201,8 @@ sub _sort_keys
   return lc $_[0] cmp lc $_[1];
 }
 
-# sub foreign_key
-# {
-#   my($self) = shift;
-#   
-#   if(@_)
-#   {
-#     if(@_ == 1)
-#     {
-#       if(ref $_[0] eq 'HASH')
-#       {
-#         return $self->{'foreign_key'}
-#       }
-#     }
-#     else
-#     {
-#       Carp::croak "Invalid foreign_key arguments: @_";
-#     }
-#   }
-#   
-#   return $self->{'foreign_key'};
-# }
-
-sub method_maker_arguments
-{
-  my($self) = shift;
-
-  my %opts = map { $_ => scalar $self->$_() } grep { defined scalar $self->$_() }
-    $self->method_maker_argument_names;
-
-  return wantarray ? %opts : \%opts;
-}
-
 sub method_maker_class { 'Rose::DB::Object::MakeMethods::Generic' }
 sub method_maker_type  { 'scalar' }
-
-sub make_method
-{
-  my($self, %args) = @_;
-
-  Carp::croak "Missing required 'options' argument"
-    unless($args{'options'});
-
-  Carp::croak "Missing required 'target_class' argument"
-    unless($args{'options'}{'target_class'});
-
-  $self->method_maker_class->make_methods(
-    $args{'options'}, 
-    $self->method_maker_type => 
-    [
-      $self->method_name => { column => $self, $self->method_maker_arguments }
-    ]);
-}
 
 1;
 
@@ -234,7 +210,7 @@ __END__
 
 =head1 NAME
 
-Rose::DB::Object::Metadata::Column - Base class for an object encapsulation of  database column metadata.
+Rose::DB::Object::Metadata::Column - Base class for database column metadata objects.
 
 =head1 SYNOPSIS
 
@@ -267,7 +243,7 @@ name/value pairs.  Any object method is a valid parameter name.
 
 =item B<accessor_method_name [NAME]>
 
-Get or set the name of the method used to get the column value.  This is currently an alias for the C<method_name> method.
+Get or set the name of the method used to get the column value.  This is currently an alias for the L<method_name> method.
 
 =item B<default [VALUE]>
 
@@ -283,32 +259,41 @@ Get or set the boolean flag that indicates whether or not this column is part of
 
 =item B<make_method PARAMS>
 
-Create an object method used to manipulate column values.  To do this, the C<make_methods()> class method of the C<method_maker_class> is called.  PARAMS are name/value pairs.  Valid PARAMS are:
+Create an object method used to manipulate column values.  To do this, the C<make_methods()> class method of the L<method_maker_class> is called.  PARAMS are name/value pairs.  Valid PARAMS are:
 
 =over 4
 
 =item C<options HASHREF>
 
-A reference to a hash of options that will be passed as the first argument to the call to the C<make_methods()> class method of the C<method_maker_class>.  This parameter is required, and the HASHREF must include a value for the key C<target_class>, which C<make_methods()> needs in order to determine where to make the method.
+A reference to a hash of options that will be passed as the first argument to the call to the C<make_methods()> class method of the L<method_maker_class>.  This parameter is required, and the HASHREF must include a value for the key C<target_class>, which C<make_methods()> needs in order to determine where to make the method.
 
 =back
 
 The call to C<make_methods()> looks something like this:
 
+    my $method_name = $self->method_name;
+
+    # Use "name" if "method_name" is undefined
+    unless(defined $method_name)
+    {
+      # ...and set "method_name" so it's defined now
+      $method_name = $self->method_name($self->name);
+    }
+
     $self->method_maker_class->make_methods(
       $args{'options'}, 
       $self->method_maker_type => 
       [
-        $self->method_name => scalar $self->method_maker_arguments
+        $method_name => scalar $self->method_maker_arguments
       ]);
 
 where C<$args{'options'}> is the value of the "options" PARAM.
 
-The C<method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
+The L<method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
 
-I know the call above looks confusing, but it is worth studying if you plan to subclass C< Rose::DB::Object::Metadata::Column>.  The various subclasses that are part of the L<Rose::DB::Object> distribution provide some good examples.
+I know the call above looks confusing, but it is worth studying if you plan to subclass L<Rose::DB::Object::Metadata::Column>.  The various subclasses that are part of the L<Rose::DB::Object> distribution provide some good examples.
 
-More than one method may be created, but there must be at least one get/set accessor method created, and its name must match the return value of C<method_name()>.
+More than one method may be created, but there must be at least one get/set accessor method created, and its name must match the L<method_name> (or L<name> if L<method_name> is undefined).
 
 =item B<manager_uses_method [BOOL]>
 
@@ -318,25 +303,33 @@ Note: the method is named "manager_uses_method" instead of, say, "query_builder_
 
 =item B<method_maker_arguments>
 
-Returns a hash (in list context) or a reference to a hash (in scalar context) or arguments that will be passed (as a hash ref) to the call to the C<make_methods()> class method of the C<method_maker_class>, as shown in the C<make_method> example above.
+Returns a hash (in list context) or a reference to a hash (in scalar context) or arguments that will be passed (as a hash ref) to the call to the C<make_methods()> class method of the L<method_maker_class>, as shown in the L<make_method> example above.
 
-The default implementation populates the hash with the defined return values of the object methods named by C<method_maker_argument_names>.  (Method names that return undefined values are not included in the hash.)
+The default implementation populates the hash with the defined return values of the object methods named by L<method_maker_argument_names>.  (Method names that return undefined values are not included in the hash.)
+
+=item B<method_maker_argument_names>
+
+Returns a list of methods to call in order to generate the L<method_maker_arguments> hash.
 
 =item B<method_maker_class>
 
-Returns the L<Rose::Object::MakeMethods>-derived class used to create the object method that will manipulate the column value.  The default implementation returns L<Rose::DB::Object::MakeMethods::Generic>.
+Returns the name of the L<Rose::Object::MakeMethods>-derived class used to create the object method that will manipulate the column value.  The default implementation returns L<Rose::DB::Object::MakeMethods::Generic>.
 
 =item B<method_maker_type>
 
-Returns the method type, which is passed to the call to the C<make_methods()> class method of the C<method_maker_class>, as shown in the C<make_method> example above.  The default implementation returns C<scalar>.
+Returns the method type, which is passed to the call to the C<make_methods()> class method of the L<method_maker_class>, as shown in the L<make_method> example above.  The default implementation returns C<scalar>.
 
 =item B<method_name [NAME]>
 
-Get or set the name of the method used to manipulate (get or set) the column value.
+Get or set the name of the method used to manipulate (get or set) the column value.  This may be left undefined if the desired method name is stored in L<name> instead.  Once the method is actually created, the L<method_name> will be set.
 
 =item B<mutator_method_name [NAME]>
 
-Get or set the name of the method used to set the column value.  This is currently an alias for the C<method_name> method.
+Get or set the name of the method used to set the column value.  This is currently an alias for the L<method_name> method.
+
+=item B<method_name [NAME]>
+
+Get or set the name of the object method to be created for this column.  This may be left undefined if the desired method name is stored in L<name> instead.  Once the method is actually created, the L<method_name> will be set.
 
 =item B<name [NAME]>
 

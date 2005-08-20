@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.03';
+our $VERSION = '0.031';
 
 sub scalar
 {
@@ -818,7 +818,10 @@ sub objects_by_key
       return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
     }
 
-    return $self->{$key}  if(defined $self->{$key});
+    if(defined $self->{$key})
+    {
+      return wantarray ? @{$self->{$key}} : $self->{$key};  
+    }
 
     my %key;
 
@@ -834,7 +837,7 @@ sub objects_by_key
         keys(%$ft_columns); # reset iterator
         $self->error("Could not fetch objects via $name() - the " .
                      "$local_method attribute is undefined");
-        return undef;
+        return wantarray ? () : undef;
       }
     }
 
@@ -857,7 +860,9 @@ sub objects_by_key
       return $objs;
     }
 
-    return $self->{$key} = $objs;
+    $self->{$key} = $objs;
+    
+    return wantarray ? @{$self->{$key}} : $self->{$key};
   };
 
   if($interface eq 'get_set_load')
@@ -1319,11 +1324,11 @@ Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects 
 
 If passed a single argument of undef, the list of objects is set to undef.  If passed a reference to an array, the list of objects is set to point to that same array.
 
-If called with no arguments and the hash key used to store the list of objects is defined, a reference to that array of objects is returned.  Otherwise, the objects are fetched.
+If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
-The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, that false value is returned.
+The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, that false value (in scalar context) or an empty list (in list context) is returned.
 
-If the fetch succeeds, a reference to the array of objects is returned.  (If the fetch finds zero objects, the array will simply be empty.  This is still considered success.)
+If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
 =back
 

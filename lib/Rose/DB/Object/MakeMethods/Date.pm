@@ -275,7 +275,7 @@ sub timestamp_without_time_zone
   {
     Carp::croak "time_zone parameter is invalid for timestamp_without_time_zone methods";
   }
-  
+
   $args->{'time_zone'} = 'floating';
 
   return $class->timestamp($name, $args);

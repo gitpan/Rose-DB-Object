@@ -9,7 +9,7 @@ use Rose::DB::Object::QueryBuilder qw(build_select);
 
 use Rose::DB::Object::Constants qw(STATE_LOADING);
 
-our $VERSION = '0.043';
+our $VERSION = '0.0431';
 
 our $Debug = 0;
 
@@ -262,8 +262,6 @@ sub get_objects
   my %methods = ($tables[0] => scalar $meta->column_mutator_method_names);
   my @classes = ($object_class);
   my %meta    = ($object_class => $meta);
-  my %table_aliases = ($tables[0] => 't1', $meta->table => 't1');
-  my %alias_tables  = (t1 => $tables[0]);
 
   if($with_objects)
   {
@@ -291,10 +289,6 @@ sub get_objects
       push(@tables, $fk_meta->fq_table_sql);
       push(@classes, $fk_class);
       $i++;
-
-      $table_aliases{$tables[-1]} = "t$i";
-      $table_aliases{$fk_meta->table} = "t$i";
-      $alias_tables{"t$i"} = $tables[-1];
 
       $columns{$tables[-1]} = $fk_meta->columns;#_names;
       $classes{$tables[-1]} = $fk_class;
@@ -413,16 +407,19 @@ sub get_objects
 
     my %row;
 
-    my $i = 1;
+    my $col_num   = 1;
+    my $table_num = 0;
 
     foreach my $table (@tables)
     {
-      my $class = $classes{$table};
+      my $class     = $classes{$table};
 
       foreach my $column (@{$methods{$table}})
       {
-        $sth->bind_col($i++, \$row{$class}{$column});
+        $sth->bind_col($col_num++, \$row{$class,$table_num}{$column});
       }
+
+      $table_num++;
     }
 
     if($return_iterator)
@@ -454,8 +451,8 @@ sub get_objects
             $object = $object_class->new(%object_args);
 
             local $object->{STATE_LOADING()} = 1;
-            $object->init(%{$row{$object_class}});
-            
+            $object->init(%{$row{$object_class,0}});
+
             if($with_objects)
             {
               foreach my $i (1 .. $num_subtables)
@@ -465,7 +462,7 @@ sub get_objects
 
                 my $subobject = $class->new(%subobject_args);
                 local $subobject->{STATE_LOADING()} = 1;
-                $subobject->init(%{$row{$class}});
+                $subobject->init(%{$row{$class,$i}});
 
                 $object->$method($subobject);
               }
@@ -516,7 +513,7 @@ sub get_objects
         my $object = $object_class->new(%object_args);
 
         local $object->{STATE_LOADING()} = 1;
-        $object->init(%{$row{$object_class}});
+        $object->init(%{$row{$object_class,0}});
 
         foreach my $i (1 .. $num_subtables)
         {
@@ -525,7 +522,7 @@ sub get_objects
 
           my $subobject = $class->new(%subobject_args);
           local $subobject->{STATE_LOADING()} = 1;
-          $subobject->init(%{$row{$class}});
+          $subobject->init(%{$row{$class,$i}});
                 
           $object->$method($subobject);
         }
@@ -549,7 +546,7 @@ sub get_objects
         my $object = $object_class->new(%object_args);
 
         local $object->{STATE_LOADING()} = 1;
-        $object->init(%{$row{$object_class}});
+        $object->init(%{$row{$object_class,0}});
 
         push(@objects, $object);
       }
@@ -904,6 +901,8 @@ If true, C<db> will be passed to each L<Rose::DB::Object>-derived object when it
 Also fetch sub-objects associated with foreign keys in the primary table, where OBJECTS is a reference to an array of foreign key names, as defined by the L<Rose::DB::Object::Metadata> object for C<object_class>.
 
 Another table will be added to the query for each foreign key listed.  The "join" clauses will be added automatically based on the foreign key definitions.  Note that (obviously) each foreign key table has to have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|SYNOPSIS> for a simple example.
+
+B<Note:> the C<with_objects> list currently cannot be used to simultaneously fetch two objects that both front the same database table, but are of different classes.  One workaround is to make one class use a synonym or alias for one of the tables.  Another option is to make one table a trivial view of the other.  The objective is to get the table names to be different for each different class (even if it's just a matter of letter case, if your database is not case-sensitive when it comes to table names).
 
 =item C<query PARAMS>
 

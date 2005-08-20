@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.032';
+our $VERSION = '0.0321';
 
 our $Debug = 0;
 
@@ -129,7 +129,7 @@ sub build_select
   $sort_by  = join(', ', @$sort_by)   if(ref $sort_by);
   $group_by = join(', ', @$group_by)  if(ref $group_by);
 
-  my($not, $op, %table_alias, @select_columns, %column_count);
+  my($not, $op, @select_columns, %column_count);
 
   foreach my $table (@$tables)
   {
@@ -148,7 +148,7 @@ sub build_select
 
   foreach my $table (@$tables)
   {
-    $table_alias{$table} = 't' . $table_num++;
+    my $table_alias = 't' . $table_num++;
 
     next  unless($columns->{$table});
 
@@ -174,12 +174,12 @@ sub build_select
     foreach my $column (@{$columns->{$table}})
     {
       my $fq_column    = "$table.$column";
-      my $short_column = "$table_alias{$table}.$column";
+      my $short_column = "$table_alias.$column";
 
       my $method = $obj_meta ? $obj_meta->column_method($column) : undef;
 
       push(@select_columns, $multi_table ? 
-           "$short_column AS $table_alias{$table}_$column" : $column);
+           "$short_column AS ${table_alias}_$column" : $column);
 
       foreach my $column_arg (map { ($_, "!$_") } ($column, $fq_column, $short_column, 
                               (defined $method && $method ne $column ? $method : ())))
@@ -273,8 +273,9 @@ sub build_select
 
   if(!$where_only)
   {
+    my $i = 0;
     my $tables_sql = $multi_table ?
-      join(",\n", map { "  $_ $table_alias{$_}" } @$tables) :
+      join(",\n", map { $i++; "  $_ t$i" } @$tables) :
       "  $tables->[0]";
 
     my $prefix_limit = (defined $limit && $use_prefix_limit) ? $limit : '';

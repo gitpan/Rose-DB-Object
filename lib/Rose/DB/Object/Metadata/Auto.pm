@@ -702,11 +702,11 @@ sub auto_init_foreign_keys
   {
     KEY: foreach my $key (@$auto_foreign_keys)
     {
-      my $id = __fk_key_to_id($key);
+      my $id = $key->id; #__fk_key_to_id($key);
 
       foreach my $existing_key (@$existing_foreign_keys)
       {
-        next KEY  if($id eq __fk_key_to_id($existing_key));
+        next KEY  if($id eq $existing_key->id);#__fk_key_to_id($existing_key));
       }
 
       $self->add_foreign_key($key);

@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 265;
+use Test::More tests => 261;
   
 BEGIN 
 {
@@ -18,7 +18,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 142)  unless($HAVE_PG);
+  skip("Postgres tests", 140)  unless($HAVE_PG);
 
   OVERRIDE_OK:
   {
@@ -187,8 +187,9 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, "alias_column() nonesuch - $db_type");
 
-  eval { $o->meta->alias_column(id => 'foo') };
-  ok($@, "alias_column() primary key - $db_type");
+  # This is okay now
+  #eval { $o->meta->alias_column(id => 'foo') };
+  #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyPgObject->new(id => 777);
                           
@@ -308,7 +309,7 @@ EOF
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 59)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 58)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -430,8 +431,9 @@ SKIP: foreach my $db_type ('mysql')
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, "alias_column() nonesuch - $db_type");
 
-  eval { $o->meta->alias_column(id => 'foo') };
-  ok($@, "alias_column() primary key - $db_type");
+  # This is okay now
+  #eval { $o->meta->alias_column(id => 'foo') };
+  #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyMySQLObject->new(id => 777);
                           
@@ -475,7 +477,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 63)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 62)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -635,8 +637,9 @@ SKIP: foreach my $db_type ('informix')
   eval { $o->meta->alias_column(nonesuch => 'foo') };
   ok($@, "alias_column() nonesuch - $db_type");
 
-  eval { $o->meta->alias_column(id => 'foo') };
-  ok($@, "alias_column() primary key - $db_type");
+  # This is okay now
+  #eval { $o->meta->alias_column(id => 'foo') };
+  #ok($@, "alias_column() primary key - $db_type");
 
   $o = MyInformixObject->new(id => 777);
                           
