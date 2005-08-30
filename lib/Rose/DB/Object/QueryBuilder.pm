@@ -176,7 +176,7 @@ sub build_select
       my $fq_column    = "$table.$column";
       my $short_column = "$table_alias.$column";
 
-      my $method = $obj_meta ? $obj_meta->column_method($column) : undef;
+      my $method = $obj_meta ? $obj_meta->column_rw_method_name($column) : undef;
 
       push(@select_columns, $multi_table ? 
            "$short_column AS ${table_alias}_$column" : $column);
@@ -206,11 +206,14 @@ sub build_select
               $obj->{STATE_SAVING()} = 1;
             }
 
-            my $method = $obj_meta->column_method($column)
-              or Carp::confess "Could not get method name for '$column'";
+            my $get_method = $obj_meta->column_accessor_method_name($column)
+              or Carp::confess "Missing accessor method for column '$column'";
+
+            my $set_method = $obj_meta->column_mutator_method_name($column)
+              or Carp::confess "Missing mutator method for column '$column'";
 
             my %tmp = ($column_arg => $val);
-            _format_value($db, \%tmp, $column_arg, $obj, $col_meta, $method, $val);
+            _format_value($db, \%tmp, $column_arg, $obj, $col_meta, $get_method, $set_method, $val);
             $val = $tmp{$column_arg};
           }
 
@@ -483,7 +486,7 @@ sub _build_clause
 
 sub _format_value
 {
-  my($db, $store, $param, $object, $col_meta, $method, $value, $asis, $depth) = @_;
+  my($db, $store, $param, $object, $col_meta, $get_method, $set_method, $value, $asis, $depth) = @_;
 
   $depth ||= 1;
 
@@ -493,8 +496,8 @@ sub _format_value
     {
       if($col_meta->manager_uses_method)
       {
-        $object->$method($value);
-        $value = $object->$method();
+        $object->$set_method($value);
+        $value = $object->$get_method();
       }
       else
       {
@@ -507,7 +510,7 @@ sub _format_value
     if($asis || $col_meta->type eq 'array' ||
        ($col_meta->type eq 'set' && $depth == 1))
     {
-      $value = _format_value($db, $value, undef, $object, $col_meta, $method, $value, 1, $depth + 1);
+      $value = _format_value($db, $value, undef, $object, $col_meta, $get_method, $set_method, $value, 1, $depth + 1);
     }
     elsif($col_meta->type ne 'set')
     {
@@ -515,7 +518,7 @@ sub _format_value
 
       foreach my $subval (@$value)
       {
-        _format_value($db, \@vals, undef, $object, $col_meta, $method, $subval, 0, $depth + 1);
+        _format_value($db, \@vals, undef, $object, $col_meta, $get_method, $set_method, $subval, 0, $depth + 1);
       }
 
       $value = \@vals;
@@ -525,15 +528,15 @@ sub _format_value
   {    
     foreach my $key (keys %$value)
     {
-      _format_value($db, $value, $key, $object, $col_meta, $method, $value->{$key}, 0, $depth + 1);
+      _format_value($db, $value, $key, $object, $col_meta, $get_method, $set_method, $value->{$key}, 0, $depth + 1);
     }
   }
   else
   {
     if($col_meta->manager_uses_method)
     {
-      $object->$method($value);
-      $value = $object->$method();
+      $object->$set_method($value);
+      $value = $object->$get_method();
     }
     else
     {

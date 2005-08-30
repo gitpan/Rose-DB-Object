@@ -26,7 +26,7 @@ use Rose::Object::MakeMethods::Generic
 (
   'scalar --get_set_init' => 
   [
-    'reserved_method_name_fixer',
+    'column_alias_generator',
     'foreign_key_name_generator',
   ],
 );
@@ -91,9 +91,43 @@ sub auto_generate_columns
                 "' schema '" . $schema . "' table '$table'");
   }
 
+  $self->auto_alias_columns(values %columns);
+
   return wantarray ? values %columns : \%columns;
 }
 
+sub auto_alias_columns
+{
+  my($self) = shift;
+
+  foreach my $column (@_ == 1 && ref $_[0] eq 'ARRAY' ? @{$_[0]} : @_)
+  {
+    # Auto-alias the column if there will be any conflicts
+    foreach my $type ($column->auto_method_types)
+    {
+      my $method = $self->method_name_from_column($column, $type);
+  
+      if($self->method_name_is_reserved($method, $self->class))
+      {
+        $self->auto_alias_column($column);
+        last; # just alias the column once
+      }
+    }
+  
+    # Re-check: errors are fatal this time
+    foreach my $type ($column->auto_method_types)
+    {
+      my $method = $self->method_name_from_column($column, $type);
+  
+      if($self->method_name_is_reserved($method, $self->class))
+      {
+        Carp::croak "Cannot create '$type' method named '$method' for ",
+                    "column '$column' - method name is reserved";
+      }
+    }
+  }
+  
+}
 sub auto_generate_column
 {
   my($self, $name, $col_info) = @_;
@@ -117,17 +151,10 @@ sub auto_generate_column
 
   $column->init_with_dbi_column_info($col_info);
 
-  $column->method_name($self->method_name_from_column_name($name));
-
-  if($self->method_name_is_reserved($column->method_name, $self->class))
-  {
-    $self->auto_alias_column($column);
-  }
-
   return $column;
 }
 
-sub init_reserved_method_name_fixer { sub { $_[1] . '_col' } }
+sub init_column_alias_generator { sub { $_[1] . '_col' } }
 
 DEFAULT_FK_NAME_GEN:
 {
@@ -158,7 +185,7 @@ DEFAULT_FK_NAME_GEN:
 
       # Try to lop off foreign column name.  Example:
       # my_foreign_object_id -> my_foreign_object
-      if($local_column =~ s/_$foreign_column$//)
+      if($local_column =~ s/_?$foreign_column$//)
       {
         $name = $local_column;
       }
@@ -205,19 +232,19 @@ sub auto_alias_column
 {
   my($self, $column) = @_;
 
-  my $fixer = $self->reserved_method_name_fixer;
-  local $_ = $column->method_name;
+  my $code = $self->column_alias_generator;
+  local $_ = $column->name;
 
-  my $fixed_name = $fixer->($self, $_);
+  my $alias = $code->($self, $_);
 
-  if($self->method_name_is_reserved($fixed_name, $self->class))
+  if($self->method_name_is_reserved($alias, $self->class))
   {
-    Carp::croak "Called reserved_method_name_fixer() to fix reserved ",
-                "method name ", $column->method_name, " but the value ",
-                "returned is still a reserved method name: $fixed_name";
+    Carp::croak "Called column_alias_generator() to alias column ",
+                "'$_' but the value returned is a reserved method ",
+                "name: $alias";
   }
 
-  $column->method_name($fixed_name);
+  $column->alias($alias);
 
   return;
 }

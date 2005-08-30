@@ -38,7 +38,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   $o->FLAG2('TRUE');
   $o->DATE_CREATED('now');
   $o->LAST_MODIFIED($o->DATE_CREATED);
-  $o->save_col(7);
+  $o->SAVE_COL(7);
 
   ok($o->save, "save() 1 - $db_type");
 
@@ -73,7 +73,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   ok(ref $o2 && $o2->isa('MyPgObject'), "new() 2 - $db_type");
 
-  is($o2->bits->to_Bin, '00101', "bits() (bitfield default value) - $db_type");
+  is($o2->BITS->to_Bin, '00101', "BITS() (bitfield default value) - $db_type");
 
   ok($o2->load, "load() 2 - $db_type");
   ok(!$o2->not_found, "not_found() 1 - $db_type");
@@ -84,10 +84,10 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   is($o2->STATUS, 'active', "load() verify 4 (default value) - $db_type");
   is($o2->FLAG, 1, "load() verify 5 (default boolean value) - $db_type");
   is($o2->FLAG2, 1, "load() verify 6 (boolean value) - $db_type");
-  is($o2->save_col, 7, "load() verify 7 (aliased column) - $db_type");
+  is($o2->SAVE_COL, 7, "load() verify 7 (aliased column) - $db_type");
   is($o2->START->ymd, '1980-12-24', "load() verify 8 (date value) - $db_type");
 
-  is($o2->bits->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
+  is($o2->BITS->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
 
   my $clone = $o2->clone;
   ok($o2->START eq $clone->START, "clone() 1 - $db_type");
@@ -125,15 +125,15 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   {
     if($PG_HAS_CHKPASS)
     {
-      $o->{'password_encrypted'} = ':8R1Kf2nOS0bRE';
+      $o->{'PASSWORD_ENCRYPTED'} = ':8R1Kf2nOS0bRE';
 
-      ok($o->password_is('xyzzy'), "chkpass() 1 - $db_type");
-      is($o->password, 'xyzzy', "chkpass() 2 - $db_type");
+      ok($o->PASSWORD_IS('xyzzy'), "chkpass() 1 - $db_type");
+      is($o->PASSWORD, 'xyzzy', "chkpass() 2 - $db_type");
 
-      $o->password('foobar');
+      $o->PASSWORD('foobar');
 
-      ok($o->password_is('foobar'), "chkpass() 3 - $db_type");
-      is($o->password, 'foobar', "chkpass() 4 - $db_type");
+      ok($o->PASSWORD_IS('foobar'), "chkpass() 3 - $db_type");
+      is($o->PASSWORD, 'foobar', "chkpass() 4 - $db_type");
 
       ok($o->save, "save() 3 - $db_type");
     }
@@ -151,8 +151,8 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   {
     if($PG_HAS_CHKPASS)
     {
-      ok($o5->password_is('foobar'), "chkpass() 5 - $db_type");
-      is($o5->password, 'foobar', "chkpass() 6 - $db_type"); 
+      ok($o5->PASSWORD_IS('foobar'), "chkpass() 5 - $db_type");
+      is($o5->PASSWORD, 'foobar', "chkpass() 6 - $db_type"); 
     }
     else
     {
@@ -178,12 +178,12 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   ok($o->delete, "delete() - $db_type");
 
   $o = MyPgObject->new(NAME => 'John', ID => 9);
-  $o->save_col(22);
+  $o->SAVE_COL(22);
   ok($o->save, "save() 4 - $db_type");
-  $o->save_col(50);
+  $o->SAVE_COL(50);
   ok($o->save, "save() 5 - $db_type");
 
-  $ouk = MyPgObject->new(save_col => 50);
+  $ouk = MyPgObject->new(SAVE_COL => 50);
   ok($ouk->load, "load() aliased unique key - $db_type");
 
   eval { $o->meta->alias_column(nonesuch => 'foo') };
@@ -233,7 +233,7 @@ SKIP: foreach my $db_type ('mysql')
   $o->FLAG2('true');
   $o->DATE_CREATED('now');
   $o->LAST_MODIFIED($o->DATE_CREATED);
-  $o->save_col(22);
+  $o->SAVE_COL(22);
   $o->READ(55);
 
   ok($o->save, "save() 1 - $db_type");
@@ -266,7 +266,7 @@ SKIP: foreach my $db_type ('mysql')
 
   ok(ref $o2 && $o2->isa('MyMySQLObject'), "new() 2 - $db_type");
 
-  is($o2->bits->to_Bin, '00101', "bits() (bitfield default value) - $db_type");
+  is($o2->BITS->to_Bin, '00101', "BITS() (bitfield default value) - $db_type");
 
   ok($o2->load, "load() 2 - $db_type");
   ok(!$o2->not_found, "not_found() 1 - $db_type");
@@ -277,10 +277,10 @@ SKIP: foreach my $db_type ('mysql')
   is($o2->STATUS, 'active', "load() verify 4 (default value) - $db_type");
   is($o2->FLAG, 1, "load() verify 5 (default boolean value) - $db_type");
   is($o2->FLAG2, 1, "load() verify 6 (boolean value) - $db_type");
-  is($o2->save_col, 22, "load() verify 7 (aliased column) - $db_type");
+  is($o2->SAVE_COL, 22, "load() verify 7 (aliased column) - $db_type");
   is($o2->START->ymd, '1980-12-24', "load() verify 8 (date value) - $db_type");
 
-  is($o2->bits->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
+  is($o2->BITS->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
 
   my $clone = $o2->clone;
   ok($o2->START eq $clone->START, "clone() 1 - $db_type");
@@ -331,12 +331,12 @@ SKIP: foreach my $db_type ('mysql')
   ok($o->delete, "delete() - $db_type");
 
   $o = MyMySQLObject->new(NAME => 'John', ID => 9);
-  $o->save_col(22);
+  $o->SAVE_COL(22);
   ok($o->save, "save() 4 - $db_type");
-  $o->save_col(50);
+  $o->SAVE_COL(50);
   ok($o->save, "save() 5 - $db_type");
 
-  $ouk = MyMySQLObject->new(save_col => 50);
+  $ouk = MyMySQLObject->new(SAVE_COL => 50);
   ok($ouk->load, "load() aliased unique key - $db_type");
 
   eval { $o->meta->alias_column(nonesuch => 'foo') };
@@ -405,7 +405,7 @@ SKIP: foreach my $db_type ('informix')
   $o->FLAG2('true');
   $o->DATE_CREATED('current year to fraction(5)');
   $o->LAST_MODIFIED($o->DATE_CREATED);
-  $o->save_col(22);
+  $o->SAVE_COL(22);
 
   ok($o->save, "save() 1 - $db_type");
   ok($o->load, "load() 1 - $db_type");
@@ -437,7 +437,7 @@ SKIP: foreach my $db_type ('informix')
 
   ok(ref $o2 && $o2->isa('MyInformixObject'), "new() 2 - $db_type");
 
-  is($o2->bits->to_Bin, '00101', "bits() (bitfield default value) - $db_type");
+  is($o2->BITS->to_Bin, '00101', "BITS() (bitfield default value) - $db_type");
 
   ok($o2->load, "load() 2 - $db_type");
   ok(!$o2->not_found, "not_found() 1 - $db_type");
@@ -448,10 +448,10 @@ SKIP: foreach my $db_type ('informix')
   is($o2->STATUS, 'active', "load() verify 4 (default value) - $db_type");
   is($o2->FLAG, 1, "load() verify 5 (default boolean value) - $db_type");
   is($o2->FLAG2, 1, "load() verify 6 (boolean value) - $db_type");
-  is($o2->save_col, 22, "load() verify 7 (aliased column) - $db_type");
+  is($o2->SAVE_COL, 22, "load() verify 7 (aliased column) - $db_type");
   is($o2->START->ymd, '1980-12-24', "load() verify 8 (date value) - $db_type");
 
-  is($o2->bits->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
+  is($o2->BITS->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
 
   my $clone = $o2->clone;
   ok($o2->START eq $clone->START, "clone() 1 - $db_type");
@@ -522,14 +522,14 @@ SKIP: foreach my $db_type ('informix')
   $o->FLAG2('true');
   $o->DATE_CREATED('current year to fraction(5)');
   $o->LAST_MODIFIED($o->DATE_CREATED);
-  $o->save_col(22);
+  $o->SAVE_COL(22);
 
   ok($o->save, "save() 4 - $db_type");
-  $o->save_col(50);
+  $o->SAVE_COL(50);
 
   ok($o->save, "save() 5 - $db_type");
 
-  $ouk = MyInformixObject->new(save_col => 50);
+  $ouk = MyInformixObject->new(SAVE_COL => 50);
   ok($ouk->load, "load() aliased unique key - $db_type");
 
   eval { $o->meta->alias_column(nonesuch => 'foo') };
@@ -657,6 +657,14 @@ EOF
 
     MyPgObject->meta->table('rose_db_object_test');
 
+    my %chkpass_args =
+    (
+      type  => 'chkpass', 
+      alias => 'password',
+      encrypted_suffix => '_ENCRYPTED',
+      cmp_suffix       => '_IS',
+    );
+
     MyPgObject->meta->columns
     (
       name     => { type => 'varchar', length => 32 },
@@ -665,7 +673,7 @@ EOF
       k1       => { type => 'int' },
       k2       => { type => 'int' },
       k3       => { type => 'int' },
-      ($PG_HAS_CHKPASS ? (passwd => { type => 'chkpass', alias => 'password' }) : ()),
+      ($PG_HAS_CHKPASS ? (passwd => \%chkpass_args) : ()),
       flag     => { type => 'boolean', default => 1 },
       flag2    => { type => 'boolean' },
       status   => { default => 'active' },
@@ -687,8 +695,8 @@ EOF
 
     MyPgObject->meta->column_name_to_method_name_mapper(sub 
     {
-      my($meta, $name) = @_;
-      return uc $name;
+      my($meta,  $column_name, $method_type, $method_name) = @_;
+      return uc $method_name;
     });
 
     MyPgObject->meta->alias_column(save => 'save_col');
@@ -793,8 +801,8 @@ EOF
 
     MyMySQLObject->meta->column_name_to_method_name_mapper(sub 
     {
-      my($meta, $name) = @_;
-      return uc $name;
+      my($meta,  $column_name, $method_type, $method_name) = @_;
+      return uc $method_name;
     });
 
     MyMySQLObject->meta->alias_column(save => 'save_col');
@@ -831,8 +839,8 @@ EOF
 
     MyMPKMySQLObject->meta->column_name_to_method_name_mapper(sub 
     {
-      my($meta, $name) = @_;
-      return uc $name;
+      my($meta,  $column_name, $method_type, $method_name) = @_;
+      return uc $method_name;
     });
 
     MyMPKMySQLObject->meta->initialize;
@@ -927,8 +935,8 @@ EOF
 
     MyInformixObject->meta->column_name_to_method_name_mapper(sub 
     {
-      my($meta, $name) = @_;
-      return uc $name;
+      my($meta,  $column_name, $method_type, $method_name) = @_;
+      return uc $method_name;
     });
 
     MyInformixObject->meta->prepare_options({ix_CursorWithHold => 1});    

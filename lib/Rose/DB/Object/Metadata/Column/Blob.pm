@@ -22,7 +22,7 @@ Rose::DB::Object::Metadata::Column::Blob - Binary large object column metadata.
   use Rose::DB::Object::Metadata::Column::Blob;
 
   $col = Rose::DB::Object::Metadata::Column::Blob->new(...);
-  $col->make_method(...);
+  $col->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -30,6 +30,26 @@ Rose::DB::Object::Metadata::Column::Blob - Binary large object column metadata.
 Objects of this class store and manipulate metadata for long, variable-length character-based columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
 This class inherits from L<Rose::DB::Object::Metadata::Column::Character>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Character> documentation for more information.
+
+=head1 METHOD MAP
+
+=over 4
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<character|Rose::DB::Object::MakeMethods::Generic/character>, ...
+
+=item C<get>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<character|Rose::DB::Object::MakeMethods::Generic/character>, ...
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<character|Rose::DB::Object::MakeMethods::Generic/character>, ...
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/"MAKING METHODS"> documentation for an explanation of this method map.
 
 =head1 OBJECT METHODS
 

@@ -314,7 +314,7 @@ sub timestamp
 
             unless($dt2)
             {
-              $dt2 = Rose::DateTime::Util::parse_date($dt, $tz || $db->server_time_zone) or
+              $dt2 = Rose::DateTime::Util::parse_date($dt, $tz || $db->server_time_zone, 1) or
                 Carp::croak "Could not parse timestamp '$dt'";
             }
 
@@ -324,7 +324,7 @@ sub timestamp
           if($_[0] eq 'format')
           {
             return $dt  unless(ref $dt);
-            return Rose::DateTime::Util::format_date($dt, (ref $_[1] ? @{$_[1]} : $_[1]));
+            return Rose::DateTime::Util::format_date($dt, (ref $_[1] ? @{$_[1]} : $_[1]), 1);
           }
           elsif($_[0] eq 'truncate')
           {
@@ -347,7 +347,7 @@ sub timestamp
 
             unless($dt)
             {
-              $dt = Rose::DateTime::Util::parse_date($_[0], $tz || $db->server_time_zone) or
+              $dt = Rose::DateTime::Util::parse_date($_[0], $tz || $db->server_time_zone, 1) or
                 Carp::croak "Invalid timestamp: '$_[0]'";
             }
 
@@ -366,7 +366,7 @@ sub timestamp
 
         unless($dt)
         {
-          $dt = Rose::DateTime::Util::parse_date($default, $tz || $db->server_time_zone) or
+          $dt = Rose::DateTime::Util::parse_date($default, $tz || $db->server_time_zone, 1) or
             Carp::croak "Invalid default timestamp: '$default'";
         }
 

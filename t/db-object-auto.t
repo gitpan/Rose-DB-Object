@@ -231,7 +231,7 @@ __PACKAGE__->meta->columns
   name          => { type => 'varchar', length => 32, not_null => 1 },
   nums          => { type => 'array' },
   password      => { type => 'chkpass' },
-  save          => { type => 'integer', method_name => 'save_col' },
+  save          => { type => 'integer', alias => 'save_col' },
   start         => { type => 'date', default => '1980-12-24' },
   status        => { type => 'varchar', default => 'act\'ive', length => 32 },
 );
@@ -253,7 +253,7 @@ __PACKAGE__->meta->columns(
     name          => { type => 'varchar', length => 32, not_null => 1 },
     nums          => { type => 'array' },
     password      => { type => 'chkpass' },
-    save          => { type => 'integer', method_name => 'save_col' },
+    save          => { type => 'integer', alias => 'save_col' },
     start         => { type => 'date', default => '1980-12-24' },
     status        => { type => 'varchar', default => 'act\'ive', length => 32 },
 );
@@ -275,7 +275,7 @@ __PACKAGE__->meta->columns(
     name          => { type => 'varchar', length => 32, not_null => 1 },
     nums          => { type => 'array' },
     password      => { type => 'chkpass' },
-    save          => { type => 'integer', method_name => 'save_col' },
+    save          => { type => 'integer', alias => 'save_col' },
     start         => { type => 'date', default => '1980-12-24' },
     status        => { type => 'varchar', default => 'act\'ive', length => 32 },
 );

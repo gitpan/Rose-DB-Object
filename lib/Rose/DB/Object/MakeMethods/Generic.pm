@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.031';
+our $VERSION = '0.05';
 
 sub scalar
 {
@@ -108,6 +108,62 @@ sub scalar
           return $_[0]->{$key};
         };
       }
+    }
+  }
+  elsif($interface eq 'set')
+  {
+    my $code;
+
+    if(my $check = $args->{'check_in'})
+    {
+      $check = [ $check ] unless(ref $check);
+      my %check = map { $_ => 1 } @$check;
+
+      $methods{$name} = sub
+      {
+        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
+        Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+        return $_[0]->{$key} = $_[1];
+      };
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
+        return $_[0]->{$key} = $_[1];
+      };
+    }
+  }
+  elsif($interface eq 'get')
+  {
+    my $code;
+
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+      };
+    }
+    elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+    {
+      my $init_method = $args->{'init_method'} || "init_$name";
+
+      $methods{$name} = sub
+      {
+        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                 ($_[0]->{$key} = $_[0]->$init_method());
+      };
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        return $_[0]->{$key};
+      };
     }
   }
   else { Carp::croak "Unknown interface: $interface" }
@@ -720,8 +776,8 @@ sub object_by_key
 
       while(my($local_column, $foreign_column) = each(%$fk_columns))
       {
-        my $local_method   = $meta->column_mutator_method($local_column);
-        my $foreign_method = $fk_meta->column_accessor_method($foreign_column);
+        my $local_method   = $meta->column_mutator_method_name($local_column);
+        my $foreign_method = $fk_meta->column_accessor_method_name($foreign_column);
 
         $self->$local_method($_[0]->$foreign_method);
       }
@@ -735,8 +791,8 @@ sub object_by_key
 
     while(my($local_column, $foreign_column) = each(%$fk_columns))
     {
-      my $local_method   = $meta->column_accessor_method($local_column);
-      my $foreign_method = $fk_meta->column_mutator_method($foreign_column);
+      my $local_method   = $meta->column_accessor_method_name($local_column);
+      my $foreign_method = $fk_meta->column_mutator_method_name($foreign_column);
 
       $key{$foreign_method} = $self->$local_method();
 
@@ -827,7 +883,7 @@ sub objects_by_key
 
     while(my($local_column, $foreign_column) = each(%$ft_columns))
     {
-      my $local_method = $meta->column_accessor_method($local_column);
+      my $local_method = $meta->column_accessor_method_name($local_column);
 
       $key{$foreign_column} = $self->$local_method();
 
@@ -878,6 +934,235 @@ sub objects_by_key
   return \%methods;
 }
 
+sub objects_by_map
+{
+  my($class, $name, $args, $options) = @_;
+
+  my %methods;
+
+  my $key = $args->{'hash_key'} || $name;
+  my $interface = $args->{'interface'} || 'get';
+  my $target_class = $options->{'target_class'} or die "Missing target class";
+
+  my $map_class       = $args->{'map_class'} or die "Missing map class";
+  my $map_meta        = $map_class->meta or die "Missing meta for $map_class";
+  my $map_from        = $args->{'map_from'};
+  my $map_to          = $args->{'map_to'};
+  my $map_manager     = $args->{'manager_class'};
+  my $map_method      = $args->{'manager_method'} || 'get_objects';
+  my $mgr_args        = $args->{'manager_args'} || {};
+  my $query_args      = $args->{'query_args'} || [];
+  my $map_to_method;
+
+  if(@$query_args % 2 != 0)
+  {
+    Carp::croak "Odd number of arguments passed in query_args parameter";
+  }
+
+  unless($map_manager)
+  {
+    $map_manager = 'Rose::DB::Object::Manager';
+    $mgr_args->{'object_class'} = $map_class;
+  }
+
+  my $meta       = $target_class->meta;
+  my $share_db   = $args->{'share_db'} || 1;
+
+  # Build the map of "local" column names to "foreign" object method names. 
+  # The words "local" and "foreign" are relative to the *mapper* class.
+  my %key_template;
+
+  # Also grab the foreign object class that the mapper points to,
+  # the relationship name that points back to us, and the class 
+  # name of the objects we really want to fetch.
+  my($with_objects, $local_rel, $foreign_class, %seen_fk);
+
+  foreach my $item ($map_meta->foreign_keys, $map_meta->relationships)
+  {
+    # Track which foreign keys we've seen
+    if($item->isa('Rose::DB::Object::Metadata::ForeignKey'))
+    {
+      $seen_fk{$item->id}++;
+    }
+    elsif($item->isa('Rose::DB::Object::Metadata::Relationship'))
+    {
+      # Skip a relationship if we've already seen the equivalent foreign key
+      next  if($seen_fk{$item->id});
+    }
+
+    if($item->class eq $target_class)
+    {
+      # Skip if there was an explicit local relationship name and
+      # this is not that name.
+      next  if($map_from && $item->name ne $map_from);
+
+      if(%key_template)
+      {
+        Carp::croak "Map class $map_class has more than one foreign key ",
+                    "and/or 'one to one' relationship that points to the ",
+                    "class $target_class.  Please specify one by name ",
+                    "with a 'local' parameter in the 'map' hash";
+      }
+
+      $local_rel = $item->name;
+
+      my $map_columns = 
+        $item->can('column_map') ? $item->column_map : $item->key_columns;
+
+      # "local" and "foreign" here are relative to the *mapper* class
+      while(my($local_column, $foreign_column) = each(%$map_columns))
+      {
+        my $foreign_method = $meta->column_accessor_method_name($foreign_column)
+          or Carp::croak "Missing accessor method for column '$foreign_column'", 
+                         " in class ", $meta->class;
+        $key_template{$local_column} = $foreign_method;
+      }
+    }
+    elsif($item->isa('Rose::DB::Object::Metadata::ForeignKey') ||
+          $item->type eq 'one to one')
+    {
+      # Skip if there was an explicit foreign relationship name and
+      # this is not that name.
+      next  if($map_to && $item->name ne $map_to);
+
+      if($with_objects)
+      {
+        Carp::croak "Map class $map_class has more than one foreign key ",
+                    "and/or 'one to one' relationship that points to a ",
+                    "class other than $target_class.  Please specify one ",
+                    "by name with a 'foreign' parameter in the 'map' hash";
+      }
+
+      $with_objects  = [ $item->name ];
+      $foreign_class = $item->class;
+      $map_to_method = $item->method_name('get');
+    }
+  }
+
+  unless(%key_template)
+  {
+    Carp::croak "Could not find a foreign key or 'one to one' relationship ",
+                "in $map_class that points to $target_class";
+  }
+
+  unless($with_objects)
+  {
+    # Make a second attempt to find a a suitable foreign relationship in the
+    # map class, this time looking for links back to $target_class so long as
+    # it's a different relationship than the one used in the local link.
+    foreach my $item ($map_meta->foreign_keys, $map_meta->relationships)
+    {
+      # Skip a relationship if we've already seen the equivalent foreign key
+      if($item->isa('Rose::DB::Object::Metadata::Relationship'))
+      {
+        next  if($seen_fk{$item->id});
+      }
+
+      if(($item->isa('Rose::DB::Object::Metadata::ForeignKey') ||
+         $item->type eq 'one to one') &&
+         $item->class eq $target_class && $item->name ne $local_rel)
+      {  
+        if($with_objects)
+        {
+          Carp::croak "Map class $map_class has more than two foreign keys ",
+                      "and/or 'one to one' relationships that points to a ",
+                      "$target_class.  Please specify which ones to use ",
+                      "by including 'local' and 'foreign' parameters in the ",
+                      "'map' hash";
+        }
+
+        $with_objects = [ $item->name ];
+        $foreign_class = $item->class;
+        $map_to_method = $item->method_name('get');
+      }
+    }
+  }
+
+  unless($with_objects)
+  {
+    Carp::croak "Could not find a foreign key or 'one to one' relationship ",
+                "in $map_class that points to a class other than $target_class"
+  }
+
+  # Relationship names
+  $map_to   ||= $with_objects->[0];
+  $map_from ||= $local_rel;
+
+  if($interface eq 'get')
+  {
+    $methods{$name} = sub
+    {
+      my($self) = shift;
+
+      if(@_)
+      {      
+        return $self->{$key} = undef  if(@_ == 1 && !defined $_[0]);
+        return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [@_];
+      }
+
+      if(defined $self->{$key})
+      {
+        return wantarray ? @{$self->{$key}} : $self->{$key};  
+      }
+
+      my %link;
+
+      while(my($local_column, $foreign_method) = each(%key_template))
+      {
+        $link{$local_column} = $self->$foreign_method();
+
+        # Comment this out to allow null keys
+        unless(defined $link{$local_column})
+        {
+          keys(%key_template); # reset iterator
+          $self->error("Could not fetch indirect objects via $name() - the " .
+                       "$foreign_method attribute is undefined");
+          return wantarray ? () : undef;
+        }
+      }
+
+      my $objs;
+
+      if($share_db)
+      {
+        $objs =
+          $map_manager->$map_method(query        => [ %link, @$query_args ],
+                                    with_objects => $with_objects,
+                                    %$mgr_args, db => $self->db);
+      }
+      else
+      {
+        $objs = 
+          $map_manager->$map_method(query        => [ %link, @$query_args ],
+                                    with_objects => $with_objects,
+                                    %$mgr_args);
+      }
+
+      unless($objs)
+      {
+        $self->error("Could not load $foreign_class objects via map class ", 
+                     "$map_class - " . $map_manager->error);
+        return $objs;
+      }
+
+      $self->{$key} = [ map { $_->$map_to_method() } @$objs ];
+
+      return wantarray ? @{$self->{$key}} : $self->{$key};
+    };
+  }
+  elsif($interface eq 'load')
+  {
+    my $method_name = $args->{'load_method'} || 'load_' . $name;
+
+    $methods{$method_name} = sub
+    {
+      return (defined shift->$name(@_)) ? 1 : 0;
+    };
+  }
+
+  return \%methods;
+}
+
 1;
 
 __END__
@@ -900,7 +1185,9 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
       {
         with_init => 1,
         check_in  => [ qw(AA AAA C D) ],
-      }
+      },
+
+      'set_type' => { hash_key => 'type' },
     ],
 
     character =>
@@ -927,8 +1214,11 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
 
   print $o->type; # C
 
-  $o->name('Bob'); # set
-  $o->type('AA');  # set
+  $o->name('Bob');   # set
+  $o->set_type('C'); # set
+  $o->type('AA');    # set
+
+  $o->set_type; # Fatal error: no argument passed to "set" method
 
   $o->name('C' x 40); # truncate on set
   print $o->name;     # 'CCCCCCCCCC'
@@ -1511,11 +1801,20 @@ method.
 
 =over 4
 
+=item C<get>
+
+Creates an accessor method for an object attribute that returns the current
+value of the attribute.
+
 =item C<get_set>
 
 Creates a get/set accessor method for an object attribute.  When
 called with an argument, the value of the attribute is set.  The current
 value of the attribute is returned.
+
+=item C<set>
+
+Creates a mutator method for an object attribute.  When called with an argument, the value of the attribute is set.  If called with no arguments, a fatal error will occur.
 
 =back
 
@@ -1536,6 +1835,10 @@ Example:
         {
           with_init => 1,
           check_in  => [ qw(AA AAA C D) ],
+        }
+        set_type =>
+        {
+          check_in  => [ qw(AA AAA C D) ],        
         }
       ],
     );

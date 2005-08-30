@@ -12,6 +12,6 @@ WriteMakefile(NAME         => 'Rose::DB::Object',
                 Bit::Vector::Overload => 0,
                 Scalar::Util          => 0,
                 Rose::DateTime::Util  => 0,
-                Rose::Object          => '0.013',
-                Rose::DB              => '0.026',
+                Rose::Object          => '0.015',
+                Rose::DB              => '0.0261',
               });

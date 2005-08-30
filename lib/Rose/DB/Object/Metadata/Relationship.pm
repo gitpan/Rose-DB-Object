@@ -7,21 +7,18 @@ use Carp();
 use Rose::DB::Object::Metadata::MethodMaker;
 our @ISA = qw(Rose::DB::Object::Metadata::MethodMaker);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
   scalar => 
   [
-    __PACKAGE__->method_maker_argument_names,
+    __PACKAGE__->common_method_maker_argument_names,
   ],
 );
 
-sub type { die "Override in subclass" }
-
-sub method_maker_class { die "Override in subclass" }
-sub method_maker_type  { die "Override in subclass" }
+sub type { Carp::confess "Override in subclass" }
 
 1;
 
@@ -41,7 +38,75 @@ Rose::DB::Object::Metadata::Relationship - Base class for table relationship met
 
 =head1 DESCRIPTION
 
-This is the base class for objects that store and manipulate database table relationship metadata.  Relationship metadata objects are responsible for creating object methods that fetch and/or manipulate objects from foreign tables.  See the L<Rose::DB::Object::Metadata> documentation for more information.
+This is the base class for objects that store and manipulate database table relationship metadata.  Relationship metadata objects are responsible for creating object methods that fetch and/or manipulate objects from related tables.  See the L<Rose::DB::Object::Metadata> documentation for more information.
+
+=head2 MAKING METHODS
+
+A L<Rose::DB::Object::Metadata::Relationship>-derived object is responsible for creating object methods that manipulate objects in related tables.  Each relationship object can make zero or more methods for each available relationship method type.  A relationship method type describes the purpose of a method.  The default list of relationship method types contains only one type:
+
+=over 4
+
+=item C<get>
+
+A method that returns one or more objects from the related table.
+
+=back
+
+Methods are created by calling L<make_methods|/make_methods>.  A list of method types can be passed to the call to L<make_methods|/make_methods>.  If absent, the list of method types is determined by the L<auto_method_types|/auto_method_types> method.  A list of all possible method types is available through the L<available_method_types|/available_method_types> method.
+
+These methods make up the "public" interface to relationship method creation.  There are, however, several "protected" methods which are used internally to implement the methods described above.  (The word "protected" is used here in a vaguely C++ sense, meaning "accessible to subclasses, but not to the public.")  Subclasses will probably find it easier to override and/or call these protected methods in order to influence the behavior of the "public" method maker methods.
+
+A L<Rose::DB::Object::Metadata::Relationship> object delegates method creation to a  L<Rose::Object::MakeMethods>-derived class.  Each L<Rose::Object::MakeMethods>-derived class has its own set of method types, each of which takes it own set of arguments.
+
+Using this system, four pieces of information are needed to create a method on behalf of a L<Rose::DB::Object::Metadata::Relationship>-derived object:
+
+=over 4
+
+=item * The B<relationship method type> (e.g., C<get>)
+
+=item * The B<method maker class> (e.g., L<Rose::DB::Object::MakeMethods::Generic>)
+
+=item * The B<method maker method type> (e.g., L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>)
+
+=item * The B<method maker arguments> (e.g., C<interface =E<gt> 'get'>)
+
+=back
+
+This information can be organized conceptually into a "method map" that connects a relationship method type to a method maker class and, finally, to one particular method type within that class, and its arguments.
+
+There is no default method map for the L<Rose::DB::Object::Metadata::Relationship> base class, but here is the method map from L<Rose::DB::Object::Metadata::Relationship::OneToOne> as an example:
+
+=over 4
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<scalar|Rose::DB::Object::MakeMethods::Generic/scalar>, C<interface =E<gt> 'get_set', ...>
+
+=item C<get>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, ...
+
+=back
+
+Each item in the map is a relationship method type.  For each relationship method type, the method maker class, the method maker method type, and the "interesting" method maker arguments are listed, in that order.
+
+The "..." in the method maker arguments is meant to indicate that arguments have been omitted.  Arguments that are common to all relationship method types are routinely omitted from the method map for the sake of brevity.  If there are no "interesting" method maker arguments, then "..." may appear by itself, as shown above.
+
+The purpose of documenting the method map is to answer the question, "What kind of method(s) will be created by this relationship object for a given method type?"  Given the method map, it's possible to read the documentation for each method maker class to determine how methods of the specified type behave when passed the listed arguments.
+
+To this end, each L<Rose::DB::Object::Metadata::Relationship>-derived class in the L<Rose::DB::Object> module distribution will list its method map in its documentation.  This is a concise way to document the behavior that is specific to each relationship class, while omitting the common functionality (which is documented here, in the relationship base class).
+
+Remember, the existence and behavior of the method map is really implementation detail.  A relationship object is free to implement the public method-making interface however it wants, without regard to any conceptual or actual method map.  It must then, of course, document what kinds of methods it makes for each of its method types, but it does not have to use a method map to do so.
+
+=head1 CLASS METHODS
+
+=over 4
+
+=item B<default_auto_method_types [TYPES]>
+
+Get or set the default list of L<auto_method_types|/auto_method_types>.  TYPES should be a list of relationship method types.  Returns the list of default relationship method types (in list context) or a reference to an array of the default relationship method types (in scalar context).  The default list is empty.
+
+=back
 
 =head1 CONSTRUCTOR
 
@@ -58,67 +123,51 @@ name/value pairs.  Any object method is a valid parameter name.
 
 =over 4
 
+=item B<available_method_types>
+
+Returns the full list of relationship method types supported by this class.
+
+=item B<auto_method_types [TYPES]>
+
+Get or set the list of relationship method types that are automatically created when L<make_methods|/make_methods> is called without an explicit list of relationship method types.  The default list is determined by the L<default_auto_method_types|/default_auto_method_types> class method.
+
+=item B<build_method_name_for_type TYPE>
+
+Return a method name for the relationship method type TYPE.  Subclasses must override this method.  The default implementation causes a fatal error if called.
+
 =item B<class [CLASS]>
 
 Get or set the name of the L<Rose::DB::Object>-derived class that fronts the foreign table referenced by this relationship.
 
-=item B<make_method PARAMS>
+=item B<make_methods PARAMS>
 
-Create an object method used to fetch and/or manipulate objects from foreign tables.  To do this, the C<make_methods()> class method of the L<method_maker_class|/method_maker_class> is called.  PARAMS are name/value pairs.  Valid PARAMS are:
+Create object method used to manipulate objects in related tables.  PARAMS are name/value pairs.  Valid PARAMS are:
 
 =over 4
 
-=item C<options HASHREF>
+=item C<preserve_existing BOOL>
 
-A reference to a hash of options that will be passed as the first argument to the call to the C<make_methods()> class method of the L<method_maker_class|/method_maker_class>.  This parameter is required, and the HASHREF must include a value for the key C<target_class>, which C<make_methods()> needs in order to determine where to make the method.
+Boolean flag that indicates whether or not to preserve existing methods in the case of a name conflict.
+
+=item C<replace_existing BOOL>
+
+Boolean flag that indicates whether or not to replace existing methods in the case of a name conflict.
+
+=item C<target_class CLASS>
+
+The class in which to make the method(s).  If omitted, it defaults to the calling class.
+
+=item C<types ARRAYREF>
+
+A reference to an array of relationship method types to be created.  If omitted, it defaults to the list of relationship method types returned by L<auto_method_types|/auto_method_types>.
 
 =back
 
-The call to C<make_methods()> looks something like this:
+If any of the methods could not be created for any reason, a fatal error will occur.
 
-    my $method_name = $self->method_name;
+=item B<method_name TYPE [, NAME]>
 
-    # Use "name" if "method_name" is undefined
-    unless(defined $method_name)
-    {
-      # ...and set "method_name" so it's defined now
-      $method_name = $self->method_name($self->name);
-    }
-
-    $self->method_maker_class->make_methods(
-      $args{'options'}, 
-      $self->method_maker_type => 
-      [
-        $method_name => scalar $self->method_maker_arguments
-      ]);
-
-where C<$args{'options'}> is the value of the "options" PARAM.
-
-The L<method_maker_class|/method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
-
-More than one method may be created, but there must be at least one method created, and its name must match the L<method_name|/method_name> (or L<name|/name> if L<method_name|/method_name> is undefined).
-
-=item B<method_maker_arguments>
-
-Returns a hash (in list context) or a reference to a hash (in scalar context) or arguments that will be passed (as a hash ref) to the call to the C<make_methods()> class method of the L<method_maker_class|/method_maker_class>, as shown in the L<make_method|/make_method> example above.
-
-The default implementation populates the hash with the defined return values of the object methods named by L<method_maker_argument_names|/method_maker_argument_names>.  (Method names that return undefined values are not included in the hash.)
-
-=item B<method_maker_argument_names>
-
-Returns a list of methods to call in order to generate the L<method_maker_arguments|/method_maker_arguments> hash.
-
-=item B<method_maker_class>
-
-Returns the name of the L<Rose::Object::MakeMethods>-derived class used to create the object method that will fetch and/or manipulate objects from foreign tables.  You must override this method in your subclass.  The default implementation causes a fatal error if called.
-
-=item B<method_maker_type>
-
-Returns the method type, which is passed to the call to the C<make_methods()> class method of the L<method_maker_class|/method_maker_class>, as shown in the L<make_method|/make_method> example above.  You must override this method in your subclass.  The default implementation causes a fatal error if called.
-
-=item B<method_name [NAME]>
-
-Get or set the name of the object method to be created for this relationship.  This may be left undefined if the desired method name is stored in L<name|/name> instead.  Once the method is actually created, the L<method_name|/method_name> will be set.
+Get or set the name of the relationship method of type TYPE.
 
 =item B<name [NAME]>
 
@@ -126,7 +175,31 @@ Get or set the name of the relationship.  This name must be unique among all oth
 
 =item B<type>
 
-Returns a string describing the type of relationship.  You must override this method in your subclass.  The default implementation causes a fatal error if called.
+Returns a string describing the type of relationship.  Subclasses must override this method.  The default implementation causes a fatal error if called.
+
+=back
+
+=head1 PROTECTED API
+
+These methods are not part of the public interface, but are supported for use by subclasses.  Put another way, given an unknown object that "isa" L<Rose::DB::Object::Metadata::Relationship>, there should be no expectation that the following methods exist.  But subclasses, which know the exact class from which they inherit, are free to use these methods in order to implement the public API described above.
+
+=over 4 
+
+=item B<method_maker_arguments TYPE>
+
+Returns a hash (in list context) or reference to a hash (in scalar context) of name/value arguments that will be passed to the L<method_maker_class|/method_maker_class> when making the relationship method type TYPE.
+
+=item B<method_maker_class TYPE [, CLASS]>
+
+If CLASS is passed, the name of the L<Rose::Object::MakeMethods>-derived class used to create the object method of type TYPE is set to CLASS.
+
+Returns the name of the L<Rose::Object::MakeMethods>-derived class used to create the object method of type TYPE.
+
+=item B<method_maker_type TYPE [, NAME]>
+
+If NAME is passed, the name of the method maker method type for the relationship method type TYPE is set to NAME.
+
+Returns the method maker method type for the relationship method type TYPE.  
 
 =back
 

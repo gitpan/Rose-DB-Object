@@ -10,9 +10,11 @@ our @ISA = qw(Rose::DB::Object::Metadata::Relationship);
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
-__PACKAGE__->add_method_maker_argument_names
+__PACKAGE__->default_auto_method_types('get');
+
+__PACKAGE__->add_common_method_maker_argument_names
 (
   qw(class share_db key_columns manager_class manager_method manager_args query_args)
 );
@@ -36,17 +38,35 @@ Rose::Object::MakeMethods::Generic->make_methods
   { preserve_existing => 1 },
   scalar => 
   [
-    __PACKAGE__->method_maker_argument_names
+    __PACKAGE__->common_method_maker_argument_names
   ],
 );
 
-sub method_maker_class { 'Rose::DB::Object::MakeMethods::Generic' }
-sub method_maker_type  { 'objects_by_key' }
+__PACKAGE__->method_maker_info
+(
+  get =>
+  {
+    class => 'Rose::DB::Object::MakeMethods::Generic',
+    type  => 'objects_by_key',
+  },
+);
 
 sub type { 'one to many' }
 
 *map_column = \&key_column;
 *column_map = \&key_columns;
+
+sub build_method_name_for_type
+{
+  my($self, $type) = @_;
+  
+  if($type eq 'get')
+  {
+    return $self->name;
+  }
+
+  return undef;
+}
 
 1;
 
@@ -61,7 +81,7 @@ Rose::DB::Object::Metadata::Relationship::OneToMany - One to many table relation
   use Rose::DB::Object::Metadata::Relationship::OneToMany;
 
   $rel = Rose::DB::Object::Metadata::Relationship::OneToMany->new(...);
-  $rel->make_method(...);
+  $rel->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -70,9 +90,26 @@ Objects of this class store and manipulate metadata for relationships in which a
 
 This class inherits from L<Rose::DB::Object::Metadata::Relationship>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Relationship> documentation for more information.
 
+=head1 METHOD MAP
+
+=over 4
+
+=item C<get>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_key|Rose::DB::Object::MakeMethods::Generic/objects_by_key>, ...
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Relationship|Rose::DB::Object::Metadata::Relationship/"MAKING METHODS"> documentation for an explanation of this method map.
+
+
 =head1 OBJECT METHODS
 
 =over 4
+
+=item B<build_method_name_for_type TYPE>
+
+Return a method name for the relationship method type TYPE.  Returns the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> for the method type "get", undef otherwise.
 
 =item B<map_column LOCAL [, FOREIGN]>
 
@@ -81,14 +118,6 @@ If passed a local column name LOCAL, return the corresponding column name in the
 =item B<column_map [HASH | HASHREF]>
 
 Get or set a reference to a hash that maps local column names to foreign column names.
-
-=item B<method_maker_class>
-
-Returns L<Rose::DB::Object::MakeMethods::Generic>.
-
-=item B<method_maker_type>
-
-Returns C<objects_by_key>.
 
 =item B<type>
 

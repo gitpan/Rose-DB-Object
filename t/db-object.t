@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 263;
+use Test::More tests => 271;
 
 BEGIN 
 {
@@ -21,7 +21,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 132)  unless($HAVE_PG);
+  skip("Postgres tests", 136)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -91,6 +91,12 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   is($o2->flag2, 1, "load() verify 6 (boolean value) - $db_type");
   is($o2->save_col, 7, "load() verify 7 (aliased column) - $db_type");
   is($o2->start->ymd, '1980-12-24', "load() verify 8 (date value) - $db_type");
+
+  $o2->set_status('foo');
+  is($o2->get_status, 'foo', 'get_status()');
+  $o2->set_status('active');
+  eval { $o2->set_status };
+  ok($@, 'set_status()');
 
   is($o2->bits->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
 
@@ -224,7 +230,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 64)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 66)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -283,6 +289,12 @@ SKIP: foreach my $db_type ('mysql')
   is($o2->flag2, 1, "load() verify 6 (boolean value) - $db_type");
   is($o2->save_col, 22, "load() verify 7 (aliased column) - $db_type");
   is($o2->start->ymd, '1980-12-24', "load() verify 8 (date value) - $db_type");
+
+  $o2->set_status('foo');
+  is($o2->get_status, 'foo', 'get_status()');
+  $o2->set_status('active');
+  eval { $o2->set_status };
+  ok($@, 'set_status()');
 
   is($o2->bits->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
 
@@ -391,7 +403,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 65)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 67)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -453,6 +465,12 @@ SKIP: foreach my $db_type ('informix')
   is($o2->flag2, 1, "load() verify 6 (boolean value) - $db_type");
   is($o2->save_col, 22, "load() verify 7 (aliased column) - $db_type");
   is($o2->start->ymd, '1980-12-24', "load() verify 8 (date value) - $db_type");
+
+  $o2->set_status('foo');
+  is($o2->get_status, 'foo', 'get_status()');
+  $o2->set_status('active');
+  eval { $o2->set_status };
+  ok($@, 'set_status()');
 
   is($o2->bits->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
 
@@ -671,7 +689,7 @@ EOF
       ($PG_HAS_CHKPASS ? (passwd => { type => 'chkpass', alias => 'password' }) : ()),
       flag     => { type => 'boolean', default => 1 },
       flag2    => { type => 'boolean' },
-      status   => { default => 'active' },
+      status   => { default => 'active', add_methods => [ qw(get set) ] },
       start    => { type => 'date', default => '12/24/1980' },
       save     => { type => 'scalar' },
       nums     => { type => 'array' },
@@ -783,7 +801,7 @@ EOF
       k3       => { type => 'int' },
       flag     => { type => 'boolean', default => 1 },
       flag2    => { type => 'boolean' },
-      status   => { default => 'active' },
+      status   => { default => 'active', methods => [ qw(get_set get set) ] },
       start    => { type => 'date', default => '12/24/1980' },
       save     => { type => 'scalar' },
       nums     => { type => 'array' },
@@ -898,6 +916,8 @@ EOF
 
     sub init_db { Rose::DB->new('informix') }
 
+    MyInformixObject->meta->allow_inline_column_values(1);
+
     MyInformixObject->meta->table('rose_db_object_test');
 
     MyInformixObject->meta->columns
@@ -910,7 +930,7 @@ EOF
       k3       => { type => 'int' },
       flag     => { type => 'boolean', default => 1 },
       flag2    => { type => 'boolean' },
-      status   => { default => 'active' },
+      status   => { default => 'active', add_methods => [ qw(get set) ] },
       start    => { type => 'date', default => '12/24/1980' },
       save     => { type => 'scalar' },
       nums     => { type => 'array' },

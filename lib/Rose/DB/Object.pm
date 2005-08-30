@@ -13,7 +13,7 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Constants qw(:all);
 #use Rose::DB::Constants qw(IN_TRANSACTION);
 
-our $VERSION = '0.0692';
+our $VERSION = '0.07';
 
 our $Debug = 0;
 
@@ -123,7 +123,7 @@ sub load
   my $meta = $self->meta;
 
   my @key_columns = $meta->primary_key_column_names;
-  my @key_methods = map { $meta->column_method($_) } @key_columns;
+  my @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
   my @key_values  = grep { defined } map { $self->$_() } @key_methods;
   my $null_key  = 0;
   my $found_key = 0;
@@ -134,7 +134,7 @@ sub load
     {
       my $defined = 0;
       @key_columns = @$cols;
-      @key_methods = map { $meta->column_method($_) } @key_columns;
+      @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
       @key_values  = map { $defined++ if(defined $_); $_ } 
                      map { $self->$_() } @key_methods;
 
@@ -202,22 +202,12 @@ sub load
 
     if($rows > 0)
     {
-      if($meta->column_aliases || $meta->column_name_to_method_name_mapper)
-      {
-        my $methods = $meta->column_methods;
+      my $methods = $meta->column_mutator_method_names_hash;
 
-        foreach my $name (@$column_names)
-        {
-          my $method = $methods->{$name} ||= $name;
-          $self->$method($row{$name});
-        }
-      }
-      else
+      foreach my $name (@$column_names)
       {
-        foreach my $name (@$column_names)
-        {
-          $self->$name($row{$name});
-        }
+        my $method = $methods->{$name};
+        $self->$method($row{$name});
       }
     }
     else
@@ -272,7 +262,7 @@ sub update
   my $meta = $self->meta;
 
   my @key_columns = $meta->primary_key_column_names;
-  my @key_methods = map { $meta->column_method($_) } @key_columns;
+  my @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
   my @key_values  = grep { defined } map { $self->$_() } @key_columns;
 
   # See comment below
@@ -289,7 +279,7 @@ sub update
     #{
     #  my $defined = 0;
     #  @key_columns = @$cols;
-    #  @key_methods = map { $meta->column_method($_) } @key_columns;
+    #  @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
     #  @key_values  = map { $defined++ if(defined $_); $_ } 
     #                 map { $self->$_() } @key_methods;
     #
@@ -357,8 +347,6 @@ sub update
     }
     else
     {
-      my $column_names = $meta->column_names;
-
       # See comment above regarding primary keys vs. unique keys for updates
       #my($sql, $sth);
       #
@@ -378,38 +366,21 @@ sub update
       # Was prepare_cached() but that can't be used across transactions
       my $sth = $dbh->prepare($sql, $meta->prepare_update_options);
 
-      my %key = map { ($_ => 1) } @key_columns;
+      my %key = map { ($_ => 1) } @key_methods;
 
-      if($meta->column_aliases || $meta->column_name_to_method_name_mapper)
+      my $method_names = $meta->column_accessor_method_names;
+
+      if($Debug)
       {
-        my $methods = $meta->column_methods;
-
-        if($Debug)
-        {
-          no warnings;
-          warn "$sql - bind params: ", 
-            join(', ', (map { my $m = $methods->{$_} ||= $_; $self->$m(); } 
-                        grep { !$key{$_} } @$column_names), 
-                        grep { defined } @key_values), "\n";
-        }
-
-        $sth->execute(
-          (map { my $m = $methods->{$_} ||= $_; $self->$m(); } 
-           grep { !$key{$_} } @$column_names), grep { defined } @key_values);
+        no warnings;
+        warn "$sql - bind params: ", 
+          join(', ', (map { $self->$_() } grep { !$key{$_} } @$method_names), 
+                      grep { defined } @key_values), "\n";
       }
-      else
-      {
-        if($Debug)
-        {
-          no warnings;
-          warn "$sql - bind params: ", 
-            join(', ', (map { $self->$_() } grep { !$key{$_} } @$column_names), 
-                        grep { defined } @key_values), "\n";
-        }
 
-        $sth->execute((map { $self->$_() } grep { !$key{$_} } @$column_names), 
-                       grep { defined } @key_values);
-      }
+      $sth->execute(
+        (map { $self->$_() } grep { !$key{$_} } @$method_names), 
+        grep { defined } @key_values);
     }
     #if($started_new_tx)
     #{
@@ -437,8 +408,9 @@ sub insert
 
   my $meta = $self->meta;
 
-  my @pk_columns = map { $meta->column_method($_) } $meta->primary_key_column_names;
-  my @pk_values  = grep { defined } map { $self->$_() } @pk_columns;
+  my @pk_methods = map { $meta->column_accessor_method_name($_) } 
+                   $meta->primary_key_column_names;
+  my @pk_values  = grep { defined } map { $self->$_() } @pk_methods;
 
   #my $ret = $db->begin_work;
   #
@@ -452,7 +424,7 @@ sub insert
 
   my $using_pk_placeholders = 0;
 
-  unless(@pk_values == @pk_columns)
+  unless(@pk_values == @pk_methods)
   {
     @pk_values = $meta->generate_primary_key_values($db);
 
@@ -462,31 +434,18 @@ sub insert
       $using_pk_placeholders = 1;
     }
 
-    unless(@pk_values == @pk_columns)
+    unless(@pk_values == @pk_methods)
     {
       my $s = (@pk_values == 1 ? '' : 's');
       $self->error("Could not generate primary key$s for column$s " .
-                   join(', ', @pk_columns));
+                   join(', ', @pk_methods));
       $self->meta->handle_error($self);
       return undef;
     }
 
-    if($meta->column_aliases || $meta->column_name_to_method_name_mapper)
+    foreach my $name (@pk_methods)
     {
-      my $methods = $meta->column_methods;
-
-      foreach my $name (@pk_columns)
-      {
-        my $method = $methods->{$name} ||= $name;
-        $self->$name(shift @pk_values);
-      }
-    }
-    else
-    {
-      foreach my $name (@pk_columns)
-      {
-        $self->$name(shift @pk_values);
-      }
+      $self->$name(shift @pk_values);
     }
   }
 
@@ -523,22 +482,16 @@ sub insert
       {
         no warnings;
         warn $meta->insert_sql, " - bind params: ", 
-          join(', ', (map { $self->$_() } $meta->column_method_names)), "\n";
+          join(', ', (map { $self->$_() } $meta->column_accessor_method_names)), 
+          "\n";
       }
 
-      if($meta->column_aliases || $meta->column_name_to_method_name_mapper)
-      {
-        $sth->execute(map { $self->$_() } $meta->column_method_names);
-      }
-      else
-      {
-        $sth->execute(map { $self->$_() } @$column_names);
-      }
+      $sth->execute(map { $self->$_() } $meta->column_accessor_method_names);
     }
 
-    if(@pk_columns == 1)
+    if(@pk_methods == 1)
     {
-      my $pk = $pk_columns[0];
+      my $pk = $pk_methods[0];
 
       if($using_pk_placeholders || !defined $self->$pk())
       {
@@ -551,7 +504,7 @@ sub insert
         $self->{STATE_IN_DB()} = 1;
       }
     }
-    elsif(@pk_values == @pk_columns)
+    elsif(@pk_values == @pk_methods)
     {
       $self->{STATE_IN_DB()} = 1;
     }
@@ -559,7 +512,7 @@ sub insert
     {
       my $have_pk = 1;
 
-      foreach my $pk (@pk_columns)
+      foreach my $pk (@pk_methods)
       {
         $have_pk = 0  unless(defined $self->$pk());
       }
@@ -592,13 +545,13 @@ sub delete
 
   my $meta = $self->meta;
 
-  my @pk_columns = map { $meta->column_method($_) } $meta->primary_key_column_names;
-  my @pk_values  = grep { defined } map { $self->$_() } @pk_columns;
+  my @pk_methods = map { $meta->column_accessor_method_name($_) } $meta->primary_key_column_names;
+  my @pk_values  = grep { defined } map { $self->$_() } @pk_methods;
 
-  unless(@pk_values == @pk_columns)
+  unless(@pk_values == @pk_methods)
   {
     $self->error("Cannot delete " . ref($self) . " without a primary key (" .
-                 join(', ', @pk_columns) . ')');
+                 join(', ', @pk_methods) . ')');
     $self->meta->handle_error($self);
     return 0;
   }
@@ -617,7 +570,7 @@ sub delete
     unless($sth->rows > 0)
     {
       $self->error("Did not delete " . ref($self) . ' where ' . 
-                   join(', ', @pk_columns) . ' = ' . join(', ', @pk_values));
+                   join(', ', @pk_methods) . ' = ' . join(', ', @pk_values));
     }
   };
 
@@ -637,7 +590,7 @@ sub clone
   my($self) = shift;
   my $class = ref $self;
   local $self->{STATE_CLONING()} = 1;
-  return $class->new(map { $_ => $self->$_() } $self->meta->column_method_names);
+  return $class->new(map { $_ => $self->$_() } $self->meta->column_accessor_method_names);
 }
 
 sub DESTROY

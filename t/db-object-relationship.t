@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 147;
+use Test::More tests => 189;
 
 BEGIN 
 {
@@ -18,7 +18,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type ('pg')
 {
-  skip("Postgres tests", 60)  unless($HAVE_PG);
+  skip("Postgres tests", 74)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -186,7 +186,57 @@ SKIP: foreach my $db_type ('pg')
   ok(@o2s == 2 && $o2s[0]->name eq 'two' && $o2s[1]->name eq 'one',
      'other objects 2');
 
-  foreach my $obj (@o2s)
+  my $color = MyPgColor->new(id => 1, name => 'red');
+  ok($color->save, "save color 1 - $db_type");
+  
+  $color = MyPgColor->new(id => 2, name => 'green');
+  ok($color->save, "save color 2 - $db_type");
+
+  $color = MyPgColor->new(id => 3, name => 'blue');
+  ok($color->save, "save color 3 - $db_type");
+
+  $color = MyPgColor->new(id => 4, name => 'pink');
+  ok($color->save, "save color 4 - $db_type");
+
+  my $map1 = MyPgColorMap->new(obj_id => 1, color_id => 1);
+  ok($map1->save, "save color map record 1 - $db_type");
+
+  my $map2 = MyPgColorMap->new(obj_id => 1, color_id => 3);
+  ok($map2->save, "save color map record 2 - $db_type");
+
+  my $map3 = MyPgColorMap->new(obj_id => 99, color_id => 4);
+  ok($map3->save, "save color map record 3 - $db_type");
+
+  my $colors = $o->colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 2 && 
+     $colors->[0]->name eq 'red' && $colors->[1]->name eq 'blue',
+     "colors 1 - $db_type");
+
+  my @colors = $o->colors;
+
+  ok(@colors == 2 && $colors[0]->name eq 'red' && $colors[1]->name eq 'blue',
+     "colors 2 - $db_type");
+
+  $colors = $o_x->colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'pink',
+     "colors 3 - $db_type");
+
+  @colors = $o_x->colors;
+
+  ok(@colors == 1 && $colors[0]->name eq 'pink', "colors 4 - $db_type");
+
+  ok($map1->delete, 'delete color map record 1');
+  ok($map2->delete, 'delete color map record 2');
+  ok($map3->delete, 'delete color map record 3');
+
+  foreach my $obj ($o->colors)
+  {
+    $obj->delete;
+  }
+
+  foreach my $obj ($o->other2_objs)
   {
     $obj->delete;
   }
@@ -203,7 +253,7 @@ SKIP: foreach my $db_type ('pg')
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 34)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 48)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -287,6 +337,56 @@ SKIP: foreach my $db_type ('mysql')
   ok(@o2s == 2 && $o2s[0]->name eq 'two' && $o2s[1]->name eq 'one',
      'other objects 2');
 
+  my $color = MyMySQLColor->new(id => 1, name => 'red');
+  ok($color->save, "save color 1 - $db_type");
+  
+  $color = MyMySQLColor->new(id => 2, name => 'green');
+  ok($color->save, "save color 2 - $db_type");
+
+  $color = MyMySQLColor->new(id => 3, name => 'blue');
+  ok($color->save, "save color 3 - $db_type");
+
+  $color = MyMySQLColor->new(id => 4, name => 'pink');
+  ok($color->save, "save color 4 - $db_type");
+
+  my $map1 = MyMySQLColorMap->new(obj_id => 1, color_id => 1);
+  ok($map1->save, "save color map record 1 - $db_type");
+
+  my $map2 = MyMySQLColorMap->new(obj_id => 1, color_id => 3);
+  ok($map2->save, "save color map record 2 - $db_type");
+
+  my $map3 = MyMySQLColorMap->new(obj_id => 99, color_id => 4);
+  ok($map3->save, "save color map record 3 - $db_type");
+
+  my $colors = $o->colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 2 && 
+     $colors->[0]->name eq 'red' && $colors->[1]->name eq 'blue',
+     "colors 1 - $db_type");
+
+  my @colors = $o->colors;
+
+  ok(@colors == 2 && $colors[0]->name eq 'red' && $colors[1]->name eq 'blue',
+     "colors 2 - $db_type");
+
+  $colors = $o_x->colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'pink',
+     "colors 3 - $db_type");
+
+  @colors = $o_x->colors;
+
+  ok(@colors == 1 && $colors[0]->name eq 'pink', "colors 4 - $db_type");
+
+  ok($map1->delete, 'delete color map record 1');
+  ok($map2->delete, 'delete color map record 2');
+  ok($map3->delete, 'delete color map record 3');
+
+  foreach my $obj ($o->colors)
+  {
+    $obj->delete;
+  }
+
   foreach my $obj (@o2s)
   {
     $obj->delete;
@@ -304,7 +404,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 52)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 66)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -436,7 +536,58 @@ SKIP: foreach my $db_type ('informix')
   ok(@o2s == 2 && $o2s[0]->name eq 'two' && $o2s[1]->name eq 'one',
      'other objects 2');
 
-  foreach my $obj (@o2s)
+  my $color = MyInformixColor->new(id => 1, name => 'red');
+  ok($color->save, "save color 1 - $db_type");
+  
+  $color = MyInformixColor->new(id => 2, name => 'green');
+  ok($color->save, "save color 2 - $db_type");
+
+  $color = MyInformixColor->new(id => 3, name => 'blue');
+  ok($color->save, "save color 3 - $db_type");
+
+  $color = MyInformixColor->new(id => 4, name => 'pink');
+  ok($color->save, "save color 4 - $db_type");
+
+  my $map1 = MyInformixColorMap->new(obj_id => 1, color_id => 1);
+  ok($map1->save, "save color map record 1 - $db_type");
+
+  my $map2 = MyInformixColorMap->new(obj_id => 1, color_id => 3);
+  ok($map2->save, "save color map record 2 - $db_type");
+
+  my $map3 = MyInformixColorMap->new(obj_id => 99, color_id => 4);
+  ok($map3->save, "save color map record 3 - $db_type");
+
+  my $colors = $o->colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 2 && 
+     $colors->[0]->name eq 'red' && $colors->[1]->name eq 'blue',
+     "colors 1 - $db_type");
+
+  my @colors = $o->colors;
+
+  ok(@colors == 2 && $colors[0]->name eq 'red' && $colors[1]->name eq 'blue',
+     "colors 2 - $db_type");
+
+  $colors = $o_x->colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'pink',
+     "colors 3 - $db_type");
+
+  @colors = $o_x->colors;
+
+  ok(@colors == 1 && $colors[0]->name eq 'pink', "colors 4 - $db_type");
+
+  ok($map1->delete, 'delete color map record 1');
+  ok($map2->delete, 'delete color map record 2');
+  ok($map3->delete, 'delete color map record 3');
+
+  foreach my $obj ($o->colors)
+  {
+    $obj->delete;
+  }
+
+
+  foreach my $obj ($o->other2_objs)
   {
     $obj->delete;
   }
@@ -471,6 +622,8 @@ BEGIN
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors_map CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors');
       $dbh->do('DROP TABLE rose_db_object_other');
       $dbh->do('DROP TABLE rose_db_object_other2');
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
@@ -527,6 +680,23 @@ CREATE TABLE rose_db_object_other2
   id    SERIAL PRIMARY KEY,
   name  VARCHAR(255),
   pid   INT NOT NULL REFERENCES rose_db_object_test (id)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_colors
+(
+  id    SERIAL PRIMARY KEY,
+  name  VARCHAR(255) NOT NULL
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_colors_map
+(
+  id        SERIAL PRIMARY KEY,
+  obj_id    INT NOT NULL REFERENCES rose_db_object_test (id),
+  color_id  INT NOT NULL REFERENCES rose_db_object_colors (id)
 )
 EOF
 
@@ -654,9 +824,68 @@ EOF
 
     MyPgOtherObject2->meta->initialize;
 
+    package MyPgColor;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('pg') }
+
+    MyPgColor->meta->table('rose_db_object_colors');
+
+    MyPgColor->meta->columns
+    (
+      id   => { type => 'serial', primary_key => 1 },
+      name => { type => 'varchar', not_null => 1 },
+    );
+
+    MyPgColor->meta->initialize;
+
+    package MyPgColorMap;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('pg') }
+
+    MyPgColorMap->meta->table('rose_db_object_colors_map');
+
+    MyPgColorMap->meta->columns
+    (
+      id       => { type => 'serial', primary_key => 1 },
+      obj_id   => { type => 'int', not_null => 1 },
+      color_id => { type => 'int', not_null => 1 },
+    );
+
+    MyPgColorMap->meta->foreign_keys
+    (
+      object =>
+      {
+        class => 'MyPgObject',
+        key_columns => { obj_id => 'id' },
+      },
+
+      color =>
+      {
+        class => 'MyPgColor',
+        key_columns => { color_id => 'id' },
+      },
+    );
+
+    MyPgColorMap->meta->initialize;
+
     # MyPgObject init delayed
 
     MyPgObject->meta->alias_column(fk1 => 'fkone');
+
+    MyPgObject->meta->add_relationship
+    (
+      colors =>
+      {
+        type      => 'many to many',
+        map_class => 'MyPgColorMap',
+        #map_from  => 'object',
+        #map_to    => 'color',
+      },
+    );
 
     eval { MyPgObject->meta->initialize };
     Test::More::ok($@, 'meta->initialize() reserved method - pg');
@@ -675,7 +904,7 @@ EOF
   # MySQL
   #
 
-  eval 
+  eval
   {
     $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
       or die Rose::DB->error;
@@ -690,8 +919,11 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors_map CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors');
       $dbh->do('DROP TABLE rose_db_object_other');
       $dbh->do('DROP TABLE rose_db_object_other2');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     }
 
     $dbh->do(<<"EOF");
@@ -728,6 +960,23 @@ CREATE TABLE rose_db_object_other2
   id    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name  VARCHAR(255),
   pid   INT UNSIGNED NOT NULL
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_colors
+(
+  id    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name  VARCHAR(255) NOT NULL
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_colors_map
+(
+  id        INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  obj_id    INT NOT NULL REFERENCES rose_db_object_test (id),
+  color_id  INT NOT NULL REFERENCES rose_db_object_colors (id)
 )
 EOF
 
@@ -853,7 +1102,66 @@ EOF
 
     MyMySQLOtherObject2->meta->initialize;
 
+    package MyMySQLColor;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('mysql') }
+
+    MyMySQLColor->meta->table('rose_db_object_colors');
+
+    MyMySQLColor->meta->columns
+    (
+      id   => { type => 'serial', primary_key => 1 },
+      name => { type => 'varchar', not_null => 1 },
+    );
+
+    MyMySQLColor->meta->initialize;
+
+    package MyMySQLColorMap;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('mysql') }
+
+    MyMySQLColorMap->meta->table('rose_db_object_colors_map');
+
+    MyMySQLColorMap->meta->columns
+    (
+      id       => { type => 'serial', primary_key => 1 },
+      obj_id   => { type => 'int', not_null => 1 },
+      color_id => { type => 'int', not_null => 1 },
+    );
+
+    MyMySQLColorMap->meta->foreign_keys
+    (
+      object =>
+      {
+        class => 'MyMySQLObject',
+        key_columns => { obj_id => 'id' },
+      },
+
+      color =>
+      {
+        class => 'MyMySQLColor',
+        key_columns => { color_id => 'id' },
+      },
+    );
+
+    MyMySQLColorMap->meta->initialize;
+    
     # MyMySQLObject init delayed
+
+    MyMySQLObject->meta->add_relationship
+    (
+      colors =>
+      {
+        type      => 'many to many',
+        map_class => 'MyMySQLColorMap',
+        map_from  => 'object',
+        map_to    => 'color',
+      },
+    );
 
     eval { MyMySQLObject->meta->initialize };
     Test::More::ok($@, 'meta->initialize() reserved method');
@@ -887,8 +1195,11 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
       $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors_map CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors');
       $dbh->do('DROP TABLE rose_db_object_other');
       $dbh->do('DROP TABLE rose_db_object_other2');
+      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     }
 
     $dbh->do(<<"EOF");
@@ -931,6 +1242,23 @@ CREATE TABLE rose_db_object_other2
   id    INT NOT NULL PRIMARY KEY,
   name  VARCHAR(255),
   pid   INT NOT NULL REFERENCES rose_db_object_test (id)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_colors
+(
+  id    SERIAL PRIMARY KEY,
+  name  VARCHAR(255) NOT NULL
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_colors_map
+(
+  id        SERIAL PRIMARY KEY,
+  obj_id    INT NOT NULL REFERENCES rose_db_object_test (id),
+  color_id  INT NOT NULL REFERENCES rose_db_object_colors (id)
 )
 EOF
 
@@ -1045,9 +1373,68 @@ EOF
 
     MyInformixOtherObject2->meta->initialize;
 
+    package MyInformixColor;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('informix') }
+
+    MyInformixColor->meta->table('rose_db_object_colors');
+
+    MyInformixColor->meta->columns
+    (
+      id   => { type => 'serial', primary_key => 1 },
+      name => { type => 'varchar', not_null => 1 },
+    );
+
+    MyInformixColor->meta->initialize;
+
+    package MyInformixColorMap;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    sub init_db { Rose::DB->new('informix') }
+
+    MyInformixColorMap->meta->table('rose_db_object_colors_map');
+
+    MyInformixColorMap->meta->columns
+    (
+      id       => { type => 'serial', primary_key => 1 },
+      obj_id   => { type => 'int', not_null => 1 },
+      color_id => { type => 'int', not_null => 1 },
+    );
+
+    MyInformixColorMap->meta->foreign_keys
+    (
+      object =>
+      {
+        class => 'MyInformixObject',
+        key_columns => { obj_id => 'id' },
+      },
+
+      color =>
+      {
+        class => 'MyInformixColor',
+        key_columns => { color_id => 'id' },
+      },
+    );
+
+    MyInformixColorMap->meta->initialize;
+    
     # MyInformixObject init delayed
 
     MyInformixObject->meta->alias_column(fk1 => 'fkone');
+
+    MyInformixObject->meta->add_relationship
+    (
+      colors =>
+      {
+        type      => 'many to many',
+        map_class => 'MyInformixColorMap',
+        #map_from  => 'object',
+        #map_to    => 'color',
+      },
+    );
 
     eval { MyInformixObject->meta->initialize };
     Test::More::ok($@, 'meta->initialize() reserved method');
@@ -1074,8 +1461,11 @@ END
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors_map CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors');
     $dbh->do('DROP TABLE rose_db_object_other');
     $dbh->do('DROP TABLE rose_db_object_other2');
+    
 
     $dbh->disconnect;
   }
@@ -1087,6 +1477,8 @@ END
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors_map CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors');
     $dbh->do('DROP TABLE rose_db_object_other');
     $dbh->do('DROP TABLE rose_db_object_other2');
 
@@ -1100,6 +1492,8 @@ END
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors_map CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors');
     $dbh->do('DROP TABLE rose_db_object_other');
     $dbh->do('DROP TABLE rose_db_object_other2');
 

@@ -11,14 +11,17 @@ use lib "$Bin/lib";
 
 use Rose::DB;
 
+use Rose::DB::Object::Util qw(:all);
+
 use Benchmark qw(timethese cmpthese); # :hireswallclock
 
-our(%Have_PM, %Use_PM, %Have_DB, @Use_DBs, %Inited_DB, $DB, $Term, $Pager);
+our(%Have_PM, %Use_PM, %Have_DB, @Use_DBs, %Inited_DB, $DB, $DBH, $Term, $Pager);
 
-our @Cmp_To = (qw(Class::DBI Class::DBI::Sweet DBIx::Class));
+our @Cmp_To = (qw(DBI Class::DBI Class::DBI::Sweet DBIx::Class));
 
 our %Cmp_Abbreviation =
 (
+  'DBI'               => 'DBI',
   'Class::DBI'        => 'CDBI',
   'Class::DBI::Sweet' => 'CDBS',
   'DBIx::Class'       => 'DBIC',
@@ -36,6 +39,7 @@ our %DB_Tag;
 
 our $Default_CPU_Time   = 5;
 our $Default_Iterations = 1000;
+our $Min_DBI_Iterations = 3000;
 
 use Getopt::Long;
 
@@ -114,7 +118,8 @@ EOF
       require MyTest::RDBO::Complex::Category::Manager;
     }
 
-    $DB = Rose::DB->new;
+    $DB  = Rose::DB->new;
+    $DBH = Rose::DB->new->retain_dbh;
 
     if($Use_PM{'Class::DBI'})
     {
@@ -208,7 +213,7 @@ Usage: $prog --help | [--skip-intro] [--cpu-time <num>]
        [--simple | --complex | --simple-and-complex]
        [--iterations <num>] [--hi-res-time]
 
---compare-to <modules>
+--compare-to | --cmp <modules>
 
     Benchmark against <modules>, which is a comma-separated list of
     one or more for the following: 
@@ -373,7 +378,7 @@ EOF
       (keys %Have_PM == 1) ? (keys %Have_PM)[0] :
       Ask(question   => $question,
           prompt     => 'Compare with',
-          default    => join(', ', sort keys %Have_PM),
+          default    => join(', ', sort grep { $_ ne 'DBI' } keys %Have_PM),
           no_newline => 1);
 
     $response =~ s/,/ /g;
@@ -383,7 +388,7 @@ EOF
     {
       unless($Cmp_Abbreviation{$pm})
       {
-        print "\n*** ERROR: Unknowwn module: '$pm'\n\n";
+        print "\n*** ERROR: Unknown module: '$pm'\n\n";
         sleep(1);
         exit(1)  if($Opt{'compare-to'});
         redo WHICH_PM;
@@ -401,9 +406,7 @@ EOF
 
   %Use_PM = map { $_ => 1 } @Cmp_To;
 
-  if(keys %Have_DB > 1)
-  {
-    my $question =<<"EOF";
+  $question =<<"EOF";
 The following databases are configured:
 
 @{[join("\n", map { "    $DB_Name{$_}" } sort keys %Have_DB)]}
@@ -411,42 +414,90 @@ The following databases are configured:
 Which one would you like to use?
 EOF
 
-    WHICH_DB:
+  WHICH_DB:
+  {
+    my $response = 
+      $Opt{'database'} ? $Opt{'database'} :
+      Ask(question   => $question,
+          prompt     => 'Use database',
+          default    => (map { $DB_Name{$_} } sort keys %Have_DB)[0]);
+
+    $response =~ s/,/ /g;
+    @Use_DBs = split(/\s+/, $response);
+
+    foreach my $db (@Use_DBs)
     {
-      my $response = 
-        $Opt{'database'} ? $Opt{'database'} :
-        Ask(question   => $question,
-            prompt     => 'Use database',
-            default    => (map { $DB_Name{$_} } sort keys %Have_DB)[0]);
-
-      $response =~ s/,/ /g;
-      @Use_DBs = split(/\s+/, $response);
-
-      foreach my $db (@Use_DBs)
+      unless($DB_Name{$db} || $DB_Tag{$db})
       {
-        unless($DB_Name{$db} || $DB_Tag{$db})
-        {
-          print "\n*** ERROR: Unknown or unavailable module: '$db'\n\n";
-          sleep(1);
-          exit(1)  if($Opt{'database'});
-          redo WHICH_DB;
-        }
-
-        $db = $DB_Tag{$db}  if($DB_Tag{$db});
+        print "\n*** ERROR: Unknown or unavailable database: '$db'\n\n";
+        sleep(1);
+        exit(1)  if($Opt{'database'});
+        redo WHICH_DB;
       }
-    }
 
-    if(@Use_DBs > 1)
-    {
-      warn<<"EOF";
+      $db = $DB_Tag{$db}  if($DB_Tag{$db});
+    }
+  }
+
+  if(@Use_DBs > 1)
+  {
+    warn<<"EOF";
 
 *** WARNING: benchmarks may fail when trying to use multiple databases.
 
 EOF
-    }
   }
 
   Init_DB();
+
+  # Not supporting DBI test on Informix right now due to the stupid way it
+  # does limits and offsets...or rather, *doesn't* handle offsets in
+  # informix versions prior to 10.
+  if($Inited_DB{'informix'} && $Use_PM{'DBI'})
+  {
+    die<<"EOF";
+*** ERROR: DBI tests not supported on Informix ***
+
+Cannot benchmark against DBI using the Informix database due to Informix's
+limited support for "limit with offset" in SELECT statements.  Please choose
+a different database.
+
+EOF
+  }
+
+  # Warn about speedy DBI causing too few iterations
+  if(!$Opt{'iterations'} && $Use_PM{'DBI'} && $Iterations < $Min_DBI_Iterations)
+  {
+    warn<<"EOF";
+
+*** WARNING ***
+
+When benchmarking against DBI, you may need to increase the number of
+iterations to at least $Min_DBI_Iterations in oder to avoid a warning about "too few
+iterations" from the Benchmark.pm module.  Consider running the benchmark
+again with "--iterations $Min_DBI_Iterations"
+
+Press return to continue (or wait 60 seconds)
+EOF
+
+    my %old;
+
+    $old{'ALRM'} = $SIG{'ALRM'} || 'DEFAULT';
+
+    eval
+    {
+      # Localize so I only have to restore in my catch block
+      local $SIG{'ALRM'} = sub { die 'alarm' };
+      alarm(60);
+      my $res = <STDIN>;
+      alarm(0);
+    };
+
+    if($@ =~ /alarm/)
+    {
+      $SIG{'ALRM'} = $old{'ALRM'};
+    }
+  }
 }
 
 sub Init_PM
@@ -549,6 +600,18 @@ BEGIN
   # Insert
   #
 
+  INSERT_SIMPLE_CATEGORY_DBI:
+  {
+    my $i = 1;
+
+    sub insert_simple_category_dbi
+    {
+      my $sth = $DBH->prepare('INSERT INTO rose_db_object_test_categories (id, name) VALUES (?, ?)');
+      $sth->execute($i + 500_000,  "xCat $i");
+      $i++;
+    }
+  }
+
   INSERT_SIMPLE_CATEGORY_RDBO:
   {
     my $i = 1;
@@ -597,6 +660,38 @@ BEGIN
       $i++;
     }
   }
+
+  INSERT_SIMPLE_PRODUCT_DBI:
+  {
+    my $i = 1;
+
+    sub insert_simple_product_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+INSERT INTO rose_db_object_test_products
+(
+  id,
+  name,
+  category_id,
+  status,
+  published,
+  last_modified,
+  date_created
+) 
+VALUES (?, ?, ?, ?, ?, ?, ?)
+EOF
+
+      $sth->execute($i + 500_000, 
+                    "Product $i", 
+                    2,
+                    'temp',
+                    '2005-01-02 12:34:56',
+                    '2005-02-02 12:34:56',
+                    '2005-03-02 12:34:56');
+      $i++;
+    }
+  }
+  
 
   INSERT_SIMPLE_PRODUCT_RDBO:
   {
@@ -679,6 +774,25 @@ BEGIN
 
   use constant ACCESSOR_ITERATIONS => 10_000;
 
+  ACCCESSOR_SIMPLE_CATEGORY_DBI:
+  {
+    sub accessor_simple_category_dbi
+    {
+      my $sth = $DBH->prepare('SELECT id, name FROM rose_db_object_test_categories WHERE id = ?');
+      $sth->execute(1 + 500_000);
+      my $c = $sth->fetchrow_hashref;
+
+      # Use hash key access to simulate accessor methods
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name))
+        {
+          my $v = $c->{$_};
+        }
+      }
+    }
+  }
+
   ACCCESSOR_SIMPLE_CATEGORY_RDBO:
   {
     sub accessor_simple_category_rdbo
@@ -748,6 +862,29 @@ BEGIN
     }
   }
 
+  ACCCESSOR_SIMPLE_PRODUCT_DBI:
+  {
+    sub accessor_simple_product_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT id, name, status, fk1, fk2, fk3, published, last_modified, date_created
+FROM rose_db_object_test_products WHERE id = ?
+EOF
+      $sth->execute(1 + 500_000);
+      my $p = $sth->fetchrow_hashref;
+
+      # Use hash key access to simulate accessor methods
+      for(1 .. ACCESSOR_ITERATIONS)
+      {
+        for(qw(id name status fk1 fk2 fk3 published last_modified
+               date_created))
+        {
+          my $v = $p->{$_};
+        }
+      }
+    }
+  }
+  
   ACCCESSOR_SIMPLE_PRODUCT_RDBO:
   {
     sub accessor_simple_product_rdbo
@@ -825,6 +962,19 @@ BEGIN
   # Load
   #
 
+  LOAD_SIMPLE_CATEGORY_DBI:
+  {
+    my $i = 1;
+
+    sub load_simple_category_dbi
+    {
+      my $sth = $DBH->prepare('SELECT id, name FROM rose_db_object_test_categories WHERE id = ?');
+      $sth->execute($i + 500_000);
+      my $c = $sth->fetchrow_hashref;
+      $i++;
+    }
+  }
+
   LOAD_SIMPLE_CATEGORY_RDBO:
   {
     my $i = 1;
@@ -872,6 +1022,22 @@ BEGIN
       $i++;
     }
   }
+
+  LOAD_SIMPLE_PRODUCT_DBI:
+  {
+    my $i = 1;
+
+    sub load_simple_product_dbi
+    {
+      my $sth = $DBH->prepare('SELECT id, name, category_id, status, fk1, fk2, fk3, published, last_modified, date_created FROM rose_db_object_test_products WHERE id = ?');
+      $sth->execute($i + 500_000);
+      my %row;
+      $sth->bind_columns(\@row{qw(id name category_id status fk1 fk2 fk3 published last_modified date_created)});
+      $sth->fetch;
+      $i++;
+    }
+  }
+
 
   LOAD_SIMPLE_PRODUCT_RDBO:
   {
@@ -921,6 +1087,47 @@ BEGIN
     }
   }
 
+  LOAD_SIMPLE_PRODUCT_AND_CATEGORY_DBI:
+  {
+    my $i = 1;
+
+    sub load_simple_product_and_category_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT
+  p.id,
+  p.name,
+  p.category_id,
+  p.status,
+  p.fk1,
+  p.fk2,
+  p.fk3,
+  p.published,
+  p.last_modified,
+  p.date_created,
+  c.id,
+  c.name
+FROM
+  rose_db_object_test_products p,
+  rose_db_object_test_categories c
+WHERE
+  c.id = p.category_id AND
+  p.id = ?
+EOF
+
+      $sth->execute($i + 500_000);
+      my %row;
+      $sth->bind_columns(\@row{qw(id name category_id status fk1 fk2 fk3 published
+                                  last_modified date_created cat_id cat_name)});
+
+      $sth->fetch;
+
+      my $n = $row{'cat_name'};
+      die  unless($n =~ /\S/);
+      $i++;
+    }
+  }
+ 
   LOAD_SIMPLE_PRODUCT_AND_CATEGORY_RDBO:
   {
     my $i = 1;
@@ -986,6 +1193,26 @@ BEGIN
   # Update
   #
 
+  UPDATE_SIMPLE_CATEGORY_DBI:
+  {
+    my $i = 1;
+
+    sub update_simple_category_dbi
+    {
+      my $sth = $DBH->prepare('SELECT id, name FROM rose_db_object_test_categories WHERE id = ?');
+      $sth->execute($i + 500_000);
+      my($name, $category);
+      $sth->bind_columns(\$name, \$category);
+      $sth->fetch;
+      $name .= ' updated';
+
+      my $usth = $DBH->prepare('UPDATE rose_db_object_test_categories SET name = ? WHERE id = ?');
+      $usth->execute($name, $i + 500_000);
+      
+      $i++;
+    }
+  }
+
   UPDATE_SIMPLE_CATEGORY_RDBO:
   {
     my $i = 1;
@@ -1042,6 +1269,27 @@ BEGIN
     }
   }
 
+  UPDATE_SIMPLE_PRODUCT_DBI:
+  {
+    my $i = 1;
+
+    sub update_simple_product_dbi
+    {
+      my $sth = $DBH->prepare('SELECT id, name, category_id, status, fk1, fk2, fk3, published, last_modified, date_created FROM rose_db_object_test_products WHERE id = ?');
+      $sth->execute($i + 500_000);
+      my %row;
+      $sth->bind_columns(\@row{qw(id name category_id status fk1 fk2 fk3 published last_modified date_created)});
+      $sth->fetch;
+
+      $row{'name'} .= ' updated';
+
+      my $usth = $DBH->prepare('UPDATE rose_db_object_test_products SET name = ? WHERE id = ?');
+      $usth->execute($row{'name'}, $i + 500_000);
+
+      $i++;
+    }
+  }
+      
   UPDATE_SIMPLE_PRODUCT_RDBO:
   {
     my $i = 1;
@@ -1101,6 +1349,25 @@ BEGIN
   #
   # Search
   #
+
+  SEARCH_SIMPLE_CATEGORY_DBI:
+  {
+    my $printed = 0;
+
+    sub search_simple_category_dbi
+    {
+      my $sth = $DBH->prepare("SELECT id, name FROM rose_db_object_test_categories WHERE name LIKE 'xCat %2%'");
+      $sth->execute;
+      my $c = $sth->fetchall_arrayref;
+      die unless(@$c);
+
+      if($Debug && !$printed)
+      {
+        print "search_simple_category_dbi GOT ", scalar(@$c), "\n";
+        $printed++;
+      }
+    }
+  }
 
   SEARCH_SIMPLE_CATEGORY_RDBO:
   {
@@ -1176,6 +1443,41 @@ BEGIN
     }
   }
 
+  SEARCH_SIMPLE_PRODUCT_DBI:
+  {
+    my $printed = 0;
+
+    sub search_simple_product_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT
+  id,
+  name,
+  category_id,
+  status,
+  fk1,
+  fk2,
+  fk3,
+  published,
+  last_modified,
+  date_created
+FROM
+  rose_db_object_test_products
+WHERE
+  name LIKE 'Product %2%'
+EOF
+      $sth->execute;
+      my $p = $sth->fetchall_arrayref;
+      die unless(@$p);
+
+      if($Debug && !$printed)
+      {
+        print "search_simple_product_dbi GOT ", scalar(@$p), "\n";
+        $printed++;
+      }
+    }
+  }
+
   SEARCH_SIMPLE_PRODUCT_RDBO:
   {
     my $printed = 0;
@@ -1246,6 +1548,62 @@ BEGIN
       {
         print "search_simple_product_dbic GOT ", scalar(@p), "\n";
         $printed++;
+      }
+    }
+  }
+
+  SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_DBI:
+  {
+    my $printed = 0;
+
+    sub search_simple_product_and_category_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT
+  p.id,
+  p.name,
+  p.category_id,
+  p.status,
+  p.fk1,
+  p.fk2,
+  p.fk3,
+  p.published,
+  p.last_modified,
+  p.date_created,
+  c.id,
+  c.name
+FROM
+  rose_db_object_test_products p,
+  rose_db_object_test_categories c
+WHERE
+  c.id = p.category_id AND
+  p.name LIKE 'Product %2%'
+EOF
+
+      $sth->execute;
+      my %row;
+      $sth->bind_columns(\@row{qw(id name category_id status fk1 fk2 fk3 published
+                                  last_modified date_created cat_id cat_name)});
+                                  
+      my @ps;
+      
+      while($sth->fetch)
+      {
+        push(@ps, { %row });
+      }
+
+      die unless(@ps);
+
+      if($Debug && !$printed)
+      {
+        print "search_simple_product_and_category_dbi GOT ", scalar(@ps), "\n";
+        $printed++;
+      }
+
+      foreach my $p (@ps)
+      {
+        my $n = $p->{'cat_name'};
+        die  unless($n =~ /\S/);
       }
     }
   }
@@ -1362,6 +1720,44 @@ BEGIN
   use constant LIMIT  => 20;
   use constant OFFSET => 100;
 
+  SEARCH_LIMIT_OFFSET_SIMPLE_PRODUCT_DBI:
+  {
+    my $printed = 0;
+
+    sub search_limit_offset_simple_product_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT
+  id,
+  name,
+  category_id,
+  status,
+  fk1,
+  fk2,
+  fk3,
+  published,
+  last_modified,
+  date_created,
+  id,
+  name
+FROM
+  rose_db_object_test_products
+WHERE
+  name LIKE 'Product %2%'
+LIMIT @{[LIMIT]} OFFSET @{[OFFSET]}
+EOF
+
+      $sth->execute;
+      my $ps = $sth->fetchall_arrayref;
+
+      if($Debug && !$printed)
+      {
+        print "search_limit_offset_simple_product_dbi GOT ", scalar(@$ps), "\n";
+        $printed++;
+      }
+    }
+  }
+    
   SEARCH_LIMIT_OFFSET_SIMPLE_PRODUCT_RDBO:
   {
     my $printed = 0;
@@ -1445,6 +1841,32 @@ BEGIN
   # Iterate
   #
 
+  ITERATE_SIMPLE_CATEGORY_DBI:
+  {
+    my $printed = 0;
+
+    sub iterate_simple_category_dbi
+    {
+      my $sth = $DBH->prepare("SELECT id, name FROM rose_db_object_test_categories WHERE name LIKE 'xCat %2%'");
+      $sth->execute;
+      my($id, $name);
+      $sth->bind_columns(\$id, \$name);
+
+      my $i = 0;
+
+      while($sth->fetch)
+      {
+        $i++;
+      }
+
+      if($Debug && !$printed)
+      {
+        print "iterate_simple_category_dbi GOT $i\n";
+        $printed++;
+      }
+    }
+  }
+      
   ITERATE_SIMPLE_CATEGORY_RDBO:
   {
     my $printed = 0;
@@ -1543,6 +1965,48 @@ BEGIN
     }
   }
 
+  ITERATE_SIMPLE_PRODUCT_DBI:
+  {
+    my $printed = 0;
+
+    sub iterate_simple_product_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT
+  id,
+  name,
+  category_id,
+  status,
+  fk1,
+  fk2,
+  fk3,
+  published,
+  last_modified,
+  date_created
+FROM
+  rose_db_object_test_products
+WHERE
+  name LIKE 'Product %2%'
+EOF
+      $sth->execute;
+      my %row;
+      $sth->bind_columns(\@row{qw(id name category_id status fk1 fk2 fk3 published last_modified date_created)});
+
+      my $i = 0;
+
+      while($sth->fetch)
+      {
+        $i++;
+      }
+
+      if($Debug && !$printed)
+      {
+        print "iterate_simple_product_dbi GOT $i\n";
+        $printed++;
+      }
+    }
+  }
+
   ITERATE_SIMPLE_PRODUCT_RDBO:
   {
     my $printed = 0;
@@ -1636,6 +2100,56 @@ BEGIN
       if($Debug && !$printed)
       {
         print "iterate_simple_product_dbic GOT $i\n";
+        $printed++;
+      }
+    }
+  }
+
+  ITERATE_SIMPLE_PRODUCT_AND_CATEGORY_DBI:
+  {
+    my $printed = 0;
+
+    sub iterate_simple_product_and_category_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT
+  p.id,
+  p.name,
+  p.category_id,
+  p.status,
+  p.fk1,
+  p.fk2,
+  p.fk3,
+  p.published,
+  p.last_modified,
+  p.date_created,
+  c.id,
+  c.name
+FROM
+  rose_db_object_test_products p,
+  rose_db_object_test_categories c
+WHERE
+  c.id = p.category_id AND
+  p.name LIKE 'Product %2%'
+EOF
+
+      $sth->execute;
+      my %row;
+      $sth->bind_columns(\@row{qw(id name category_id status fk1 fk2 fk3 published
+                                  last_modified date_created cat_id cat_name)});
+
+      my $i = 0;
+
+      while($sth->fetch)
+      {
+        $i++;
+        my $n = $row{'cat_name'};
+        die  unless($n =~ /\S/);
+      }
+
+      if($Debug && !$printed)
+      {
+        print "iterate_simple_product_and_category_dbi GOT $i\n";
         $printed++;
       }
     }
@@ -1757,6 +2271,18 @@ BEGIN
   #
   # Delete
   #
+
+  DELETE_SIMPLE_CATEGORY_DBI:
+  {
+    my $i = 1;
+
+    sub delete_simple_category_dbi
+    {
+      my $sth = $DBH->prepare('DELETE FROM rose_db_object_test_categories WHERE id = ?');
+      $sth->execute($i + 500_000);
+      $i++;
+    }
+  }
 
   DELETE_SIMPLE_CATEGORY_RDBO:
   {
@@ -2318,7 +2844,16 @@ BEGIN
           id => $i + 1_100_000);
       $p->load;
       $p->name($p->name . ' updated');
+
+      # These state calls give over a 100% speed boost, but they're a bit
+      # inappropriate since no one is going to use them in practice.  OTOH,
+      # none of the other modules validate their input, so I reserve the
+      # right to uncomment them for a better "apples to apples" comparison
+      # in the future :)
+      #set_state_loading($p);
       $p->published('2004-01-02 12:34:55');
+      #unset_state_loading($p);
+
       $p->save;
       $i++;
     }
@@ -3023,6 +3558,18 @@ BEGIN
   # Delete
   #
 
+  DELETE_COMPLEX_PRODUCT_DBI:
+  {
+    my $i = 1;
+
+    sub delete_complex_product_dbi
+    {
+      my $sth = $DBH->prepare('DELETE FROM rose_db_object_test_products WHERE id = ?');
+      $sth->execute($i + 500_000);
+      $i++;
+    }
+  }
+
   DELETE_COMPLEX_PRODUCT_RDBO:
   {
     my $i = 1;
@@ -3081,7 +3628,7 @@ sub Bench
 
   my %filtered_tests;
 
-  my $db_regex = '\bRDBO|' . join('|', map { $Cmp_Abbreviation{$_} } @Cmp_To) . '\b';
+  my $db_regex = '\b(?:RDBO|' . join('|', map { $Cmp_Abbreviation{$_} } @Cmp_To) . ')\b';
   $db_regex = qr($db_regex);
 
   if(($name =~ /^Simple:/ &&  !($Opt{'simple'} || $Opt{'simple-and-complex'})) ||
@@ -3119,6 +3666,7 @@ sub Run_Tests
 
   Bench('Simple: insert 1', $Iterations,
   {
+    'DBI ' => \&insert_simple_category_dbi,
     'RDBO' => \&insert_simple_category_rdbo,
     'CDBI' => \&insert_simple_category_cdbi,
     'CDBS' => \&insert_simple_category_cdbs,
@@ -3127,6 +3675,7 @@ sub Run_Tests
 
   Bench('Complex: insert 1', $Iterations,
   {
+    'DBI ' => \&insert_simple_category_dbi,
     'RDBO' => \&insert_complex_category_rdbo,
     'CDBI' => \&insert_complex_category_cdbi,
     'CDBS' => \&insert_complex_category_cdbs,
@@ -3135,6 +3684,7 @@ sub Run_Tests
 
   Bench('Simple: insert 2', $Iterations,
   {
+    'DBI ' => \&insert_simple_product_dbi,
     'RDBO' => \&insert_simple_product_rdbo,
     'CDBI' => \&insert_simple_product_cdbi,
     'CDBS' => \&insert_simple_product_cdbs,
@@ -3143,6 +3693,7 @@ sub Run_Tests
 
   Bench('Complex: insert 2', $Iterations,
   {
+    'DBI ' => \&insert_simple_product_dbi,
     'RDBO' => \&insert_complex_product_rdbo,
     'CDBI' => \&insert_complex_product_cdbi,
     'CDBS' => \&insert_complex_product_cdbs,
@@ -3161,6 +3712,7 @@ sub Run_Tests
 
     Bench('Simple: accessor 1', $CPU_Time,
     {
+      'DBI ' => \&accessor_simple_category_dbi,
       'RDBO' => \&accessor_simple_category_rdbo,
       'CDBI' => \&accessor_simple_category_cdbi,
       'CDBS' => \&accessor_simple_category_cdbs,
@@ -3169,6 +3721,7 @@ sub Run_Tests
 
     Bench('Complex: accessor 1', $CPU_Time,
     {
+      'DBI ' => \&accessor_simple_category_dbi,
       'RDBO' => \&accessor_complex_category_rdbo,
       'CDBI' => \&accessor_complex_category_cdbi,
       'CDBS' => \&accessor_complex_category_cdbs,
@@ -3177,6 +3730,7 @@ sub Run_Tests
 
     Bench('Simple: accessor 2', $CPU_Time,
     {
+      'DBI ' => \&accessor_simple_product_dbi,
       'RDBO' => \&accessor_simple_product_rdbo,
       'CDBI' => \&accessor_simple_product_cdbi,
       'CDBS' => \&accessor_simple_product_cdbs,
@@ -3185,6 +3739,7 @@ sub Run_Tests
 
     Bench('Complex: accessor 2', $CPU_Time,
     {
+      'DBI ' => \&accessor_simple_product_dbi,
       'RDBO' => \&accessor_complex_product_rdbo,
       'CDBI' => \&accessor_complex_product_cdbi,
       'CDBS' => \&accessor_complex_product_cdbs,
@@ -3198,6 +3753,7 @@ sub Run_Tests
 
   Bench('Simple: load 1', $Iterations,
   {
+    'DBI ' => \&load_simple_category_dbi,
     'RDBO' => \&load_simple_category_rdbo,
     'CDBI' => \&load_simple_category_cdbi,
     'CDBS' => \&load_simple_category_cdbs,
@@ -3214,6 +3770,7 @@ sub Run_Tests
 
   Bench('Simple: load 2', $Iterations,
   {
+    'DBI ' => \&load_simple_product_dbi,
     'RDBO' => \&load_simple_product_rdbo,
     'CDBI' => \&load_simple_product_cdbi,
     'CDBS' => \&load_simple_product_cdbs,
@@ -3222,6 +3779,7 @@ sub Run_Tests
 
   Bench('Complex: load 2', $Iterations,
   {
+    'DBI ' => \&load_simple_product_dbi,
     'RDBO' => \&load_complex_product_rdbo,
     'CDBI' => \&load_complex_product_cdbi,
     'CDBS' => \&load_complex_product_cdbs,
@@ -3230,6 +3788,7 @@ sub Run_Tests
 
   Bench('Simple: load 3', $Iterations,
   {
+    'DBI ' => \&load_simple_product_and_category_dbi,
     'RDBO' => \&load_simple_product_and_category_rdbo,
     'CDBI' => \&load_simple_product_and_category_cdbi,
     'CDBS' => \&load_simple_product_and_category_cdbs,
@@ -3238,6 +3797,7 @@ sub Run_Tests
 
   Bench('Complex: load 3', $Iterations,
   {
+    'DBI ' => \&load_simple_product_and_category_dbi,
     'RDBO' => \&load_complex_product_and_category_rdbo,
     'CDBI' => \&load_complex_product_and_category_cdbi,
     'CDBS' => \&load_complex_product_and_category_cdbs,
@@ -3250,6 +3810,7 @@ sub Run_Tests
 
   Bench('Simple: update 1', $Iterations,
   {
+    'DBI ' => \&update_simple_category_dbi,
     'RDBO' => \&update_simple_category_rdbo,
     'CDBI' => \&update_simple_category_cdbi,
     'CDBS' => \&update_simple_category_cdbs,
@@ -3266,6 +3827,7 @@ sub Run_Tests
 
   Bench('Simple: update 2', $Iterations,
   {
+    'DBI ' => \&update_simple_product_dbi,
     'RDBO' => \&update_simple_product_rdbo,
     'CDBI' => \&update_simple_product_cdbi,
     'CDBS' => \&update_simple_product_cdbs,
@@ -3274,6 +3836,7 @@ sub Run_Tests
 
   Bench('Complex: update 2', $Iterations,
   {
+    'DBI ' => \&update_simple_product_dbi,
     'RDBO' => \&update_complex_product_rdbo,
     'CDBI' => \&update_complex_product_cdbi,
     'CDBS' => \&update_complex_product_cdbs,
@@ -3292,6 +3855,7 @@ sub Run_Tests
 
     Bench('Simple: search 1', $CPU_Time,
     {
+      'DBI ' => \&search_simple_category_dbi,
       'RDBO' => \&search_simple_category_rdbo,
       'CDBI' => \&search_simple_category_cdbi,
       'CDBS' => \&search_simple_category_cdbs,
@@ -3300,6 +3864,7 @@ sub Run_Tests
 
     #Bench('Complex: search 1', $CPU_Time,
     #{
+    #  'DBI ' => \&search_simple_category_dbi,
     #  'RDBO' => \&search_complex_category_rdbo,
     #  'CDBI' => \&search_complex_category_cdbi,
     #  'CDBS' => \&search_complex_category_cdbs,
@@ -3308,6 +3873,7 @@ sub Run_Tests
 
     Bench('Simple: search 2', $CPU_Time,
     {
+      'DBI ' => \&search_simple_product_dbi,
       'RDBO' => \&search_simple_product_rdbo,
       'CDBI' => \&search_simple_product_cdbi,
       'CDBS' => \&search_simple_product_cdbs,
@@ -3316,6 +3882,7 @@ sub Run_Tests
 
     Bench('Simple: search with limit and offset', $CPU_Time,
     {
+      'DBI ' => \&search_limit_offset_simple_product_dbi,
       'RDBO' => \&search_limit_offset_simple_product_rdbo,
       #'CDBI' => \&search_limit_offset_simple_product_cdbi,
       'CDBS' => \&search_limit_offset_simple_product_cdbs,
@@ -3324,6 +3891,7 @@ sub Run_Tests
 
     Bench('Complex: search with limit and offset', $CPU_Time,
     {
+      'DBI ' => \&search_limit_offset_simple_product_dbi,
       'RDBO' => \&search_limit_offset_complex_product_rdbo,
       #'CDBI' => \&search_limit_offset_complex_product_cdbi,
       'CDBS' => \&search_limit_offset_complex_product_cdbs,
@@ -3332,6 +3900,7 @@ sub Run_Tests
 
     Bench('Complex: search 2', $CPU_Time,
     {
+      'DBI ' => \&search_simple_product_dbi,
       'RDBO' => \&search_complex_product_rdbo,
       'CDBI' => \&search_complex_product_cdbi,
       'CDBS' => \&search_complex_product_cdbs,
@@ -3340,6 +3909,7 @@ sub Run_Tests
 
     Bench('Simple: search 3', $CPU_Time,
     {
+      'DBI ' => \&search_simple_product_and_category_dbi,
       'RDBO' => \&search_simple_product_and_category_rdbo,
       'CDBI' => \&search_simple_product_and_category_cdbi,
       'CDBS' => \&search_simple_product_and_category_cdbs,
@@ -3348,6 +3918,7 @@ sub Run_Tests
 
     Bench('Complex: search 3', $CPU_Time ,
     {
+      'DBI ' => \&search_simple_product_and_category_dbi,
       'RDBO' => \&search_complex_product_and_category_rdbo,
       'CDBI' => \&search_complex_product_and_category_cdbi,
       'CDBS' => \&search_complex_product_and_category_cdbs,
@@ -3360,6 +3931,7 @@ sub Run_Tests
 
     Bench('Simple: iterate 1', $CPU_Time,
     {
+      'DBI ' => \&iterate_simple_category_dbi,
       'RDBO' => \&iterate_simple_category_rdbo,
       'CDBI' => \&iterate_simple_category_cdbi,
       'CDBS' => \&iterate_simple_category_cdbs,
@@ -3368,6 +3940,7 @@ sub Run_Tests
 
     Bench('Complex: iterate 1', $CPU_Time,
     {
+      'DBI ' => \&iterate_simple_category_dbi,
       'RDBO' => \&iterate_complex_category_rdbo,
       'CDBI' => \&iterate_complex_category_cdbi,
       'CDBS' => \&iterate_complex_category_cdbs,
@@ -3376,6 +3949,7 @@ sub Run_Tests
 
     Bench('Simple: iterate 2', $CPU_Time,
     {
+      'DBI ' => \&iterate_simple_product_dbi,
       'RDBO' => \&iterate_simple_product_rdbo,
       'CDBI' => \&iterate_simple_product_cdbi,
       'CDBS' => \&iterate_simple_product_cdbs,
@@ -3384,6 +3958,7 @@ sub Run_Tests
 
     Bench('Complex: iterate 2', $CPU_Time,
     {
+      'DBI ' => \&iterate_simple_product_dbi,
       'RDBO' => \&iterate_complex_product_rdbo,
       'CDBI' => \&iterate_complex_product_cdbi,
       'CDBS' => \&iterate_complex_product_cdbs,
@@ -3392,6 +3967,7 @@ sub Run_Tests
 
     Bench('Simple: iterate 3', $CPU_Time,
     {
+      'DBI ' => \&iterate_simple_product_and_category_dbi,
       'RDBO' => \&iterate_simple_product_and_category_rdbo,
       'CDBI' => \&iterate_simple_product_and_category_cdbi,
       'CDBS' => \&iterate_simple_product_and_category_cdbs,
@@ -3400,6 +3976,7 @@ sub Run_Tests
 
     Bench('Complex: iterate 3', $CPU_Time,
     {
+      'DBI ' => \&iterate_simple_product_and_category_dbi,
       'RDBO' => \&iterate_complex_product_and_category_rdbo,
       'CDBI' => \&iterate_complex_product_and_category_cdbi,
       'CDBS' => \&iterate_complex_product_and_category_cdbs,
@@ -3413,6 +3990,7 @@ sub Run_Tests
 
   Bench('Simple: delete', $Iterations,
   {
+    'DBI ' => \&delete_simple_category_dbi,
     'RDBO' => \&delete_simple_category_rdbo,
     'CDBI' => \&delete_simple_category_cdbi,
     'CDBS' => \&delete_simple_category_cdbs,
@@ -3421,6 +3999,7 @@ sub Run_Tests
 
   Bench('Complex: delete', $Iterations,
   {
+    'DBI ' => \&delete_complex_product_dbi,
     'RDBO' => \&delete_complex_product_rdbo,
     'CDBI' => \&delete_complex_product_cdbi,
     'CDBS' => \&delete_complex_product_cdbs,
@@ -3480,6 +4059,14 @@ sub Init_DB
 {
   my %init = map { $_ => 1 } @Use_DBs;
   my $dbh;
+
+  foreach my $to_init (@Use_DBs)
+  {
+    unless($Have_DB{$to_init})
+    {
+      die "*** ERROR: Cannot connect to database: $to_init\n";
+    }
+  }
 
   #
   # Postgres

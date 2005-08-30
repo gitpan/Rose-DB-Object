@@ -9,7 +9,7 @@ our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
 our $VERSION = '0.02';
 
-__PACKAGE__->add_method_maker_argument_names
+__PACKAGE__->add_common_method_maker_argument_names
 (
   qw(length check_in with_init init_method)
 );
@@ -17,7 +17,7 @@ __PACKAGE__->add_method_maker_argument_names
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
-  scalar => [ __PACKAGE__->method_maker_argument_names ]
+  scalar => [ __PACKAGE__->common_method_maker_argument_names ]
 );
 
 sub init_with_dbi_column_info
@@ -44,7 +44,7 @@ Rose::DB::Object::Metadata::Column::Scalar - Scalar column metadata.
   use Rose::DB::Object::Metadata::Column::Scalar;
 
   $col = Rose::DB::Object::Metadata::Column::Scalar->new(...);
-  $col->make_method(...);
+  $col->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -52,6 +52,26 @@ Rose::DB::Object::Metadata::Column::Scalar - Scalar column metadata.
 Objects of this class store and manipulate metadata for scalar columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
 This class inherits from L<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column> documentation for more information.
+
+=head1 METHOD MAP
+
+=over 4
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<scalar|Rose::DB::Object::MakeMethods::Generic/scalar>, C<interface =E<gt> 'get_set', ...>
+
+=item C<get>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<scalar|Rose::DB::Object::MakeMethods::Generic/scalar>, C<interface =E<gt> 'get', ...>
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<scalar|Rose::DB::Object::MakeMethods::Generic/scalar>, C<interface =E<gt> 'set', ...>
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/"MAKING METHODS"> documentation for an explanation of this method map.
 
 =head1 OBJECT METHODS
 
@@ -69,21 +89,13 @@ Get or set the name of the "init" method.  See the documentation for the C<scala
 
 Get or set the length of the column in characters.
 
-=item B<method_maker_class>
-
-Returns L<Rose::DB::Object::MakeMethods::Generic>.
-
-=item B<method_maker_type>
-
-Returns C<scalar>.
-
 =item B<type>
 
 Returns "scalar".
 
 =item B<with_init [BOOL]>
 
-Get or set the flag that determines whether or not the method created by C<make_method()> will include an "init" method as well.  See the documentation for the C<scalar> method type in L<Rose::DB::Object::MakeMethods::Generic> for more information.
+Get or set the flag that determines whether or not the method created by C<make_method()> will include an "init" method as well.  See the documentation for the L<scalar|Rose::DB::Object::MakeMethods::Generic/scalar> method type in L<Rose::DB::Object::MakeMethods::Generic> for more information.
 
 =back
 

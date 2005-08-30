@@ -8,12 +8,14 @@ use Rose::DB::Object::MakeMethods::Date;
 use Rose::DB::Object::Metadata::Column::Date;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Date);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
+
+foreach my $type (__PACKAGE__->available_method_types)
+{
+  __PACKAGE__->method_maker_type($type => 'timestamp');
+}
 
 sub type { 'timestamp' }
-
-sub method_maker_class { 'Rose::DB::Object::MakeMethods::Date' }
-sub method_maker_type  { 'timestamp' }
 
 sub should_inline_value
 {
@@ -51,7 +53,7 @@ Rose::DB::Object::Metadata::Column::Timestamp - Timestamp column metadata.
   use Rose::DB::Object::Metadata::Column::Timestamp;
 
   $col = Rose::DB::Object::Metadata::Column::Timestamp->new(...);
-  $col->make_method(...);
+  $col->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -60,17 +62,29 @@ Objects of this class store and manipulate metadata for timestamp columns in a d
 
 This class inherits from L<Rose::DB::Object::Metadata::Date>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Date> documentation for more information.
 
-=head1 OBJECT METHODS
+=head1 METHOD MAP
 
 =over 4
 
-=item B<method_maker_class>
+=item C<get_set>
 
-Returns L<Rose::DB::Object::MakeMethods::Date>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp>, ...
 
-=item B<method_maker_type>
+=item C<get>
 
-Returns C<timestamp>.
+L<Rose::DB::Object::MakeMethods::Date>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp>, ...
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Date>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp>, ...
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/"MAKING METHODS"> documentation for an explanation of this method map.
+
+=head1 OBJECT METHODS
+
+=over 4
 
 =item B<parse_value DB, VALUE>
 

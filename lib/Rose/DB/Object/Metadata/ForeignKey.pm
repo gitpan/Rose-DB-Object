@@ -17,7 +17,9 @@ use overload
    fallback => 1,
 );
 
-__PACKAGE__->add_method_maker_argument_names
+__PACKAGE__->default_auto_method_types('get');
+
+__PACKAGE__->add_common_method_maker_argument_names
 (
   qw(share_db class key_columns)
 );
@@ -39,13 +41,31 @@ use Rose::Object::MakeMethods::Generic
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
-  scalar => [ __PACKAGE__->method_maker_argument_names ],
+  scalar => [ __PACKAGE__->common_method_maker_argument_names ],
 );
 
-sub method_maker_class { 'Rose::DB::Object::MakeMethods::Generic' }
-sub method_maker_type  { 'object_by_key' }
+__PACKAGE__->method_maker_info
+(
+  get =>
+  {
+    class => 'Rose::DB::Object::MakeMethods::Generic',
+    type  => 'object_by_key',
+  },
+);
 
 sub type { 'foreign key' }
+
+sub build_method_name_for_type
+{
+  my($self, $type) = @_;
+  
+  if($type eq 'get')
+  {
+    return $self->name;
+  }
+
+  return undef;
+}
 
 sub id
 {
@@ -116,22 +136,94 @@ Rose::DB::Object::Metadata::ForeignKey - Foreign key metadata.
   use Rose::DB::Object::Metadata::ForeignKey;
 
   $fk = Rose::DB::Object::Metadata::ForeignKey->new(...);
-  $fk->make_method(...);
+  $fk->make_methods(...);
   ...
 
 =head1 DESCRIPTION
 
-Objects of this class store and manipulate metadata for foreign keys in a database table.  It stores information about which columns in the local table map to which columns in the foreign table, and is responsible for creating an accessor method for the foreign object.
+Objects of this class store and manipulate metadata for foreign keys in a database table.  It stores information about which columns in the local table map to which columns in the foreign table.
 
-This class represents (and will create an accessor method for) C<the thing referenced by> the foreign key column(s).  You'll still need accessor method(s) for the foreign key column(s) themselves.
+This class will create methods for C<the thing referenced by> the foreign key column(s).  You'll still need accessor method(s) for the foreign key column(s) themselves.
 
-Both the local table and the foreign table will need L<Rose::DB::Object>-derived classes fronting them.
+Both the local table and the foreign table must have L<Rose::DB::Object>-derived classes fronting them.
 
-Since there is a lot of overlap in responsibilities, this class inherits from L<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column> documentation for more information.
+=head2 MAKING METHODS
+
+A L<Rose::DB::Object::Metadata::ForeignKey>-derived object is responsible for creating object methods that manipulate objects referenced by a foreign key.  Each foreign key object can make zero or more methods for each available foreign key method type.  A foreign key method type describes the purpose of a method.  The default list of foreign key method types contains only one type:
+
+=over 4
+
+=item C<get>
+
+A method that returns the object referenced by the foreign key.
+
+=back
+
+Methods are created by calling L<make_methods|/make_methods>.  A list of method types can be passed to the call to L<make_methods|/make_methods>.  If absent, the list of method types is determined by the L<auto_method_types|/auto_method_types> method.  A list of all possible method types is available through the L<available_method_types|/available_method_types> method.
+
+These methods make up the "public" interface to foreign key method creation.  There are, however, several "protected" methods which are used internally to implement the methods described above.  (The word "protected" is used here in a vaguely C++ sense, meaning "accessible to subclasses, but not to the public.")  Subclasses will probably find it easier to override and/or call these protected methods in order to influence the behavior of the "public" method maker methods.
+
+A L<Rose::DB::Object::Metadata::ForeignKey> object delegates method creation to a  L<Rose::Object::MakeMethods>-derived class.  Each L<Rose::Object::MakeMethods>-derived class has its own set of method types, each of which takes it own set of arguments.
+
+Using this system, four pieces of information are needed to create a method on behalf of a L<Rose::DB::Object::Metadata::ForeignKey>-derived object:
+
+=over 4
+
+=item * The B<foreign key method type> (e.g., C<get>)
+
+=item * The B<method maker class> (e.g., L<Rose::DB::Object::MakeMethods::Generic>)
+
+=item * The B<method maker method type> (e.g., L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>)
+
+=item * The B<method maker arguments> (e.g., C<interface =E<gt> 'get'>)
+
+=back
+
+This information can be organized conceptually into a "method map" that connects a foreign key method type to a method maker class and, finally, to one particular method type within that class, and its arguments.
+
+The default method map for L<Rose::DB::Object::Metadata::ForeignKey> is:
+
+=over 4
+
+=item C<get>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, ...
+
+=back
+
+Each item in the map is a foreign key method type.  For each foreign key method type, the method maker class, the method maker method type, and the "interesting" method maker arguments are listed, in that order.
+
+The "..." in the method maker arguments is meant to indicate that arguments have been omitted.  Arguments that are common to all foreign key method types are routinely omitted from the method map for the sake of brevity.  If there are no "interesting" method maker arguments, then "..." may appear by itself, as shown above.
+
+The purpose of documenting the method map is to answer the question, "What kind of method(s) will be created by this foreign key object for a given method type?"  Given the method map, it's possible to read the documentation for each method maker class to determine how methods of the specified type behave when passed the listed arguments.
+
+Remember, the existence and behavior of the method map is really implementation detail.  A foreign key object is free to implement the public method-making interface however it wants, without regard to any conceptual or actual method map.
+
+=head1 CLASS METHODS
+
+=over 4
+
+=item B<default_auto_method_types [TYPES]>
+
+Get or set the default list of L<auto_method_types|/auto_method_types>.  TYPES should be a list of foreign key method types.  Returns the list of default foreign key method types (in list context) or a reference to an array of the default foreign key method types (in scalar context).  The default list contains only the "get" foreign key method type.
+
+=back
 
 =head1 OBJECT METHODS
 
 =over 4
+
+=item B<available_method_types>
+
+Returns the full list of foreign key method types supported by this class.
+
+=item B<auto_method_types [TYPES]>
+
+Get or set the list of foreign key method types that are automatically created when L<make_methods|/make_methods> is called without an explicit list of foreign key method types.  The default list is determined by the L<default_auto_method_types|/default_auto_method_types> class method.
+
+=item B<build_method_name_for_type TYPE>
+
+Return a method name for the foreign key method type TYPE.  The default implementation returns the foreign key's L<name|/name> for the foreign key method type "get", and undef otherwise.
 
 =item B<class [CLASS]>
 
@@ -145,53 +237,31 @@ If passed a local column name LOCAL, return the corresponding column name in the
 
 Get or set a reference to a hash that maps local column names to foreign column names in the table referenced by the foreign key.
 
-=item B<make_method PARAMS>
+=item B<make_methods PARAMS>
 
-Create an object method used to fetch the L<Rose::DB::Object>-derived object referred to by the foreign key.  To do this, the C<make_methods()> class method of the L<method_maker_class|/method_maker_class> is called.  PARAMS are name/value pairs.  Valid PARAMS are:
+Create object method used to manipulate object referenced by the foreign key.  PARAMS are name/value pairs.  Valid PARAMS are:
 
 =over 4
 
-=item C<options HASHREF>
+=item C<preserve_existing BOOL>
 
-A reference to a hash of options that will be passed as the first argument to the call to the C<make_methods()> class method of the L<method_maker_class|/method_maker_class>.  This parameter is required, and the HASHREF must include a value for the key C<target_class>, which C<make_methods()> needs in order to determine where to make the method.
+Boolean flag that indicates whether or not to preserve existing methods in the case of a name conflict.
+
+=item C<replace_existing BOOL>
+
+Boolean flag that indicates whether or not to replace existing methods in the case of a name conflict.
+
+=item C<target_class CLASS>
+
+The class in which to make the method(s).  If omitted, it defaults to the calling class.
+
+=item C<types ARRAYREF>
+
+A reference to an array of foreign key method types to be created.  If omitted, it defaults to the list of foreign key method types returned by L<auto_method_types|/auto_method_types>.
 
 =back
 
-The call to C<make_methods()> looks something like this:
-
-    my $method_name = $self->method_name;
-
-    # Use "name" if "method_name" is undefined
-    unless(defined $method_name)
-    {
-      # ...and set "method_name" so it's defined now
-      $method_name = $self->method_name($self->name);
-    }
-
-    $self->method_maker_class->make_methods(
-      $args{'options'}, 
-      $self->method_maker_type => 
-      [
-        $method_name => scalar $self->method_maker_arguments
-      ]);
-
-where C<$args{'options'}> is the value of the "options" PARAM.
-
-The L<method_maker_class|/method_maker_class> is expected to be a subclass of (or otherwise conform to the interface of) L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation for more information on the interface, and the C<make_methods()> method in particular.
-
-More than one method may be created, but there must be at least one accessor method created, and its name must match the L<method_name|/method_name> (or L<name|/name> if L<method_name|/method_name> is undefined).
-
-=item B<method_maker_class>
-
-Returns L<Rose::DB::Object::MakeMethods::Generic>.
-
-=item B<method_maker_type>
-
-Returns C<object_by_key>.
-
-=item B<method_name [NAME]>
-
-Get or set the name of the object method to be created for this foreign key.  This may be left undefined if the desired method name is stored in L<name|/name> instead.  Once the method is actually created, the L<method_name|/method_name> will be set.
+If any of the methods could not be created for any reason, a fatal error will occur.
 
 =item B<name [NAME]>
 
@@ -199,11 +269,35 @@ Get or set the name of the foreign key.  This name must be unique among all othe
 
 =item B<share_db [BOOL]>
 
-Get or set the boolean flag that determines whether the C<db> attribute of the current object is shared with the foreign object to be fetched.  The default value is true.
+Get or set the boolean flag that determines whether the L<db|Rose::DB::Object/db> attribute of the current object is shared with the foreign object to be fetched.  The default value is true.
 
 =item B<type>
 
 Returns "foreign key".
+
+=back
+
+=head1 PROTECTED API
+
+These methods are not part of the public interface, but are supported for use by subclasses.  Put another way, given an unknown object that "isa" L<Rose::DB::Object::Metadata::ForeignKey>, there should be no expectation that the following methods exist.  But subclasses, which know the exact class from which they inherit, are free to use these methods in order to implement the public API described above.
+
+=over 4 
+
+=item B<method_maker_arguments TYPE>
+
+Returns a hash (in list context) or reference to a hash (in scalar context) of name/value arguments that will be passed to the L<method_maker_class|/method_maker_class> when making the foreign key method type TYPE.
+
+=item B<method_maker_class TYPE [, CLASS]>
+
+If CLASS is passed, the name of the L<Rose::Object::MakeMethods>-derived class used to create the object method of type TYPE is set to CLASS.
+
+Returns the name of the L<Rose::Object::MakeMethods>-derived class used to create the object method of type TYPE.
+
+=item B<method_maker_type TYPE [, NAME]>
+
+If NAME is passed, the name of the method maker method type for the foreign key method type TYPE is set to NAME.
+
+Returns the method maker method type for the foreign key method type TYPE.  
 
 =back
 

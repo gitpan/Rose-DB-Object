@@ -9,7 +9,7 @@ use Rose::DB::Object::QueryBuilder qw(build_select);
 
 use Rose::DB::Object::Constants qw(STATE_LOADING);
 
-our $VERSION = '0.0431';
+our $VERSION = '0.05';
 
 our $Debug = 0;
 
@@ -273,8 +273,23 @@ sub get_objects
 
     foreach my $name (@$with_objects)
     {
-      my $key = $meta->foreign_key($name) or 
-        Carp::confess "$class - no information found for foreign key '$name'";
+      my $key = $meta->foreign_key($name);
+      
+      unless($key)
+      {
+        $key = $meta->relationship($name);
+
+        unless($key && $key->isa('Rose::DB::Object::Metadata::Relationship') &&
+           $key->type eq 'one to one')
+        {
+          $key = undef;
+        }
+      }
+      
+      unless($key)
+      {
+        Carp::confess "$class - no foreign key or one to one relationship named '$name'";
+      }
 
       my $fk_class = $key->class or 
         Carp::confess "$class - Missing foreign object class for '$name'";

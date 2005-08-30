@@ -7,9 +7,12 @@ our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
 our $VERSION = '0.03';
 
-sub type { 'boolean' }
+foreach my $type (__PACKAGE__->available_method_types)
+{
+  __PACKAGE__->method_maker_type($type => 'boolean')
+}
 
-sub method_maker_type  { 'boolean' }
+sub type { 'boolean' }
 
 sub parse_value  { shift; shift->parse_boolean(@_)  }
 sub format_value { shift; shift->format_boolean(@_) }
@@ -32,7 +35,7 @@ Rose::DB::Object::Metadata::Column::Boolean - Boolean column metadata.
   use Rose::DB::Object::Metadata::Column::Boolean;
 
   $col = Rose::DB::Object::Metadata::Column::Boolean->new(...);
-  $col->make_method(...);
+  $col->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -41,17 +44,29 @@ Objects of this class store and manipulate metadata for boolean columns in a dat
 
 This class inherits from L<Rose::DB::Object::Metadata::Column::Scalar>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Scalar> documentation for more information.
 
-=head1 OBJECT METHODS
+=head1 METHOD MAP
 
 =over 4
 
-=item B<method_maker_class>
+=item C<get_set>
 
-Returns L<Rose::DB::Object::MakeMethods::Generic>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<boolean|Rose::DB::Object::MakeMethods::Generic/boolean>, ...
 
-=item B<method_maker_type>
+=item C<get>
 
-Returns C<boolean>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<boolean|Rose::DB::Object::MakeMethods::Generic/boolean>, ...
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<boolean|Rose::DB::Object::MakeMethods::Generic/boolean>, ...
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/"MAKING METHODS"> documentation for an explanation of this method map.
+
+=head1 OBJECT METHODS
+
+=over 4
 
 =item B<parse_value DB, VALUE>
 

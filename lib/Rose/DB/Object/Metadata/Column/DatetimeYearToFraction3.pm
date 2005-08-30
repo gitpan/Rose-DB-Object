@@ -26,7 +26,7 @@ Rose::DB::Object::Metadata::Column::DatetimeYearToFraction3 - Datetime year to f
   $col = 
     Rose::DB::Object::Metadata::Column::DatetimeYearToFraction3->new(...);
 
-  $col->make_method(...);
+  $col->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -35,17 +35,29 @@ Objects of this class store and manipulate metadata for "datetime year to fracti
 
 This class inherits from L<Rose::DB::Object::Metadata::Datetime>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Datetime> documentation for more information.
 
-=head1 OBJECT METHODS
+=head1 METHOD MAP
 
 =over 4
 
-=item B<method_maker_class>
+=item C<get_set>
 
-Returns L<Rose::DB::Object::MakeMethods::Date>.
+L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime year to fraction(3)', ...>
 
-=item B<method_maker_type>
+=item C<get>
 
-Returns C<datetime>.
+L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime year to fraction(3)', ...>
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime year to fraction(3)', ...>
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/"MAKING METHODS"> documentation for an explanation of this method map.
+
+=head1 OBJECT METHODS
+
+=over 4
 
 =item B<parse_value DB, VALUE>
 

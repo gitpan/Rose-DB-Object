@@ -10,16 +10,18 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = 
   qw(is_in_db is_loading is_saving
-    set_state_in_db set_state_loading set_state_saving);
+    set_state_in_db set_state_loading set_state_saving
+    unset_state_in_db unset_state_loading unset_state_saving);
 
 our %EXPORT_TAGS = 
 (
   all => \@EXPORT_OK,
-  get_state => [ qw(is_in_db is_loading is_saving) ],
-  set_state =>  [ qw(set_state_in_db set_state_loading set_state_saving) ],
+  get_state   => [ qw(is_in_db is_loading is_saving) ],
+  set_state   => [ qw(set_state_in_db set_state_loading set_state_saving) ],
+  unset_state => [ qw(unset_state_in_db unset_state_loading unset_state_saving) ],
 );
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub is_in_db   { shift->{STATE_IN_DB()}   }
 sub is_loading { shift->{STATE_LOADING()} }
@@ -28,6 +30,10 @@ sub is_saving  { shift->{STATE_SAVING()}  }
 sub set_state_in_db   { shift->{STATE_IN_DB()} = 1   }
 sub set_state_loading { shift->{STATE_LOADING()} = 1 }
 sub set_state_saving  { shift->{STATE_SAVING()} = 1  }
+
+sub unset_state_in_db   { shift->{STATE_IN_DB()} = 0   }
+sub unset_state_loading { shift->{STATE_LOADING()} = 0 }
+sub unset_state_saving  { shift->{STATE_SAVING()} = 0  }
 
 1;
 
@@ -90,6 +96,16 @@ will cause the following function names to be imported:
     set_state_loading()
     set_state_saving()
 
+The 'unset_state' tag:
+
+    use Rose::DB::Object::Util qw(:set_state);
+
+will cause the following function names to be imported:
+
+    unset_state_in_db()
+    unset_state_loading()
+    unset_state_saving()
+
 The 'all' tag:
 
     use Rose::DB::Object::Util qw(:all);
@@ -103,6 +119,10 @@ will cause the following function names to be imported:
     set_state_in_db()
     set_state_loading()
     set_state_saving()
+
+    unset_state_in_db()
+    unset_state_loading()
+    unset_state_saving()
 
 =head1 FUNCTIONS
 
@@ -131,6 +151,18 @@ Indicate that the L<Rose::DB::Object>-derived object OBJECT is currently being L
 =item B<set_state_saving OBJECT>
 
 Indicate that the L<Rose::DB::Object>-derived object OBJECT is currently being L<save|Rose::DB::Object/save>d into the database.
+
+=item B<unset_state_in_db OBJECT>
+
+Mark the L<Rose::DB::Object>-derived object OBJECT as B<not> having been L<load|Rose::DB::Object/load>ed from or L<save|Rose::DB::Object/save>d into the database at some point in the past.
+
+=item B<unset_state_loading OBJECT>
+
+Indicate that the L<Rose::DB::Object>-derived object OBJECT is B<not> currently being L<load|Rose::DB::Object/load>ed from the database.
+
+=item B<unset_state_saving OBJECT>
+
+Indicate that the L<Rose::DB::Object>-derived object OBJECT is B<not> currently being L<save|Rose::DB::Object/save>d into the database.
 
 =back
 

@@ -22,7 +22,7 @@ Rose::DB::Object::Metadata::Column::Decimal - Decimal column metadata.
   use Rose::DB::Object::Metadata::Column::Decimal;
 
   $col = Rose::DB::Object::Metadata::Column::Decimal->new(...);
-  $col->make_method(...);
+  $col->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -31,17 +31,29 @@ Objects of this class store and manipulate metadata for decimal columns in a dat
 
 This class inherits from L<Rose::DB::Object::Metadata::Column::Numeric>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Numeric> documentation for more information.
 
-=head1 OBJECT METHODS
+=head1 METHOD MAP
 
 =over 4
 
-=item B<method_maker_class>
+=item C<get_set>
 
-Returns L<Rose::DB::Object::MakeMethods::Generic>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<scalar|Rose::DB::Object::MakeMethods::Generic/scalar>, C<interface =E<gt> 'get_set', ...>
 
-=item B<method_maker_type>
+=item C<get>
 
-Returns C<scalar>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<scalar|Rose::DB::Object::MakeMethods::Generic/scalar>, C<interface =E<gt> 'get', ...>
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<scalar|Rose::DB::Object::MakeMethods::Generic/scalar>, C<interface =E<gt> 'set', ...>
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/"MAKING METHODS"> documentation for an explanation of this method map.
+
+=head1 OBJECT METHODS
+
+=over 4
 
 =item B<type>
 

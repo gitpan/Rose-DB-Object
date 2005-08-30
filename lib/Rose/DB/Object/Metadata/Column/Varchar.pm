@@ -5,11 +5,14 @@ use strict;
 use Rose::DB::Object::Metadata::Column::Character;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Character);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
+
+foreach my $type (__PACKAGE__->available_method_types)
+{
+  __PACKAGE__->method_maker_type($type => 'varchar');
+}
 
 sub type { 'varchar' }
-
-sub method_maker_type { 'varchar' }
 
 sub parse_value
 {
@@ -32,7 +35,7 @@ Rose::DB::Object::Metadata::Column::Varchar - Variable-length character column m
   use Rose::DB::Object::Metadata::Column::Varchar;
 
   $col = Rose::DB::Object::Metadata::Column::Varchar->new(...);
-  $col->make_method(...);
+  $col->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -41,17 +44,29 @@ Objects of this class store and manipulate metadata for variable-length characte
 
 This class inherits from L<Rose::DB::Object::Metadata::Column::Character>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Character> documentation for more information.
 
-=head1 OBJECT METHODS
+=head1 METHOD MAP
 
 =over 4
 
-=item B<method_maker_class>
+=item C<get_set>
 
-Returns L<Rose::DB::Object::MakeMethods::Generic>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<varchar|Rose::DB::Object::MakeMethods::Generic/varchar>, ...
 
-=item B<method_maker_type>
+=item C<get>
 
-Returns C<varchar>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<varchar|Rose::DB::Object::MakeMethods::Generic/varchar>, ...
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<varchar|Rose::DB::Object::MakeMethods::Generic/varchar>, ...
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/"MAKING METHODS"> documentation for an explanation of this method map.
+
+=head1 OBJECT METHODS
+
+=over 4
 
 =item B<parse_value DB, VALUE>
 

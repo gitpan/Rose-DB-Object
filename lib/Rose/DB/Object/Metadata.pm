@@ -15,7 +15,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.0461';
+our $VERSION = '0.05';
 
 our $Debug = 0;
 
@@ -120,8 +120,9 @@ __PACKAGE__->column_type_classes
 
 __PACKAGE__->relationship_type_classes
 (
-  'one to one'  => 'Rose::DB::Object::Metadata::Relationship::OneToOne',
-  'one to many' => 'Rose::DB::Object::Metadata::Relationship::OneToMany',
+  'one to one'   => 'Rose::DB::Object::Metadata::Relationship::OneToOne',
+  'one to many'  => 'Rose::DB::Object::Metadata::Relationship::OneToMany',
+  'many to many' => 'Rose::DB::Object::Metadata::Relationship::ManyToMany',
 );
 
 sub init_column_name_to_method_name_mapper() { 0 }
@@ -242,6 +243,8 @@ sub init_with_db
     # depend on the database driver.
     if($db->{'driver'} ne $self->{'db_driver'})
     {
+      # This is a call to _clear_db_generated_values() that
+      # has been inlined for speed.
       $self->{'column_names_string_sql'} = undef;
       $self->{'column_names_sql'} = undef;
     }
@@ -580,20 +583,21 @@ sub add_columns
     {
       my $info = shift;
 
-      if(exists $info->{'alias'})
-      {
-        Carp::croak "Cannot specify both 'alias' and 'method_name' properties"
-          if(defined $info->{'method_name'});
-
-        $info->{'method_name'} = delete $info->{'alias'};
-      }
-
-      my $alias_name = $info->{'method_name'};
+      my $alias = $info->{'alias'};
 
       if($info->{'primary_key'})
       {
         $Debug && warn $self->class, " - adding primary key column $name\n";
         $self->add_primary_key_column($name);
+      }
+
+      my $methods     = delete $info->{'methods'};
+      my $add_methods = delete $info->{'add_methods'};
+
+      if($methods && $add_methods)
+      {
+        Carp::croak "Cannot specify both 'methods' and 'add_methods' - ",
+                    "pick one or the other";
       }
 
       my $type = $info->{'type'} ||= 'scalar';
@@ -607,12 +611,39 @@ sub add_columns
       }
 
       $Debug && warn $self->class, " - adding $name $column_class\n";
-      $self->{'columns'}{$name} = 
+      my $column = $self->{'columns'}{$name} = 
         $column_class->new(%$info, name => $name, parent => $self);
 
-      if(defined $alias_name)
+      # Set or add auto-created method names
+      if($methods || $add_methods)
       {
-        $self->alias_column($name, $alias_name);
+        my $auto_method_name = 
+          $methods ? 'auto_method_types' : 'add_auto_method_types';
+  
+        my $methods_arg = $methods || $add_methods;
+  
+        if(ref $methods_arg eq 'HASH')
+        {
+          $methods = [ keys %$methods_arg ];
+          
+          while(my($type, $name) = each(%$methods_arg))
+          {
+            next  unless(defined $name);
+            $column->method_name($type => $name);
+          }
+        }
+        else
+        {
+          $methods = $methods_arg;
+        }
+  
+        $column->$auto_method_name($methods);      
+      }
+
+      if(defined $alias)
+      {
+        $column->alias($alias);
+        $self->alias_column($name, $alias);
       }
     }
     else
@@ -716,6 +747,15 @@ sub add_relationships
         Carp::croak $self->class, " already has a relationship named '$name'";
       }
 
+      my $methods     = delete $info->{'methods'};
+      my $add_methods = delete $info->{'add_methods'};
+
+      if($methods && $add_methods)
+      {
+        Carp::croak "Cannot specify both 'methods' and 'add_methods' - ",
+                    "pick one or the other";
+      }
+
       my $type = $info->{'type'} or 
         Carp::croak "Missing type parameter for relationship '$name'";
 
@@ -728,8 +768,34 @@ sub add_relationships
       }
 
       $Debug && warn $self->class, " - adding $name $relationship_class\n";
-      $self->{'relationships'}{$name} = 
+      my $relationship = $self->{'relationships'}{$name} = 
         $relationship_class->new(%$info, name => $name, parent => $self);
+
+      # Set or add auto-created method names
+      if($methods || $add_methods)
+      {
+        my $auto_method_name = 
+          $methods ? 'auto_method_types' : 'add_auto_method_types';
+  
+        my $methods_arg = $methods || $add_methods;
+  
+        if(ref $methods_arg eq 'HASH')
+        {
+          $methods = [ keys %$methods_arg ];
+          
+          while(my($type, $name) = each(%$methods_arg))
+          {
+            next  unless(defined $name);
+            $relationship->method_name($type => $name);
+          }
+        }
+        else
+        {
+          $methods = $methods_arg;
+        }
+  
+        $relationship->$auto_method_name($methods);      
+      }
     }
     else
     {
@@ -774,7 +840,7 @@ sub add_foreign_keys
 {
   my($self) = shift;
 
-  while(@_)
+  ARG: while(@_)
   {
     my $name = shift;
 
@@ -802,7 +868,7 @@ sub add_foreign_keys
             foreign_key => $fk));
       }
 
-      next;
+      next ARG;
     }
 
     if(ref $_[0] eq 'HASH')
@@ -814,9 +880,44 @@ sub add_foreign_keys
         Carp::croak $self->class, " already has a foreign key named '$name'";
       }
 
+      my $methods     = delete $info->{'methods'};
+      my $add_methods = delete $info->{'add_methods'};
+
+      if($methods && $add_methods)
+      {
+        Carp::croak "Cannot specify both 'methods' and 'add_methods' - ",
+                    "pick one or the other";
+      }
+
       $Debug && warn $self->class, " - adding $name foreign key\n";
       my $fk = $self->{'foreign_keys'}{$name} = 
         Rose::DB::Object::Metadata::ForeignKey->new(%$info, name => $name);
+
+      # Set or add auto-created method names
+      if($methods || $add_methods)
+      {
+        my $auto_method_name = 
+          $methods ? 'auto_method_types' : 'add_auto_method_types';
+  
+        my $methods_arg = $methods || $add_methods;
+  
+        if(ref $methods_arg eq 'HASH')
+        {
+          $methods = [ keys %$methods_arg ];
+          
+          while(my($type, $name) = each(%$methods_arg))
+          {
+            next  unless(defined $name);
+            $fk->method_name($type => $name);
+          }
+        }
+        else
+        {
+          $methods = $methods_arg;
+        }
+  
+        $fk->$auto_method_name($methods);      
+      }
 
       unless(defined $self->relationship($name))
       {
@@ -985,68 +1086,39 @@ sub make_column_methods
 
   my $class = $self->class;
 
-  my %opts = 
-  (
-    target_class => $class, 
-    ($args{'preserve_existing'} ? (preserve_existing => 1) : ()),
-    ($args{'replace_existing'}  ? (override_existing => 1) : ()),
-  );
+  $args{'target_class'} = $class;
 
   my $aliases = $self->column_aliases;
-  my %methods;
+
+  while(my($column_name, $alias) = each(%$aliases))
+  {
+    $self->column($column_name)->alias($alias);
+  }
 
   foreach my $column ($self->columns)
   {
-    my $name   = $column->name;
-    my $method = $column->method_name;
-    my $must_sync_aliases = 0;
+    my $name = $column->name;
+    my $method;
 
-    if(defined $method)
+    foreach my $type ($column->auto_method_types)
     {
-      $must_sync_aliases = 1  if($method ne $name);
-
-      if(defined $aliases->{$name} && $method ne $aliases->{$name})
+      $method = $self->method_name_from_column_name($name, $type);
+  
+      if(my $reason = $self->method_name_is_reserved($method, $class))
       {
-        Carp::croak "Conflict detected between alias for column $name set ",
-                    "via alias_column() and the column object's ",
-                    "method_name() method: $aliases->{$name} vs. $method",
+        Carp::croak "Cannot create method '$method' - $reason  ",
+                    "Use alias_column() to map it to another name."
       }
-    }
-    else
-    {
-      $method = $aliases->{$name};
+
+      $column->method_name($type => $method);
     }
 
-    unless(defined $method)
-    {
-      $method = $self->method_name_from_column_name($name);
-    }
+    $column->make_methods(%args);
 
-    if(my $reason = $self->method_name_is_reserved($method, $class))
-    {
-      Carp::croak "Cannot create method '$method' - $reason  ",
-                  "Use alias_column() to map it to another name."
-    }
-
-    if($must_sync_aliases)
-    {
-      $self->alias_column($name, $method);
-    }
-
-    $column->method_name($method);
-    $methods{$name} = $method;
-
-    #unless($class->can($method) && $args{'preserve_existing'})
-    #{
-    #  $self->made_method_for_column($name => 1);
-    #}
-
-    $column->make_method(options => \%opts);
-
-    # Primary key columns can be aliased, but we make a column-named 
-    # method anyway.
     if($method ne $name)
     {
+      # Primary key columns can be aliased, but we make a column-named 
+      # method anyway.
       foreach my $column ($self->primary_key_column_names)
       {
         if($name eq $column)
@@ -1055,10 +1127,10 @@ sub make_column_methods
           {
             Carp::croak
               "Cannot create method for primary key column '$name' ",
-              "- $reason  Although primary keys may be aliased, doing so ",
-              "will not avoid conflicts with reserved method names because a ",
-              "method named after the primary key column itself must also be ",         
-              "created.";
+              "- $reason  Although primary keys may be aliased, doing ",
+              "so will not avoid conflicts with reserved method names ", 
+              "because a method named after the primary key column ",
+              "itself must also be created.";
           }
 
           no strict 'refs';
@@ -1068,7 +1140,25 @@ sub make_column_methods
     }
   }
 
-  $self->column_methods(\%methods);
+  # Initialize method name hashes
+  $self->column_accessor_method_names;
+  $self->column_mutator_method_names;
+  $self->column_rw_method_names;
+
+  # This rule is relaxed for now...
+  # Must have an rw accessor for every column
+  #my $columns = $self->columns;
+  #
+  #unless(keys %methods == @$columns)
+  #{
+  #  Carp::croak "Rose::DB::Object-derived objects are requiresd to have ",
+  #              "a 'get_set' method for every column.  This class (",
+  #              $self->class, ") has ", scalar @$columns, "column",
+  #              (@$columns == 1 ? '' : 's'), " and ", scalar keys %methods,
+  #              " method", (scalar keys %methods == 1 ? '' : 's');
+  #}
+  
+  return;
 }
 
 sub make_foreign_key_methods
@@ -1078,34 +1168,27 @@ sub make_foreign_key_methods
 
   my $class = $self->class;
 
-  my %opts = 
-  (
-    target_class => $class, 
-    ($args{'preserve_existing'} ? (preserve_existing => 1) : ()),
-    ($args{'replace_existing'}  ? (override_existing => 1) : ()),
-  );
-
-  my %methods;
+  $args{'target_class'} = $class;
 
   foreach my $foreign_key ($self->foreign_keys)
   {
-    my $method = $foreign_key->method_name || 
-                 $foreign_key->method_name($foreign_key->name);
-
-    if(my $reason = $self->method_name_is_reserved($method, $class))
+    foreach my $type ($foreign_key->auto_method_types)
     {
-      Carp::croak "Cannot create method '$method' - $reason  ",
-                  "Choose a different foreign key name."
+      my $method = $foreign_key->method_name($type) || 
+                   $foreign_key->build_method_name_for_type($type);
+
+      if(my $reason = $self->method_name_is_reserved($method, $class))
+      {
+        Carp::croak "Cannot create method '$method' - $reason  ",
+                    "Choose a different foreign key name."
+      }
+
+      $foreign_key->method_name($type => $method);
     }
 
-    # Let the method maker handle this, I suppose...
-    #next  if($class->can($method) && $args{'preserve_existing'});
+    $foreign_key->make_methods(%args);
 
-    $methods{$foreign_key->name} = $method;
-
-    $foreign_key->make_method(options => \%opts);
-
-    # Keep foreign keys and their corresponding "one to one"
+    # Keep foreign keys and their corresponding "one to one" 
     # relationships in sync.
     my $fk_id = $foreign_key->id;
 
@@ -1116,12 +1199,11 @@ sub make_foreign_key_methods
       if($fk_id eq $relationship->id)
       {
         $relationship->foreign_key($foreign_key);
-        $relationship->method_name($method);
       }
     }
   }
 
-  $self->foreign_key_methods(\%methods);
+  return;
 }
 
 sub make_relationship_methods
@@ -1131,77 +1213,48 @@ sub make_relationship_methods
 
   my $class = $self->class;
 
-  my %opts = 
-  (
-    target_class => $class, 
-    ($args{'preserve_existing'} ? (preserve_existing => 1) : ()),
-    ($args{'replace_existing'}  ? (override_existing => 1) : ()),
-  );
+  $args{'target_class'} = $class;
 
-  my %methods;
-
+  my $preserve_existing_arg = $args{'preserve_existing'};
   foreach my $relationship ($self->relationships)
   {
-    my $method = $relationship->method_name || 
-                 $relationship->method_name($relationship->name);
-
-    if(my $reason = $self->method_name_is_reserved($method, $class))
+    foreach my $type ($relationship->auto_method_types)
     {
-      Carp::croak "Cannot create method '$method' - $reason  ",
-                  "Choose a different relationship name."
-    }
+      my $method = $relationship->method_name($type) || 
+                   $relationship->build_method_name_for_type($type);
 
-    # Preserve existing foreign key method with the same name
-    if($relationship->type eq 'one to one')
-    {
-      my $rel_id = $relationship->id;
-
-      foreach my $fk ($self->foreign_keys)
+      if(my $reason = $self->method_name_is_reserved($method, $class))
       {
-        if($rel_id eq $fk->id)
-        {
-          my $fk_method = $self->foreign_key_method($fk->name) || $fk->method_name;
+        Carp::croak "Cannot create method '$method' - $reason  ",
+                    "Choose a different relationship name."
+      }
 
-          if(defined $fk_method && $fk_method eq $method)
+      $relationship->method_name($type => $method);
+
+      # Initialize/reset preserve_existing flag
+      $args{'preserve_existing'} = $preserve_existing_arg;
+
+      # If a corresponding foreign key exists, the preserve any existing
+      # methods with the same names.  This is a crude way to ensure that we
+      # cna have a foreign key and a corresponding "one to one" relationship
+      # without any method name clashes.
+      if($relationship->type eq 'one to one')
+      {
+        my $rel_id = $relationship->id;
+
+        FK: foreach my $fk ($self->foreign_keys)
+        {
+          if($rel_id eq $fk->id)
           {
-            $methods{$relationship->name} = $fk_method;
-            last;
+            $args{'preserve_existing'} = 1;
+            last FK;
           }
         }
       }
     }
 
-    unless(defined $methods{$relationship->name})
-    {
-      # Let the method maker handle this, I suppose...
-      #next  if($class->can($method) && $args{'preserve_existing'});
-
-      $methods{$relationship->name} = $method;
-
-      $relationship->make_method(options => \%opts);
-    }
-
-    # Keep "one to one" relationships and their corresponding 
-    # foreign keys in sync.
-    if($relationship->type eq 'one to one')
-    {
-      my $rel_id = $relationship->id;
-
-      foreach my $fk ($self->foreign_keys)
-      {
-        if(!defined $fk->method_name && $rel_id eq $fk->id)
-        {
-          $fk->method_name($method);
-          $relationship->foreign_key($fk);
-          $self->foreign_key_method($fk->name => $method);
-          last;
-        }
-      }
-    }
+    $relationship->make_methods(%args);      
   }
-
-  # Pointless, so removed...
-  #$self->relationship_methods(\%methods);
 
   return;
 }
@@ -1340,27 +1393,51 @@ sub method_column
   {
     foreach my $column ($self->column_names)
     {
-      my $method = $self->column_method($column);
-      $self->{'method_column'}{$method} = $column;
+      foreach my $type ($column->defined_method_types)
+      {
+        if(my $method = $column->method_name($type))
+        {
+          $self->{'method_column'}{$method} = $column;
+        }
+      }
     }
   }
 
   return $self->{'method_column'}{$method};
 }
 
-sub column_method_names
+sub column_rw_method_names
 {
   my($self) = shift;
 
-  $self->{'column_method_names'} ||= 
-    [ map { $self->column_method($_) } $self->column_names ];
+  $self->{'column_rw_method_names'} ||= 
+    [ map { $self->column_rw_method_name($_) } $self->column_names ];
 
-  return wantarray ? @{$self->{'column_method_names'}} :
-                     $self->{'column_method_names'};
+  return wantarray ? @{$self->{'column_rw_method_names'}} :
+                     $self->{'column_rw_method_names'};
 }
 
-*column_accessor_method_names = \&column_method_names;
-*column_mutator_method_names  = \&column_method_names;
+sub column_accessor_method_names
+{
+  my($self) = shift;
+
+  $self->{'column_accessor_method_names'} ||= 
+    [ map { $self->column_accessor_method_name($_) } $self->column_names ];
+
+  return wantarray ? @{$self->{'column_accessor_method_names'}} :
+                     $self->{'column_accessor_method_names'};
+}
+
+sub column_mutator_method_names
+{
+  my($self) = shift;
+
+  $self->{'column_mutator_method_names'} ||= 
+    [ map { $self->column_mutator_method_name($_) } $self->column_names ];
+
+  return wantarray ? @{$self->{'column_mutator_method_names'}} :
+                     $self->{'column_mutator_method_names'};
+}
 
 sub alias_column
 {
@@ -1401,40 +1478,29 @@ sub column_aliases
   return $_[0]->{'column_aliases'} = (ref $_[1] eq 'HASH') ? $_[1] : { @_[1 .. $#_] };
 }
 
-sub column_method
+sub column_accessor_method_name
 {
-  $_[0]->{'column_methods'}{$_[1]} ||= $_[0]->{'column_aliases'}{$_[1]} || $_[1];
+  $_[0]->{'column_accessor_method'}{$_[1]} ||= 
+    $_[0]->column($_[1])->accessor_method_name;
 }
 
-*column_accessor_method = \&column_method;
-*column_mutator_method  = \&column_method;
+sub column_accessor_method_names_hash { shift->{'column_accessor_method'} }
 
-sub column_methods
+sub column_mutator_method_name
 {
-  return $_[0]->{'column_methods'}  unless(@_ > 1);
-  return $_[0]->{'column_methods'} = (ref $_[1] eq 'HASH') ? $_[1] : { @_[1 .. $#_] };
+  $_[0]->{'column_mutator_method'}{$_[1]} ||= 
+    $_[0]->column($_[1])->mutator_method_name;
 }
 
-*column_accessor_methods = \&column_methods;
-*column_mutator_methods  = \&column_methods;
+sub column_mutator_method_names_hash { shift->{'column_mutator_method'} }
 
-sub foreign_key_method
+sub column_rw_method_name
 {
-  my($self, $name, $method) = @_;
-
-  if(@_ > 2)
-  {
-    return $self->{'foreign_key_methods'}{$name} = $method;
-  }
-
-  return $self->{'foreign_key_methods'}{$name};
+  $_[0]->{'column_rw_method'}{$_[1]} ||= 
+    $_[0]->column($_[1])->rw_method_name;
 }
 
-sub foreign_key_methods
-{
-  return $_[0]->{'foreign_key_methods'}  unless(@_ > 1);
-  return $_[0]->{'foreign_key_methods'} = (ref $_[1] eq 'HASH') ? $_[1] : { @_[1 .. $#_] };
-}
+sub column_rw_method_names_hash { shift->{'column_rw_method'} }
 
 sub fq_table_sql
 {
@@ -1572,7 +1638,7 @@ sub update_sql_with_inlining
 
   foreach my $column (grep { !$key{$_} } $self->columns)
   {
-    my $method = $self->column_method($column->name);
+    my $method = $self->column_accessor_method_name($column->name);
     my $value  = $obj->$method();
 
     if($column->should_inline_value($db, $value))
@@ -1628,7 +1694,7 @@ sub insert_sql_with_inlining
 
   foreach my $column ($self->columns)
   {
-    my $method = $self->column_method($column->name);
+    my $method = $self->column_accessor_method_name($column->name);
     my $value  = $obj->$method();
 
     if($column->should_inline_value($db, $value))
@@ -1682,14 +1748,27 @@ sub _clear_column_generated_values
   $self->{'column_names'}        = undef;
   $self->{'columns_names_sql'}   = undef;
   $self->{'column_names_string_sql'} = undef;
-  $self->{'column_method_names'} = undef;
+  $self->{'column_rw_method_names'} = undef;
+  $self->{'column_accessor_method_names'} = undef;
+  $self->{'column_mutator_method_names'} = undef;
   $self->{'method_columns'}      = undef;
+  $self->{'column_accessor_method'} = undef;
+  $self->{'column_mutator_method'} = undef;
+  $self->{'column_rw_method'} = undef;
   $self->{'load_sql'}   = undef;
   $self->{'update_sql'} = undef;
   $self->{'update_sql_with_inlining_start'} = undef;
   $self->{'insert_sql'} = undef;
   $self->{'insert_sql_with_inlining_start'} = undef;
   $self->{'delete_sql'} = undef;
+}
+
+sub _clear_db_generated_values
+{
+  my($self) = shift;
+
+  $self->{'column_names_string_sql'} = undef;
+  $self->{'column_names_sql'} = undef;
 }
 
 sub method_name_is_reserved
@@ -1719,21 +1798,33 @@ sub method_name_is_reserved
 
 sub method_name_from_column_name
 {
-  my($self, $column_name) = @_;
+  my($self, $column_name, $method_type) = @_;
 
-  my $method_name;
+  my $column = $self->column($column_name)
+    or Carp::confess "No such column: $column_name";
+
+  return $self->method_name_from_column($column, $method_type);
+}
+
+sub method_name_from_column
+{
+  my($self, $column, $method_type) = @_;
+
+  my $method_name = 
+    $column->method_name($method_type) ||
+    $column->build_method_name_for_type($method_type);
 
   if(my $code = $self->column_name_to_method_name_mapper)
   {
-    local $_ = $column_name;
-    $method_name = $code->($self, $column_name);
+    my $column_name = $column->name;
+    local $_ = $method_name;
+    $method_name = $code->($self, $column_name, $method_type, $method_name);
 
-    Carp::croak "column_name_to_method_name_mapper() returned undef for column $column_name"
-      unless(defined $method_name);
-  }
-  else
-  {
-    $method_name = $column_name;
+    unless(defined $method_name)
+    {
+      Carp::croak "column_name_to_method_name_mapper() returned undef ",
+                  "for column name '$column_name' method type '$method_type'"
+    }
   }
 
   return $method_name;
@@ -1867,9 +1958,12 @@ Rose::DB::Object::Metadata - Database object metadata.
   # This part cannot be done automatically
   $meta->add_relationship
   (
-    type       => 'one to many',
-    class      => 'Price',
-    column_map => { id => 'id_product' },
+    prices =>
+    {
+      type       => 'one to many',
+      class      => 'Price',
+      column_map => { id => 'id_product' },
+    },
   );
 
   ...
@@ -2095,9 +2189,7 @@ Returns (or creates, if needed) the single L<Rose::DB::Object::Metadata> object 
 
 This class method should return a reference to a subroutine that maps column names to method names, or false if it does not want to do any custom mapping.  The default implementation returns zero (0).
 
-If defined, the subroutine should take two arguments: the metadata object and the column name.  It should return a method name.
-
-Note that the mapper will not be called for columns that are explicitly aliased (e.g., with the L<alias_column|/alias_column> method).
+If defined, the subroutine should take four arguments: the metadata object, the column name, the column method type, and the method name that would be used if the mapper subroutine did not exist.  It should return a method name.
 
 =item B<relationship_type_class TYPE>
 
@@ -2152,6 +2244,12 @@ If the hash contains the key "primary_key" with a true value, then the column is
 
 If the hash contains the key "alias", then the value of that key is used as the alias for the column.  This is a shorthand equivalent to explicitly calling the L<alias_column|/alias_column> column method.
 
+If the hash contains the key "methods", then its value must be a reference to an array or a reference to a hash.  The L<auto_method_types|Rose::DB::Object::Metadata::Column/auto_method_types> of the column are then set to the values of the referenced array, or the keys of the referenced hash.  The values of the referenced hash are used to set the L<method_name|Rose::DB::Object::Metadata::Column/method_name> for their corresponding method types.
+
+If the hash contains the key "add_methods", then its value must be a reference to an array or a reference to a hash.  The values of the referenced array or the keys of the referenced hash are added to the column's L<auto_method_types|Rose::DB::Object::Metadata::Column/auto_method_types>.  The values of the referenced hash are used to set the L<method_name|Rose::DB::Object::Metadata::Column/method_name> for their corresponding method types.
+
+If the "methods" and "add_methods" keys are both set, a fatal error will occur.
+
 Then the L<column_type_class|/column_type_class> method is called with the value of the "type" hash key as its argument (or "scalar" if that key is missing), returning the name of a column class.  Finally, a new column object of that class is constructed and is passed all the remaining pairs in the hash reference, along with the name and type of the column.  That column object is then added to the list of columns.
 
 This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
@@ -2162,22 +2260,35 @@ Example:
     (
       # Add a scalar column
       'name', 
-      #
+
       # which is roughly equivalent to:
       #
       # $class = $meta->column_type_class('scalar');
       # $col = $class->new(name => 'name');
       # (then add $col to the list of columns)
 
-      # Add by name/hashref pair
-      age => { type => 'int', default => 5 },
-      #
+      # Add by name/hashref pair with explicit method types
+      age => { type => 'int', default => 5, methods => [ 'get', 'set' ] },
+
       # which is roughly equivalent to:
       #
       # $class = $meta->column_type_class('int');
       # $col = $class->new(name    => 'age',
       #                    type    => 'int', 
-      #                    default => 5, );
+      #                    default => 5);
+      # $col->auto_method_types('get', 'set');
+      # (then add $col to the list of columns)
+
+      # Add by name/hashref pair with additional method type and name
+      size => { type => 'int', add_methods => { 'set' => 'set_my_size' } },
+
+      # which is roughly equivalent to:
+      #
+      # $class = $meta->column_type_class('int');
+      # $col = $class->new(name    => 'size',
+      #                    type    => 'int',);
+      # $col->add_auto_method_types('set');
+      # $col->method_name(set => 'set_my_size');
       # (then add $col to the list of columns)
 
       # Add a column object directly
@@ -2195,7 +2306,13 @@ If an argument is a L<Rose::DB::Object::Metadata::ForeignKey> object (or subclas
 
 Otherwise, only name/value pairs are considered, where the name is taken as the foreign key name and the value must be a reference to a hash.
 
-A new L<Rose::DB::Object::Metadata::ForeignKey> object is constructed and is passed all the pairs in the hash reference, along with the name of the foreign key as the value of the "name" parameter.  That foreign key object is then added to the list of foreign keys.
+If the hash contains the key "methods", then its value must be a reference to an array or a reference to a hash.  The L<auto_method_types|Rose::DB::Object::Metadata::ForeignKey/auto_method_types> of the foreign key are then set to the values of the referenced array, or the keys of the referenced hash.  The values of the referenced hash are used to set the L<method_name|Rose::DB::Object::Metadata::ForeignKey/method_name> for their corresponding method types.
+
+If the hash contains the key "add_methods", then its value must be a reference to an array or a reference to a hash.  The values of the referenced array or the keys of the referenced hash are added to the foreign key's L<auto_method_types|Rose::DB::Object::Metadata::ForeignKey/auto_method_types>.  The values of the referenced hash are used to set the L<method_name|Rose::DB::Object::Metadata::ForeignKey/method_name> for their corresponding method types.
+
+If the "methods" and "add_methods" keys are both set, a fatal error will occur.
+
+A new L<Rose::DB::Object::Metadata::ForeignKey> object is constructed and is passed all the remaining pairs in the hash reference, along with the name of the foreign key as the value of the "name" parameter.  That foreign key object is then added to the list of foreign keys.
 
 This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
 
@@ -2203,19 +2320,39 @@ Example:
 
     $meta->add_foreign_keys
     (      
-      # Add by name/hashref pair
+      # Add by name/hashref pair with explicit method type
       category => 
       {
         class       => 'Category', 
         key_columns => { category_id => 'id' },
+        methods => [ 'get' ],
       },
-      #
+
       # which is roughly equivalent to:
       #
       # $fk = Rose::DB::Object::Metadata::ForeignKey->new(
       #         class       => 'Category', 
       #         key_columns => { category_id => 'id' },
       #         name        => 'category');
+      # $fk->auto_method_types('get');
+      # (then add $fk to the list of foreign keys)
+
+      # Add by name/hashref pair with additional method type and name
+      color => 
+      {
+        class       => 'Color', 
+        key_columns => { color_id => 'id' },
+        add_methods => { set => 'set_my_color' },
+      },
+
+      # which is roughly equivalent to:
+      #
+      # $fk = Rose::DB::Object::Metadata::ForeignKey->new(
+      #         class       => 'Color', 
+      #         key_columns => { color_id => 'id' },
+      #         name        => 'color');
+      # $fk->add_auto_method_types('set');
+      # $fk->method_name(set => 'set_my_color');
       # (then add $fk to the list of foreign keys)
 
       # Add a foreign key object directly
@@ -2246,7 +2383,15 @@ If an argument is a subclass of L<Rose::DB::Object::Metadata::Relationship>, it 
 
 Otherwise, only name/value pairs are considered, where the name is taken as the relationship name and the value must be a reference to a hash.
 
-Then the L<relationship_type_class|/relationship_type_class> method is called with the value of the C<type> hash key as its argument, returning the name of a relationship class.  Finally, a new relationship object of that class is constructed and is passed all the pairs in the hash reference, along with the name and type of the relationship.  That relationship object is then added to the list of relationships.
+If the hash contains the key "methods", then its value must be a reference to an array or a reference to a hash.  The L<auto_method_types|Rose::DB::Object::Metadata::Relationship/auto_method_types> of the relationship are then set to the values of the referenced array, or the keys of the referenced hash.  The values of the referenced hash are used to set the L<method_name|Rose::DB::Object::Metadata::Relationship/method_name> for their corresponding method types.
+
+If the hash contains the key "add_methods", then its value must be a reference to an array or a reference to a hash.  The values of the referenced array or the keys of the referenced hash are added to the relationship's L<auto_method_types|Rose::DB::Object::Metadata::Relationship/auto_method_types>.  The values of the referenced hash are used to set the L<method_name|Rose::DB::Object::Metadata::Relationship/method_name> for their corresponding method types.
+
+If the "methods" and "add_methods" keys are both set, a fatal error will occur.
+
+Then the L<relationship_type_class|/relationship_type_class> method is called with the value of the C<type> hash key as its argument, returning the name of a relationship class.
+
+Finally, a new relationship object of that class is constructed and is passed all the remaining pairs in the hash reference, along with the name and type of the relationship.  That relationship object is then added to the list of relationships.
 
 This is done until there are no more arguments to be processed, or until an argument does not conform to one of the required formats, in which case a fatal error occurs.
 
@@ -2254,21 +2399,42 @@ Example:
 
     $meta->add_relationships
     (      
-      # Add by name/hashref pair
+      # Add by name/hashref pair with explicit method type
       category => 
       {
         type       => 'one to one',
         class      => 'Category', 
         column_map => { category_id => 'id' },
+        methods    => [ 'get' ],
       },
-      #
+
       # which is roughly equivalent to:
       #
-      # $rel = Rose::DB::Object::Metadata::Relationship->new(
-      #          class      => 'Category', 
-      #          column_map => { category_id => 'id' },
-      #          name       => 'category');
+      # $class = $meta->relationship_type_class('one to one');
+      # $rel = $class->new(class      => 'Category', 
+      #                    column_map => { category_id => 'id' },
+      #                    name       => 'category');
+      # $rel->auto_method_types('get');
       # (then add $rel to the list of relationships)
+
+      # Add by name/hashref pair with additional method type and name
+      color => 
+      {
+        type        => 'one to one',
+        class       => 'Color', 
+        column_map  => { color_id => 'id' },
+        add_methods => { set => 'set_my_color' },
+      },
+
+      # which is roughly equivalent to:
+      #
+      # $class = $meta->relationship_type_class('one to one');
+      # $rel = $class->new(class      => 'Color', 
+      #                    column_map => { color_id => 'id' },
+      #                    name       => 'color');
+      # $rel->add_auto_method_types('set');
+      # $fk->method_name(set => 'set_my_color');
+      # (rel add $fk to the list of foreign keys)
 
       # Add a relationship object directly
       Rose::DB::Object::Metadata::Relationship::OneToOne->new(...),
@@ -2288,7 +2454,7 @@ Otherwise, an argument must be a reference to an array of column names that make
 
 =item B<alias_column NAME, ALIAS>
 
-Use ALIAS instead of NAME as the accessor method name for column named NAME.  It is sometimes necessary to use an alias for a column because the column name  conflicts with an existing L<Rose::DB::Object> method name.
+Set the L<alias|Rose::DB::Object::Metadata::Column/alias> for the column named NAME to ALIAS.  It is sometimes necessary to use an alias for a column because the column name conflicts with an existing L<Rose::DB::Object> method name.
 
 For example, imagine a column named "save".  The L<Rose::DB::Object> API already defines a method named L<save|Rose::DB::Object/save>, so obviously that name can't be used for the accessor method for the "save" column.  To solve this, make an alias:
 
@@ -2319,7 +2485,7 @@ What you'll end up with is an error like this:
     DBD::Informix::st execute failed: SQL: -1262: Non-numeric 
     character in datetime or interval.
 
-In other words, DBD::Informix has tried to quote the string "CURRENT", which has special meaning to Informix only when it is not quoted. 
+In other words, L<DBD::Informix> has tried to quote the string "CURRENT", which has special meaning to Informix only when it is not quoted. 
 
 In order to make this work, the value "CURRENT" must be "inlined" rather than bound to a placeholder when it is the value of a "DATETIME YEAR TO SECOND" column in an Informix database.
 
@@ -2374,33 +2540,27 @@ Get or set the full list of columns.  If ARGS are passed, the column list is cle
 
 Returns a list of column objects in list context, or a reference to an array of column objects in scalar context.
 
-=item B<column_accessor_method COLUMN>
+=item B<column_accessor_method_name NAME>
 
-Returns the name of the "get" method for COLUMN.  This is currently just an alias for L<column_method|/column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to get the column value.
+Returns the name of the "get" method for the column named NAME.  This is just a shortcut for C<$meta->column(NAME)-E<gt>accessor_method_name>.
+
+=item B<column_accessor_method_names>
+
+Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "set" methods for all the columns, in the order that the columns are returned by L<column_names|/column_names>.
 
 =item B<column_aliases [MAP]>
 
 Get or set the hash that maps column names to their aliases.  If passed MAP (a list of name/value pairs or a reference to a hash) then MAP replaces the current alias mapping.  Returns a reference to the hash that maps column names to their aliases.
 
-Note that modifying this map has no effect if L<initialize|/initialize> or L<make_methods|/make_methods> has already been called for the current L<class|/class>.
+Note that modifying this map has no effect if L<initialize|/initialize>, L<make_methods|/make_methods>, or L<make_column_methods|/make_column_methods> has already been called for the current L<class|/class>.
 
-=item B<column_method COLUMN>
+=item B<column_mutator_method_name NAME>
 
-Returns the name of the get/set accessor method for COLUMN.  If the column is not aliased, then the accessor name is the same as the column name.
+Returns the name of the "set" method for the column named NAME.  This is just a shortcut for C<$meta->column(NAME)-E<gt>mutator_method_name>.
 
-=item B<column_methods [MAP]>
+=item B<column_mutator_method_names>
 
-Get or set the hash that maps column names to their get/set accessor method names.  If passed MAP (a list of name/value pairs or a reference to a hash) then MAP replaces the current method mapping.
-
-Note that modifying this map has no effect if L<initialize|/initialize> or L<make_methods|/make_methods> has already been called for the current L<class|/class>.
-
-=item B<column_method_names>
-
-Returns a list (in list context) or a reference to an array (in scalar context) of method names for all columns, ordered according to the order that the column names are returned from the L<column_names|/column_names> method.
-
-=item B<column_mutator_method COLUMN>
-
-Returns the name of the "set" method for COLUMN.  This is currently just an alias for L<column_method|/column_method> but should still be used for the sake of clarity when you're only interested in a method you can use to set the column value.
+Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "set" methods for all the columns, in the order that the columns are returned by L<column_names|/column_names>.
 
 =item B<column_names>
 
@@ -2408,11 +2568,17 @@ Returns a list (in list context) or a reference to an array (in scalar context) 
 
 =item B<column_name_to_method_name_mapper [CODEREF]>
 
-Get or set the code reference to the subroutine used to map column names to  method names.  If undefined, then the L<init_column_name_to_method_name_mapper|/init_column_name_to_method_name_mapper> class method is called in order to initialize it.  If still undefined or false, then the column name is used as the method name.
+Get or set the code reference to the subroutine used to map column names to  method names.  If undefined, then the L<init_column_name_to_method_name_mapper|/init_column_name_to_method_name_mapper> class method is called in order to initialize it.  If still undefined or false, then the "default" method name is used.
 
-If defined, the CODEREF subroutine should take two arguments: the metadata object and the column name.  It should return a method name.
+If defined, the subroutine should take four arguments: the metadata object, the column name, the column method type, and the method name that would be used if the mapper subroutine did not exist.  It should return a method name.
 
-Note that the mapper will not be called for columns that are explicitly aliased (e.g., with the L<alias_column|/alias_column> method).
+=item B<column_rw_method_name NAME>
+
+Returns the name of the "get_set" method for the column named NAME.  This is just a shortcut for C<$meta->column(NAME)-E<gt>rw_method_name>.
+
+=item B<column_rw_method_names>
+
+Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "get_set" methods for all the columns, in the order that the columns are returned by L<column_names|/column_names>.
 
 =item B<db>
 
@@ -2484,13 +2650,13 @@ Return a value that indicates that an error has occurred, as described in the L<
 
 In all cases, the object's L<error|Rose::DB::Object/error> attribute will also contain the error message.
 
-=item B<foreign_key NAME [, VALUE]>
+=item B<foreign_key NAME [, FOREIGNKEY | HASHREF ]>
 
 Get or set the foreign key named NAME.  NAME should be the name of the thing being referenced by the foreign key, I<not> the name of any of the columns that make up the foreign key.  If called with just a NAME argument, the foreign key stored under that name is returned.  Undef is returned if there is no such foreign key.
 
-If passed a VALUE that is a reference to a hash, a new L<Rose::DB::Object::Metadata::ForeignKey> object is constructed, with the name/value pairs in the hash passed to the constructor, along with the NAME as the value of the C<name> parameter.
+If both NAME and FOREIGNKEY are passed, then FOREIGNKEY must be a L<Rose::DB::Object::Metadata::ForeignKey>-derived object.  FOREIGNKEY has its L<name|Rose::DB::Object::Metadata::ForeignKey/name> set to NAME, and is then stored, replacing any existing foreign key with the same name.
 
-If VALUE is a L<Rose::DB::Object::Metadata::ForeignKey>->derived object, it has its C<name> set to NAME and then is stored under that name.
+If both NAME and HASHREF are passed, then the combination of NAME and HASHREF must form a name/value pair suitable for passing to the L<add_foreign_keys|/add_foreign_keys> method.  The new foreign key specified by NAME and HASHREF replaces any existing foreign key with the same name.
 
 =item B<foreign_keys [ARGS]>
 
@@ -2556,7 +2722,7 @@ If set to a true value, override any existing method with the same name.
 
 =back
 
-For each column, the corresponding method name is determined by passing the column name to L<column_method|/column_method>.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>, a fatal error will occur.  The object method is created by calling the column object's L<make_method|Rose::DB::Object::Metadata::Column/make_method> method.
+For each L<auto_method_type|Rose::DB::Object::Metadata::Column/auto_method_types> in each column, the method name is determined by passing the column name and the method type to L<method_name_from_column_name|/method_name_from_column_name>.  If the resulting method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>, a fatal error will occur.  The object methods for each column are created by calling the column object's L<make_methods|Rose::DB::Object::Metadata::Column/make_methods> method.
 
 =item B<make_foreign_key_methods [ARGS]>
 
@@ -2574,7 +2740,7 @@ If set to a true value, override any existing method with the same name.
 
 =back
 
-For each foreign key, the corresponding method name is determined by calling the L<method_name|Rose::DB::Object::Metadata::ForeignKey/method_name> method on the foreign key metadata object.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>), a fatal error will occur.  The object method is created by calling the foreign key metadata object's L<make_method|Rose::DB::Object::Metadata::ForeignKey/make_method> method.
+For each L<auto_method_type|Rose::DB::Object::Metadata::ForeignKey/auto_method_types> in each foreign key, the method name is determined by passing the method type to the L<method_name|Rose::DB::Object::Metadata::ForeignKey/method_name> method of the foreign key object, or the L<build_method_name_for_type|Rose::DB::Object::Metadata::ForeignKey/build_method_name_for_type> method if the L<method_name|Rose::DB::Object::Metadata::ForeignKey/method_name> call returns a false value.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>), a fatal error will occur.  The object methods for each foreign key are created by calling the foreign key  object's L<make_methods|Rose::DB::Object::Metadata::ForeignKey/make_methods> method.
 
 Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship/foreign_key> attribute of each "one to one" relationship object to be the corresponding foreign key object.
 
@@ -2594,7 +2760,7 @@ If set to a true value, override any existing method with the same name.
 
 =back
 
-For each relationship, the corresponding method name is determined by calling the L<method_name|Rose::DB::Object::Metadata::Relationship/method_name> method on the relationship metadata object.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>), a fatal error will occur.  The object method is created by calling the relationship metadata object's L<make_method|Rose::DB::Object::Metadata::Relationship/make_method> method.
+For each L<auto_method_type|Rose::DB::Object::Metadata::Relationship/auto_method_types> in each relationship, the method name is determined by passing the method type to the L<method_name|Rose::DB::Object::Metadata::Relationship/method_name> method of the relationship object, or the L<build_method_name_for_type|Rose::DB::Object::Metadata::Relationship/build_method_name_for_type> method if the L<method_name|Rose::DB::Object::Metadata::Relationship/method_name> call returns a false value.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>), a fatal error will occur.  The object methods for each relationship are created by calling the relationship  object's L<make_methods|Rose::DB::Object::Metadata::Relationship/make_methods> method.
 
 Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship/foreign_key> attribute of each "one to one" relationship object to be the corresponding foreign key object.
 
@@ -2602,11 +2768,15 @@ If a relationship corresponds exactly to a foreign key, and that foreign key alr
 
 =item B<method_column METHOD>
 
-Returns the name of the column manipulated by the get/set accessor method named METHOD.  If the column is not aliased, then the accessor name is the same as the column name.
+Returns the name of the column manipulated by the method named METHOD.
 
-=item B<method_name_from_column_name [NAME]>
+=item B<method_name_from_column_name NAME, TYPE>
 
-Given the column name NAME, returns the corresponding method name that would be generated for it, either via the default rules or through a custom-defined L<column_name_to_method_name_mapper|/column_name_to_method_name_mapper>.
+Looks up the column named NAME and calls L<method_name_from_column|/method_name_from_column> with the column and TYPE as argument.  If no such column exists, a fatal error will occur.
+
+=item B<method_name_from_column COLUMN, TYPE>
+
+Given the column object COLUMN and the method type TYPE, returns the corresponding method name that would be generated for it, either via the default rules or through a custom-defined L<column_name_to_method_name_mapper|/column_name_to_method_name_mapper>.
 
 =item B<method_name_is_reserved NAME, CLASS>
 
@@ -2782,7 +2952,7 @@ Auto-initialize the entire metadata object.  This is a wrapper for the individua
 
 PARAMS are optional name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated columns, unique keys, and foreign keys entirely replace any existing columns, unique keys, and foreign keys, respectively.
 
-During initialization, if one of the columns has a method name that clashes with a L<reserved method name|Rose::DB::Object/"RESERVED METHODS">, then the L<reserved_method_name_fixer|/reserved_method_name_fixer> will be called to remedy the situation.  If the name still conflicts, then a fatal error will occur.
+During initialization, if one of the columns has a method name that clashes with a L<reserved method name|Rose::DB::Object/"RESERVED METHODS">, then the L<column_alias_generator|/column_alias_generator> will be called to remedy the situation by aliasing the column.  If the name still conflicts, then a fatal error will occur.
 
 A fatal error will occur if auto-initialization fails.
 
@@ -2806,15 +2976,23 @@ Auto-retrieve the names of the columns that make up the primary key for this tab
 
 Auto-generate L<Rose::DB::Object::Metadata::UniqueKey> objects for this table, then populate the list of L<unique_keys|/unique_keys>.  PARAMS are name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated unique keys replace any existing unique keys.  Otherwise, any existing unique keys are left as-is.
 
+=item B<column_alias_generator [CODEREF]>
+
+Get or set the code reference to the subroutine used to alias columns have, or would generate, one or more method names that clash with L<reserved method names|Rose::DB::Object/"RESERVED METHODS">.
+
+The subroutine should take two arguments: the metadata object and the column name.  The C<$_> variable will also be set to the column name at the time of the call.  The subroutine should return an L<alias|Rose::DB::Object::Metadata::Column/alias> for the column.
+
+The default column alias generator simply appends the string "_col" to the end of the column name and returns that as the alias.
+
 =item B<foreign_key_name_generator [CODEREF]>
 
 Get or set the code reference to the subroutine used to generate L<foreign key|Rose::DB::Object::Metadata::ForeignKey> names.  The subroutine should take two arguments: a metadata object and a L<Rose::DB::Object::Metadata::ForeignKey> object.  It should return a name for the foreign key.
 
-Each foreign key must have a name that is unique within the class.  This name will also be the name of the method generated to access the object referred to by the foreign key, so it must be unique among method names in the class.
+Each foreign key must have a name that is unique within the class.  By default, this name will also be the name of the method generated to access the object referred to by the foreign key, so it must be unique among method names in the class as well.
 
 The default foreign key name generator uses the following algorithm:
 
-If the foreign key has only one column, and if the name of that column ends with an underscore and the name of the referenced column, then that part of the column name is removed and the remaining string is used as the foreign key name.  For example, given the following tables:
+If the foreign key has only one column, and if the name of that column ends with an optional underscore and the name of the referenced column, then that part of the column name is removed and the remaining string is used as the foreign key name.  For example, given the following tables:
 
     CREATE TABLE categories
     (
@@ -2837,12 +3015,6 @@ If the foreign key has more than one column, then the foreign key name is genera
 In all of the scenarios above, if the generated foreign key name is still not unique within the class, then a number is appended to the end of the name.  That number is incremented until the name is unique.
 
 In practice, rather than setting a custom foreign key name generator, it's usually easier to simply set the foreign key name(s) manually after auto-initializing the foreign keys (but I<before> calling L<initialize|/initialize> or L<auto_initialize|/auto_initialize>, of course).
-
-=item B<reserved_method_name_fixer [CODEREF]>
-
-Get or set the code reference to the subroutine used to fix column method names that clash with L<reserved method names|Rose::DB::Object/"RESERVED METHODS">.  The subroutine should take two arguments: the metadata object and the method name.  The C<$_> variable will also be set to the method name at the time of the call.  The subroutine should return the new method name.
-
-The default reserved method name fixer simply appends the string "_col" to the end of the method name.
 
 =item B<perl_class_definition [PARAMS]>
 

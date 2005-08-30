@@ -290,7 +290,7 @@ __PACKAGE__->meta->table('rose_db_object_test');
 __PACKAGE__->meta->columns(
     bits          => { type => 'bitfield', bits => 5, default => '00101', not_null => 1 },
     date_created  => { type => 'timestamp' },
-    fk1           => { type => 'integer', method_name => 'fkone' },
+    fk1           => { type => 'integer', alias => 'fkone' },
     fk2           => { type => 'integer' },
     fk3           => { type => 'integer' },
     flag          => { type => 'boolean', default => 'true', not_null => 1 },
@@ -303,7 +303,7 @@ __PACKAGE__->meta->columns(
     name          => { type => 'varchar', length => 32, not_null => 1 },
     nums          => { type => 'array' },
     password      => { type => 'chkpass' },
-    save          => { type => 'integer', method_name => 'save_col' },
+    save          => { type => 'integer', alias => 'save_col' },
     start         => { type => 'date', default => '1980-12-24' },
     status        => { type => 'varchar', default => 'active', length => 32 },
 );
@@ -362,7 +362,7 @@ __PACKAGE__->meta->columns
 (
   bits          => { type => 'bitfield', bits => 5, default => '00101', not_null => 1 },
   date_created  => { type => 'timestamp' },
-  fk1           => { type => 'integer', method_name => 'fkone' },
+  fk1           => { type => 'integer', alias => 'fkone' },
   fk2           => { type => 'integer' },
   fk3           => { type => 'integer' },
   flag          => { type => 'boolean', default => 'true', not_null => 1 },
@@ -375,7 +375,7 @@ __PACKAGE__->meta->columns
   name          => { type => 'varchar', length => 32, not_null => 1 },
   nums          => { type => 'array' },
   password      => { type => 'chkpass' },
-  save          => { type => 'integer', method_name => 'save_col' },
+  save          => { type => 'integer', alias => 'save_col' },
   start         => { type => 'date', default => '1980-12-24' },
   status        => { type => 'varchar', default => 'active', length => 32 },
 );
@@ -655,7 +655,7 @@ __PACKAGE__->meta->table('rose_db_object_test');
 __PACKAGE__->meta->columns(
     bits          => { type => 'bitfield', bits => 5, default => 101 },
     date_created  => { type => 'datetime' },
-    fk1           => { type => 'integer', method_name => 'fkone' },
+    fk1           => { type => 'integer', alias => 'fkone' },
     fk2           => { type => 'integer' },
     fk3           => { type => 'integer' },
     flag          => { type => 'boolean', default => 1 },
@@ -666,7 +666,7 @@ __PACKAGE__->meta->columns(
     id            => { type => 'integer', not_null => 1 },
     last_modified => { type => 'timestamp'@{[ $mysql_41 ? ", default => 'now'" : '' ]} },
     name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
-    save          => { type => 'integer', method_name => 'save_col' },
+    save          => { type => 'integer', alias => 'save_col' },
     start         => { type => 'date', default => '1980-12-24' },
     status        => { type => 'varchar', default => 'active', length => 32 },
 );
@@ -725,7 +725,7 @@ __PACKAGE__->meta->columns
 (
   bits          => { type => 'bitfield', bits => 5, default => 101 },
   date_created  => { type => 'datetime' },
-  fk1           => { type => 'integer', method_name => 'fkone' },
+  fk1           => { type => 'integer', alias => 'fkone' },
   fk2           => { type => 'integer' },
   fk3           => { type => 'integer' },
   flag          => { type => 'boolean', default => 1 },
@@ -736,7 +736,7 @@ __PACKAGE__->meta->columns
   id            => { type => 'integer', not_null => 1 },
   last_modified => { type => 'timestamp'@{[ $mysql_41 ? ", default => 'now'" : '' ]} },
   name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
-  save          => { type => 'integer', method_name => 'save_col' },
+  save          => { type => 'integer', alias => 'save_col' },
   start         => { type => 'date', default => '1980-12-24' },
   status        => { type => 'varchar', default => 'active', length => 32 },
 );
@@ -1033,7 +1033,7 @@ __PACKAGE__->meta->table('rose_db_object_test');
 __PACKAGE__->meta->columns(
     bits          => { type => 'bitfield', bits => 5, default => 101 },
     date_created  => { type => 'datetime year to fraction(5)' },
-    fk1           => { type => 'integer', method_name => 'fkone' },
+    fk1           => { type => 'integer', alias => 'fkone' },
     fk2           => { type => 'integer' },
     fk3           => { type => 'integer' },
     flag          => { type => 'boolean', default => 't', not_null => 1 },
@@ -1045,7 +1045,7 @@ __PACKAGE__->meta->columns(
     last_modified => { type => 'datetime year to fraction(5)' },
     name          => { type => 'varchar', length => 32, not_null => 1 },
     nums          => { type => 'array' },
-    save          => { type => 'integer', method_name => 'save_col' },
+    save          => { type => 'integer', alias => 'save_col' },
     start         => { type => 'date', default => '12/24/1980' },
     status        => { type => 'varchar', default => 'active', length => 32 },
 );
@@ -1104,7 +1104,7 @@ __PACKAGE__->meta->columns
 (
   bits          => { type => 'bitfield', bits => 5, default => 101 },
   date_created  => { type => 'datetime year to fraction(5)' },
-  fk1           => { type => 'integer', method_name => 'fkone' },
+  fk1           => { type => 'integer', alias => 'fkone' },
   fk2           => { type => 'integer' },
   fk3           => { type => 'integer' },
   flag          => { type => 'boolean', default => 't', not_null => 1 },
@@ -1116,7 +1116,7 @@ __PACKAGE__->meta->columns
   last_modified => { type => 'datetime year to fraction(5)' },
   name          => { type => 'varchar', length => 32, not_null => 1 },
   nums          => { type => 'array' },
-  save          => { type => 'integer', method_name => 'save_col' },
+  save          => { type => 'integer', alias => 'save_col' },
   start         => { type => 'date', default => '12/24/1980' },
   status        => { type => 'varchar', default => 'active', length => 32 },
 );

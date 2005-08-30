@@ -8,9 +8,9 @@ use Rose::DB::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column::Scalar;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
-__PACKAGE__->add_method_maker_argument_names
+__PACKAGE__->add_common_method_maker_argument_names
 (
   qw(default length)
 );
@@ -18,12 +18,15 @@ __PACKAGE__->add_method_maker_argument_names
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
-  scalar => [ __PACKAGE__->method_maker_argument_names ]
+  scalar => [ __PACKAGE__->common_method_maker_argument_names ]
 );
 
 sub type { 'character' }
 
-sub method_maker_type { 'character' }
+foreach my $type (__PACKAGE__->available_method_types)
+{
+  __PACKAGE__->method_maker_type($type => 'character')
+}
 
 sub parse_value
 {
@@ -60,7 +63,7 @@ Rose::DB::Object::Metadata::Column::Character - Character column metadata.
   use Rose::DB::Object::Metadata::Column::Character;
 
   $col = Rose::DB::Object::Metadata::Column::Character->new(...);
-  $col->make_method(...);
+  $col->make_methods(...);
   ...
 
 =head1 DESCRIPTION
@@ -69,17 +72,29 @@ Objects of this class store and manipulate metadata for character columns in a d
 
 This class inherits from L<Rose::DB::Object::Metadata::Column::Scalar>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Scalar> documentation for more information.
 
-=head1 OBJECT METHODS
+=head1 METHOD MAP
 
 =over 4
 
-=item B<method_maker_class>
+=item C<get_set>
 
-Returns L<Rose::DB::Object::MakeMethods::Generic>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<character|Rose::DB::Object::MakeMethods::Generic/character>, ...
 
-=item B<method_maker_type>
+=item C<get>
 
-Returns C<character>.
+L<Rose::DB::Object::MakeMethods::Generic>, L<character|Rose::DB::Object::MakeMethods::Generic/character>, ...
+
+=item C<get_set>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<character|Rose::DB::Object::MakeMethods::Generic/character>, ...
+
+=back
+
+See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/"MAKING METHODS"> documentation for an explanation of this method map.
+
+=head1 OBJECT METHODS
+
+=over 4
 
 =item B<parse_value DB, VALUE>
 

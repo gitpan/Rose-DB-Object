@@ -427,6 +427,8 @@ EOF
     Carp::croak "Could not auto-generate columns for class $class - $@";
   }
 
+  $self->auto_alias_columns(values %columns);
+
   return wantarray ? values %columns : \%columns;
 }
 

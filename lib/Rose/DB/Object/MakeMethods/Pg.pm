@@ -2,7 +2,7 @@ package Rose::DB::Object::MakeMethods::Pg;
 
 use strict;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Rose::Object::MakeMethods;
 our @ISA = qw(Rose::Object::MakeMethods);
@@ -20,8 +20,8 @@ sub chkpass
 
   if($interface eq 'get_set')
   {
-    my $encrypted = $key . ($args->{'encrypted_suffix'} || '_encrypted');
-    my $cmp       = $key . ($args->{'cmp_suffix'} || '_is');
+    my $encrypted = $name . ($args->{'encrypted_suffix'} || '_encrypted');
+    my $cmp       = $name . ($args->{'cmp_suffix'} || '_is');
 
     $methods{$name} = sub
     {

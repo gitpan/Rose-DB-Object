@@ -71,9 +71,9 @@ $aliases = $meta->column_aliases;
 is(join(',', sort keys %$aliases), 'save', 'column_aliases() 3');
 is($aliases->{'save'}, 'save_col', 'column_aliases() 4');
 
-my $methods = $meta->column_methods;
+my $methods = $meta->column_rw_method_names;
 
-is(join(',', sort values %$methods), 'bar,baz,bits,date_created,flag,flag2,foo,id,last_modified,name,nums,password,save_col,start,status', 'column_methods()');
+is(join(',', @$methods), 'bar,baz,bits,date_created,flag,flag2,foo,id,last_modified,name,nums,password,save_col,start,status', 'column_rw_method_names()');
 
 BEGIN
 {
