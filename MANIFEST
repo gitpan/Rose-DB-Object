@@ -55,7 +55,7 @@ lib/Rose/DB/Object/Std.pm
 lib/Rose/DB/Object/Std/Cached.pm
 lib/Rose/DB/Object/Std/Metadata.pm
 lib/Rose/DB/Object/Util.pm
-lib/Rose/DB/Objects/Iterator.pm
+lib/Rose/DB/Object/Iterator.pm
 Makefile.PL
 MANIFEST
 t/00-warning.t

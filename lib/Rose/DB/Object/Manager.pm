@@ -4,7 +4,7 @@ use strict;
 
 use Carp();
 
-use Rose::DB::Objects::Iterator;
+use Rose::DB::Object::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select);
 
 use Rose::DB::Object::Constants qw(STATE_LOADING);
@@ -439,7 +439,7 @@ sub get_objects
 
     if($return_iterator)
     {
-      $iterator = Rose::DB::Objects::Iterator->new(active => 1);
+      $iterator = Rose::DB::Object::Iterator->new(active => 1);
 
       my $num_subtables = $with_objects ? @$with_objects : 0;
 
@@ -933,7 +933,7 @@ Accepts the same arguments as C<get_objects()>, but just returns the number of r
 
 =item B<get_objects_iterator [PARAMS]>
 
-Accepts any valid C<get_objects()> argument, but return a L<Rose::DB::Objects::Iterator> object which can be used to fetch the objects one at a time, or undef if there was an error.
+Accepts any valid C<get_objects()> argument, but return a L<Rose::DB::Object::Iterator> object which can be used to fetch the objects one at a time, or undef if there was an error.
 
 =item B<get_objects_sql [PARAMS]>
 

@@ -1142,7 +1142,7 @@ sub objects_by_map
       {
         $self->error("Could not load $foreign_class objects via map class ", 
                      "$map_class - " . $map_manager->error);
-        return $objs;
+        return wantarray ? () : $objs;
       }
 
       $self->{$key} = [ map { $_->$map_to_method() } @$objs ];
@@ -1247,10 +1247,23 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
   ...
   use Rose::DB::Object::MakeMethods::Generic
   (
+    scalar => 'name',
+
     set => 
     [
       'nicknames',
       'parts' => { default => [ qw(arms legs) ] },
+    ],
+
+    # See the Rose::DB::Object::Metadata::Relationship::ManyToMany
+    # documentation for a more complete example
+    objects_by_map =>
+    [
+      friends =>
+      {
+        map_class    => 'FriendMap',
+        manager_args => { sort_by => 'name' },
+      },
     ],
   );
   ...
@@ -1261,6 +1274,7 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
   $person->nicknames('Jack', 'Gimpy');   # set with list
   $person->nicknames([ 'Slim', 'Gip' ]); # set with array ref
 
+  print join(', ', map { $_->name } $person->friends);
   ...
 
   package Program;
@@ -1666,6 +1680,76 @@ Example:
     #     state      => { ne => 'closed' },
     #   },
     #   sort_by => 'date_submitted DESC');
+
+=item B<objects_by_map>
+
+Create methods that fetch L<Rose::DB::Object>-derived objects via an intermediate L<Rose::DB::Object>-derived class that maps between two other L<Rose::DB::Object>-derived classes.  See the L<Rose::DB::Object::Metadata::Relationship::ManyToMany> documentation for a more complete example of this type of method in action.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of the fetched objects.  Defaults to the name of the method.
+
+=item C<interface>
+
+Choose the interface.  The only current interface is C<get>, which is the default.
+
+=item C<manager_args>
+
+A reference to a hash of arguments passed to the C<manager_class> when fetching objects.
+
+=item C<manager_class>
+
+The name of the L<Rose::DB::Object::Manager>-derived class that the C<map_class> will use to fetch records.  Defaults to L<Rose::DB::Object::Manager>.
+
+=item C<manager_method>
+
+The name of the class method to call on C<manager_class> in order to fetch the objects.  Defaults to C<get_objects>.
+
+=item C<map_class>
+
+The name of the L<Rose::DB::Object>-derived class that maps between the other two L<Rose::DB::Object>-derived classes.  This class must have a foreign key and/or "one to one" relationship for each of the two tables that it maps between.
+
+=item C<map_from>
+
+The name of the "one to one" relationship or foreign key in C<map_class> that points to the object of the class that the method exists in.  Setting this value is only necessary if the C<map_class> has more than one foreign key or "one to one" relationship that points to one of the classes that it maps between.
+
+=item C<map_to>
+
+The name of the "one to one" relationship or foreign key in C<map_class> that points to the "foreign" object to be fetched.  Setting this value is only necessary if the C<map_class> has more than one foreign key or "one to one" relationship that points to one of the classes that it maps between.
+
+=item C<share_db>
+
+If true, the C<db> attribute of the current object is shared with all of the objects fetched.  Defaults to true.
+
+=item C<query_args>
+
+A reference to an array of arguments added to the value of the C<query> parameter passed to the call to C<manager_class>'s C<manager_method> class method.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get>
+
+Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>.
+
+If the call to C<manager_class>'s C<manager_method> method returns false, that false value (in scalar context) or an empty list (in list context) is returned.
+
+If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
+
+=back
+
+=back
+
+For a complete example of this method type in action, see the L<Rose::DB::Object::Metadata::Relationship::ManyToMany> documentation.
 
 =item B<object_by_key>
 

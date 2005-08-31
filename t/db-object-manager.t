@@ -162,7 +162,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
       limit   => 5,
       sort_by => 'name');
 
-  is(ref $iterator, 'Rose::DB::Objects::Iterator', "get_objects_iterator() 1 - $db_type");
+  is(ref $iterator, 'Rose::DB::Object::Iterator', "get_objects_iterator() 1 - $db_type");
 
   $o = $iterator->next;
   is($o->name, 'Fred', "iterator next() 1 - $db_type");
@@ -551,7 +551,7 @@ SKIP: foreach my $db_type ('mysql')
       limit   => 5,
       sort_by => 'name');
 
-  is(ref $iterator, 'Rose::DB::Objects::Iterator', "get_objects_iterator() 1 - $db_type");
+  is(ref $iterator, 'Rose::DB::Object::Iterator', "get_objects_iterator() 1 - $db_type");
 
   $o = $iterator->next;
   is($o->name, 'Fred', "iterator next() 1 - $db_type");
@@ -946,7 +946,7 @@ SKIP: foreach my $db_type (qw(informix))
       limit   => 5,
       sort_by => 'name');
 
-  is(ref $iterator, 'Rose::DB::Objects::Iterator', "get_objects_iterator() 1 - $db_type");
+  is(ref $iterator, 'Rose::DB::Object::Iterator', "get_objects_iterator() 1 - $db_type");
 
   $o = $iterator->next;
   is($o->name, 'Fred', "iterator next() 1 - $db_type");

@@ -1,11 +1,11 @@
-package Rose::DB::Objects::Iterator;
+package Rose::DB::Object::Iterator;
 
 use strict;
 
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Rose::Object::MakeMethods::Generic
 (
@@ -48,7 +48,7 @@ __END__
 
 =head1 NAME
 
-Rose::DB::Objects::Iterator - Iterate over a series of Rose::DB::Objects.
+Rose::DB::Object::Iterator - Iterate over a series of Rose::DB::Objects.
 
 =head1 SYNOPSIS
 
@@ -76,7 +76,7 @@ Rose::DB::Objects::Iterator - Iterate over a series of Rose::DB::Objects.
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Objects::Iterator> is an iterator object that traverses a database query, returning L<Rose::DB::Object>-derived objects for each row.  C<Rose::DB::Objects::Iterator> objects are created by calls to the C<get_objects_iterator()> method of L<Rose::DB::Object::Manager> or one of its subclasses.
+C<Rose::DB::Object::Iterator> is an iterator object that traverses a database query, returning L<Rose::DB::Object>-derived objects for each row.  C<Rose::DB::Object::Iterator> objects are created by calls to the C<get_objects_iterator|Rose::DB::Object::Manager/get_objects_iterator> method of L<Rose::DB::Object::Manager> or one of its subclasses.
 
 =head1 OBJECT METHODS
 

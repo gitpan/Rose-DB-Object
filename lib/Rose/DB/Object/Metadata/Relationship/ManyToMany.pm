@@ -130,8 +130,8 @@ Anyway, here's the code.  First, the C<WidgetSetup.pm> file.
   use Rose::DB::Object;
   our @ISA = qw(Rose::DB::Object);
 
-  __PACKAGE__->meta->table('widgets');
-  __PACKAGE__->meta->columns
+  Widget->meta->table('widgets');
+  Widget->meta->columns
   (
     id   => { type => 'int', primary_key => 1 },
     name => { type => 'varchar', length => 255 },
@@ -142,8 +142,8 @@ Anyway, here's the code.  First, the C<WidgetSetup.pm> file.
   use Rose::DB::Object;
   our @ISA = qw(Rose::DB::Object);
 
-  __PACKAGE__->meta->table('colors');
-  __PACKAGE__->meta->columns
+  Color->meta->table('colors');
+  Color->meta->columns
   (
     id   => { type => 'int', primary_key => 1 },
     name => { type => 'varchar', length => 255 },
@@ -154,8 +154,8 @@ Anyway, here's the code.  First, the C<WidgetSetup.pm> file.
   use Rose::DB::Object;
   our @ISA = qw(Rose::DB::Object);
 
-  __PACKAGE__->meta->table('widget_color_map');
-  __PACKAGE__->meta->columns
+  WidgetColorMap->meta->table('widget_color_map');
+  WidgetColorMap->meta->columns
   (
     id        => { type => 'int', primary_key => 1 },
     widget_id => { type => 'int' },
@@ -365,13 +365,13 @@ In the L<example|EXAMPLE> above, the map class is C<WidgetColorMap>.
 
 =item B<map_from [NAME]>
 
-Get or set the name of the "one to one" relationship or foreign key in L</map_class> that points to the object of the current class.  Setting this value is only necessary if the L<map class|/map_class> has more than one foreign key or "one to one" relationship that points to one of the classes that it maps between.
+Get or set the name of the "one to one" relationship or foreign key in L<map_class|/map_class> that points to the object of the current class.  Setting this value is only necessary if the L<map class|/map_class> has more than one foreign key or "one to one" relationship that points to one of the classes that it maps between.
 
 In the L<example|EXAMPLE> above, the value of L<map_from|/map_from> would be "widget" when defining the "many to many" relationship in the C<Widget> class, or "color" when defining the "many to many" relationship in the C<Color> class.  Neither of these settings is necessary in the example because the C<WidgetColorMap> class has one foreign key that points to each class, so there is no ambiguity.
 
 =item B<map_to [NAME]>
 
-Get or set the name of the "one to one" relationship or foreign key  C<map_class> that points to the "foreign" object to be fetches.  Setting this value is only necessary if the L<map class|/map_class> has more than one foreign key or "one to one" relationship that points to one of the classes that it maps between.
+Get or set the name of the "one to one" relationship or foreign key in L<map_class|/map_class> that points to the "foreign" object to be fetched.  Setting this value is only necessary if the L<map class|/map_class> has more than one foreign key or "one to one" relationship that points to one of the classes that it maps between.
 
 In the L<example|EXAMPLE> above, the value of L<map_from> would be "color" when defining the "many to many" relationship in the C<Widget> class, or "widget" when defining the "many to many" relationship in the C<Color> class.  Neither of these settings is necessary in the example because the C<WidgetColorMap> class has one foreign key that points to each class, so there is no ambiguity.
 
