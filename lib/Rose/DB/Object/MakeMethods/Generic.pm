@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 sub scalar
 {
@@ -28,8 +28,6 @@ sub scalar
 
   if($interface eq 'get_set')
   {
-    my $code;
-
     if(my $check = $args->{'check_in'})
     {
       $check = [ $check ] unless(ref $check);
@@ -46,7 +44,8 @@ sub scalar
             Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
             return $_[0]->{$key} = $_[1];
           }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $default);
         };
       }
       elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
@@ -86,7 +85,8 @@ sub scalar
         $methods{$name} = sub
         {
           return $_[0]->{$key} = $_[1]  if(@_ > 1);
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $default);
         };
       }
       elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
@@ -112,8 +112,6 @@ sub scalar
   }
   elsif($interface eq 'set')
   {
-    my $code;
-
     if(my $check = $args->{'check_in'})
     {
       $check = [ $check ] unless(ref $check);
@@ -137,15 +135,14 @@ sub scalar
   }
   elsif($interface eq 'get')
   {
-    my $code;
-
     my $default = $args->{'default'};
 
     if(defined $default)
     {
       $methods{$name} = sub
       {
-        return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                 ($_[0]->{$key} = $default);
       };
     }
     elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
@@ -183,8 +180,6 @@ sub character
 
   if($interface eq 'get_set')
   {
-    my $code;
-
     if(my $check = $args->{'check_in'})
     {
       $check = [ $check ] unless(ref $check);
@@ -202,7 +197,8 @@ sub character
             return $_[0]->{$key} = ($length && defined $_[1]) ?
               sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
           }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $default);
         };
       }
       elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
@@ -248,7 +244,8 @@ sub character
             return $_[0]->{$key} = ($length && defined $_[1]) ?
               sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
           }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $default);
         };
       }
       elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
@@ -280,6 +277,73 @@ sub character
       }
     }
   }
+  elsif($interface eq 'get')
+  {
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                 ($_[0]->{$key} = $default);
+      };
+    }
+    elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+    {
+      my $init_method = $args->{'init_method'} || "init_$name";
+
+      $methods{$name} = sub
+      {
+        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                 ($_[0]->{$key} = $_[0]->$init_method());
+      };
+    }
+    else
+    {
+      $methods{$name} = sub { shift->{$key} };
+    }
+  }
+  elsif($interface eq 'set')
+  {
+    if(my $check = $args->{'check_in'})
+    {
+      $check = [ $check ] unless(ref $check);
+      my %check = map { $_ => 1 } @$check;
+
+      if(exists $args->{'with_init'} || exists $args->{'init_method'})
+      {
+        my $init_method = $args->{'init_method'} || "init_$name";
+
+        $methods{$name} = sub
+        {
+          Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
+          Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+          return $_[0]->{$key} = ($length && defined $_[1]) ?
+            sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+        };
+      }
+      else
+      {
+        $methods{$name} = sub
+        {
+          Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
+          Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+          return $_[0]->{$key} = ($length && defined $_[1]) ?
+            sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+        };
+      }
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
+        return $_[0]->{$key} = ($length && defined $_[1]) ?
+          sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
+      };
+    }
+  }
   else { Carp::croak "Unknown interface: $interface" }
 
   return \%methods;
@@ -297,8 +361,6 @@ sub varchar
 
   if($interface eq 'get_set')
   {
-    my $code;
-
     if(my $check = $args->{'check_in'})
     {
       $check = [ $check ] unless(ref $check);
@@ -315,7 +377,8 @@ sub varchar
             Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
             return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
           }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $default);
         };
       }
       elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
@@ -359,7 +422,8 @@ sub varchar
             no warnings; # substr on undef is ok here
             return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
           }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : ($_[0]->{$key} = $default);
+          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                   ($_[0]->{$key} = $default);
         };
       }
       elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
@@ -389,6 +453,57 @@ sub varchar
           return $_[0]->{$key};
         };
       }
+    }
+  }
+  elsif($interface eq 'get')
+  {
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                 ($_[0]->{$key} = $default);
+      };
+    }
+    elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
+    {
+      my $init_method = $args->{'init_method'} || "init_$name";
+
+      $methods{$name} = sub
+      {
+        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
+                 ($_[0]->{$key} = $_[0]->$init_method());
+      };
+    }
+    else
+    {
+      $methods{$name} = sub { shift->{$key} };
+    }
+  }
+  elsif($interface eq 'set')
+  {
+    if(my $check = $args->{'check_in'})
+    {
+      $check = [ $check ] unless(ref $check);
+      my %check = map { $_ => 1 } @$check;
+
+      $methods{$name} = sub
+      {
+        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
+        Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
+        return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
+      };
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
+        no warnings; # substr on undef is ok here
+        return $_[0]->{$key} = $length ? substr($_[1], 0, $length) : $_[1];
+      };
     }
   }
   else { Carp::croak "Unknown interface: $interface" }
@@ -423,17 +538,23 @@ sub boolean
 
           if($_[0])
           {
-            my $value = $db->parse_boolean($_[0]);
-
-            unless(defined $value)
+            if($_[0] =~ /^(?:1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
             {
-              Carp::croak($db->error);
+              return $self->{$key} = 1;
             }
-
-            return $self->{$key} = $value;
+            elsif($_[0] =~ /^(?:0(?:\.0*)?|f(?:alse)?|no?)$/i)
+            {
+              return $self->{$key} = 0;
+            }
+            else
+            {
+              my $value = $db->parse_boolean($_[0]);
+              Carp::croak($db->error)  unless(defined $value);
+              return $self->{$key} = $value;
+            }
           }
 
-          return $self->{$key} = $_[0] ? 1 : 0;
+          return $self->{$key} = 0;
         }
 
         if($self->{STATE_SAVING()})
@@ -454,6 +575,8 @@ sub boolean
 
         if(@_)
         {
+          my $db = $self->db or die "Missing Rose::DB object attribute";
+
           if($_[0])
           {
             if($_[0] =~ /^(?:1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
@@ -466,10 +589,13 @@ sub boolean
             }
             else
             {
-              Carp::croak("Invalid boolean value: '$_[0]'");
+              my $value = $db->parse_boolean($_[0]);
+              Carp::croak($db->error)  unless(defined $value);
+              return $self->{$key} = $value;
             }
           }
-          else { return $self->{$key} = 0 }
+
+          return $self->{$key} = 0;
         }
 
         if($self->{STATE_SAVING()})
@@ -480,6 +606,76 @@ sub boolean
 
         return $self->{$key};
       }
+    }
+  }
+  elsif($interface eq 'get')
+  {
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $default = ($default) ? 1 : 0;
+
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        if($self->{STATE_SAVING()})
+        {
+          my $db = $self->db or die "Missing Rose::DB object attribute";
+          return (defined $self->{$key}) ? $db->format_boolean($self->{$key}) : 
+                                           $db->format_boolean($self->{$key} = $default);
+        }
+
+        return (defined $self->{$key}) ? $self->{$key} : ($self->{$key} = $default);
+      }
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        if($self->{STATE_SAVING()})
+        {
+          my $db = $self->db or die "Missing Rose::DB object attribute";
+          return (defined $self->{$key}) ? $db->format_boolean($self->{$key}) : undef;
+        }
+
+        return $self->{$key};
+      }
+    }
+  }
+  elsif($interface eq 'set')
+  {
+    my $default = $args->{'default'};
+
+    $methods{$name} = sub
+    {
+      my $self = shift;
+
+      Carp::croak "Missing argument in call to $name"  unless(@_);
+      my $db = $self->db or die "Missing Rose::DB object attribute";
+
+      if($_[0])
+      {
+        if($_[0] =~ /^(?:0*1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
+        {
+          return $self->{$key} = 1;
+        }
+        elsif($_[0] =~ /^(?:0+(?:\.0*)?|f(?:alse)?|no?)$/i)
+        {
+          return $self->{$key} = 0;
+        }
+        else
+        {
+          my $value = $db->parse_boolean($_[0]);
+          Carp::croak($db->error)  unless(defined $value);
+          return $self->{$key} = $value;
+        }
+      }
+
+      return $self->{$key} = 0;
     }
   }
   else { Carp::croak "Unknown interface: $interface" }
@@ -588,31 +784,137 @@ sub bitfield
         return $self->{$key} ? $self->{$key} : 
                $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
       };
-    }
 
-    if($args->{'with_intersects'})
-    {
-      my $method = $args->{'intersects'} || $name . '_intersects';
-
-      $methods{$method} = sub 
+  
+      if($args->{'with_intersects'})
       {
-        my($self, $vec) = @_;
-
-        my $val = $self->{$key} or return undef;
-
-        unless(ref $vec)
+        my $method = $args->{'intersects'} || $name . '_intersects';
+  
+        $methods{$method} = sub 
         {
-          my $db = $self->db or die "Missing Rose::DB object attribute";
-          $vec = $db->parse_bitfield($vec, $size);
+          my($self, $vec) = @_;
+  
+          my $val = $self->{$key} or return undef;
+  
+          unless(ref $vec)
+          {
+            my $db = $self->db or die "Missing Rose::DB object attribute";
+            $vec = $db->parse_bitfield($vec, $size);
+          }
+  
+          $vec = Bit::Vector->new_Bin($size, $vec->to_Bin)  if($vec->Size != $size);
+  
+          my $test = Bit::Vector->new($size);
+          $test->Intersection($val, $vec);
+          return ($test->to_Bin > 0) ? 1 : 0;
+        };
+      }
+    }
+  }
+  elsif($interface eq 'get')
+  {
+    my $size = $args->{'bits'} ||= 32;
+
+    my $default = $args->{'default'};
+    my $formatted_key = PRIVATE_PREFIX . "_${key}_formatted";
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(!defined $self->{$key} && (!$self->{STATE_SAVING()} || !defined $self->{$formatted_key}))
+        {
+          $self->{$key} = $db->parse_bitfield($default, $size);
+
+          unless(defined $self->{$key})
+          {
+            $self->error($db->error);
+          }
         }
 
-        $vec = Bit::Vector->new_Bin($size, $vec->to_Bin)  if($vec->Size != $size);
+        if($self->{STATE_SAVING()})
+        {
+          $self->{$formatted_key} = $db->format_bitfield($self->{$key})
+            unless(defined $self->{$formatted_key} || !defined $self->{$key});
 
-        my $test = Bit::Vector->new($size);
-        $test->Intersection($val, $vec);
-        return ($test->to_Bin > 0) ? 1 : 0;
+          return $self->{$formatted_key};
+        }
+
+        return unless(defined wantarray);
+
+        return $self->{$key} ? $self->{$key} : 
+               $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
       };
     }
+    else
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if($self->{STATE_SAVING()})
+        {
+          return undef  unless(defined($self->{$formatted_key}) || $self->{$key});
+
+          $self->{$formatted_key} = $db->format_bitfield($self->{$key})
+            unless(defined $self->{$formatted_key} || !defined $self->{$key});
+
+          return $self->{$formatted_key};
+        }
+
+        return unless(defined wantarray);
+
+        return $self->{$key} ? $self->{$key} : 
+               $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+      };
+    }
+  }
+  elsif($interface eq 'set')
+  {
+    my $size = $args->{'bits'} ||= 32;
+
+    my $default = $args->{'default'};
+    my $formatted_key = PRIVATE_PREFIX . "_${key}_formatted";
+
+    $methods{$name} = sub
+    {
+      my $self = shift;
+
+      my $db = $self->db or die "Missing Rose::DB object attribute";
+
+      Carp::croak "Missing argument in call to $name"  unless(@_);
+
+      if($self->{STATE_LOADING()})
+      {
+        $self->{$key} = undef;
+        $self->{$formatted_key} = $_[0];
+      }
+      else
+      {
+        $self->{$key} = $db->parse_bitfield($_[0], $size);
+      }
+
+      if($self->{STATE_SAVING()})
+      {
+        return undef  unless(defined($self->{$formatted_key}) || $self->{$key});
+
+        $self->{$formatted_key} = $db->format_bitfield($self->{$key})
+          unless(defined $self->{$formatted_key} || !defined $self->{$key});
+
+        return $self->{$formatted_key};
+      }
+
+      return unless(defined wantarray);
+
+      return $self->{$key} ? $self->{$key} : 
+             $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+    };
   }
   else { Carp::croak "Unknown interface: $interface" }
 
@@ -679,6 +981,67 @@ sub array
       }
     }
   }
+  elsif($interface eq 'get')
+  {
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(!defined $self->{$key})
+        {
+          $self->{$key} = $db->parse_array($default);
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          return defined $self->{$key} ? $db->format_array($self->{$key}) : undef;
+        }
+
+        return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;        
+      }
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if($self->{STATE_SAVING()})
+        {
+          return defined $self->{$key} ? $db->format_array($self->{$key}) : undef;
+        }
+
+        return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
+      }
+    }
+  }
+  elsif($interface eq 'set')
+  {
+    $methods{$name} = sub
+    {
+      my $self = shift;
+
+      my $db = $self->db or die "Missing Rose::DB object attribute";
+
+      Carp::croak "Missing argument in call to $name"  unless(@_);
+      $self->{$key} = $db->parse_array(@_);
+
+      if($self->{STATE_SAVING()})
+      {
+        return defined $self->{$key} ? $db->format_array($self->{$key}) : undef;
+      }
+
+      return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
+    }
+  }
   else { Carp::croak "Unknown interface: $interface" }
 
   return \%methods;
@@ -743,6 +1106,67 @@ sub set
         return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
       }
     }
+  }
+  elsif($interface eq 'get')
+  {
+    my $default = $args->{'default'};
+
+    if(defined $default)
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if(!defined $self->{$key})
+        {
+          $self->{$key} = $db->parse_set($default);
+        }
+
+        if($self->{STATE_SAVING()})
+        {
+          return defined $self->{$key} ? $db->format_set($self->{$key}) : undef;
+        }
+
+        return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;        
+      }
+    }
+    else
+    {
+      $methods{$name} = sub
+      {
+        my $self = shift;
+
+        my $db = $self->db or die "Missing Rose::DB object attribute";
+
+        if($self->{STATE_SAVING()})
+        {
+          return defined $self->{$key} ? $db->format_set($self->{$key}) : undef;
+        }
+
+        return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
+      }
+    }
+  }
+  elsif($interface eq 'set')
+  {
+    $methods{$name} = sub
+    {
+      my $self = shift;
+
+      my $db = $self->db or die "Missing Rose::DB object attribute";
+
+      Carp::croak "Missing argument in call to $name"  unless(@_);
+      $self->{$key} = $db->parse_set(@_);
+
+      if($self->{STATE_SAVING()})
+      {
+        return defined $self->{$key} ? $db->format_set($self->{$key}) : undef;
+      }
+
+      return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
+    };
   }
   else { Carp::croak "Unknown interface: $interface" }
 
@@ -1356,16 +1780,107 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
 
 =head1 DESCRIPTION
 
-C<Rose::DB::Object::MakeMethods::Generic> is a method maker that inherits
+L<Rose::DB::Object::MakeMethods::Generic> is a method maker that inherits
 from L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods>
 documentation to learn about the interface.  The method types provided
 by this module are described below.
 
-All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) L<Rose::DB::Object>.  In particular, the object is expected to have a C<db> method that returns a L<Rose::DB>-derived object.  See the L<Rose::DB::Object> documentation for more details.
+All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) L<Rose::DB::Object>.  In particular, the object is expected to have a L<db|Rose::DB::Object/db> method that returns a L<Rose::DB>-derived object.  See the L<Rose::DB::Object> documentation for more details.
 
 =head1 METHODS TYPES
 
 =over 4
+
+=item B<array>
+
+Create get/set methods for "array" attributes.   A "array" column in a database table contains an ordered list of values.  Not all databases support an "array" column type.  Check the L<Rose::DB|Rose::DB/"DATABASE SUPPORT"> documentation for your database type.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<default>
+
+Determines the default value of the attribute.  The value should be a reference to an array.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of this
+attribute.  Defaults to the name of the method.
+
+=item C<interface>
+
+Choose the interface.  The default is C<get_set>.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a get/set method for a "array" object attribute.  A "array" column in a database table contains an ordered list of values.
+
+When setting the attribute, the value is passed through the L<parse_array|Rose::DB::Pg/parse_array> method of the object's L<db|Rose::DB::Object/db> attribute.
+
+When saving to the database, if the attribute value is defined, the method will pass the attribute value through the L<format_array|Rose::DB::Pg/format_array> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.
+
+When not saving to the database, the method returns the array as a list in list context, or as a reference to the array in scalar context.
+
+=item C<get>
+
+Creates an accessor method for a "array" object attribute.  A "array" column in a database table contains an ordered list of values.
+
+When saving to the database, if the attribute value is defined, the method will pass the attribute value through the L<format_array|Rose::DB::Pg/format_array> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.
+
+When not saving to the database, the method returns the array as a list in list context, or as a reference to the array in scalar context.
+
+=item C<set>
+
+Creates a mutator method for a "array" object attribute.  A "array" column in a database table contains an ordered list of values.
+
+When setting the attribute, the value is passed through the L<parse_array|Rose::DB::Pg/parse_array> method of the object's L<db|Rose::DB::Object/db> attribute.
+
+When saving to the database, if the attribute value is defined, the method will pass the attribute value through the L<format_array|Rose::DB::Pg/format_array> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.
+
+When not saving to the database, the method returns the array as a list in list context, or as a reference to the array in scalar context.
+
+If called with no arguments, a fatal error will occur.
+
+=back
+
+=back
+
+Example:
+
+    package Person;
+
+    our @ISA = qw(Rose::DB::Object);
+    ...
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      array => 
+      [
+        'nicknames',
+        'set_nicks' => { interface => 'set', hash_key => 'nicknames' },
+
+        'parts' => { default => [ qw(arms legs) ] },
+
+      ],
+    );
+    ...
+
+    @parts = $person->parts; # ('arms', 'legs')
+    $parts = $person->parts; # [ 'arms', 'legs' ]
+
+    $person->nicknames('Jack', 'Gimpy');   # set with list
+    $person->nicknames([ 'Slim', 'Gip' ]); # set with array ref
+
+    $person->set_nicks('Jack', 'Gimpy');   # set with list
+    $person->set_nicks([ 'Slim', 'Gip' ]); # set with array ref
 
 =item B<bitfield>
 
@@ -1388,7 +1903,7 @@ attribute.  Defaults to the name of the method.
 
 =item C<interface>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The default is C<get_set>.
 
 =item C<intersects>
 
@@ -1400,9 +1915,11 @@ The number of bits in the bitfield.  Defaults to 32.
 
 =item C<with_intersects>
 
+This option is only applicable with the C<get_set> interface.
+
 If true, create an "intersects" helper method in addition to the C<get_set> method.  The intersection method name will be the attribute method name with "_intersects" appended, or the value of the C<intersects> option, if it is passed.
 
-The "intersects" method will return true if there is any intersection between its arguments and the value of the bitfield attribute (i.e., if C<Bit::Vector>'s C<Intersection()> method returns a value greater than zero), false (but defined) otherwise.  Its argument is passed through the C<parse_bitfield()> method of the object's C<db> attribute before being tested for intersection.  Returns undef if the bitfield is not defined.
+The "intersects" method will return true if there is any intersection between its arguments and the value of the bitfield attribute (i.e., if L<Bit::Vector>'s L<Intersection|Bit::Vector/Intersection> method returns a value greater than zero), false (but defined) otherwise.  Its argument is passed through the L<parse_bitfield|Rose::DB/parse_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before being tested for intersection.  Returns undef if the bitfield is not defined.
 
 =back
 
@@ -1412,9 +1929,21 @@ The "intersects" method will return true if there is any intersection between it
 
 =item C<get_set>
 
-Creates a get/set accessor method for a bitfield attribute.  When setting the attribute, the value is passed through the C<parse_bitfield()> method of the object's C<db> attribute before being assigned.
+Creates a get/set method for a bitfield attribute.  When setting the attribute, the value is passed through the L<parse_bitfield|Rose::DB/parse_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before being assigned.
 
-When saving to the database, the method will pass the attribute value through the C<format_bitfield()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
+When saving to the database, the method will pass the attribute value through the L<format_bitfield|Rose::DB/format_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
+
+=item C<get>
+
+Creates an accessor method for a bitfield attribute.  When saving to the database, the method will pass the attribute value through the L<format_bitfield|Rose::DB/format_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
+
+=item C<set>
+
+Creates a mutator method for a bitfield attribute.  When setting the attribute, the value is passed through the L<parse_bitfield|Rose::DB/parse_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before being assigned.
+
+When saving to the database, the method will pass the attribute value through the L<format_bitfield|Rose::DB/format_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
+
+If called with no arguments, a fatal error will occur.
 
 =back
 
@@ -1465,7 +1994,7 @@ attribute.  Defaults to the name of the method.
 
 =item C<interface>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The default is C<get_set>.
 
 =back
 
@@ -1475,9 +2004,23 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 =item C<get_set>
 
-Creates a simple get/set accessor method for a boolean attribute.  When setting the attribute, if the value is "true" according to Perl's rules, it is passed through the C<parse_boolean()> method of the object's C<db> attribute.  If C<parse_boolean()> returns true (1) or false (0), then the attribute is set accordingly.  If C<parse_boolean()> returns undef, a fatal error will occur.  If the value is "false" according to Perl's rules, the attribute is set to zero (0).
+Creates a get/set method for a boolean attribute.  When setting the attribute, if the value is "true" according to Perl's rules, it is compared to a list of "common" true and false values: 1, 0, 1.0 (with any number of zeros), 0.0 (with any number of zeros), t, true, f, false, yes, no.  (All are case-insensitive.)  If the value matches, then it is set to true (1) or false (0) accordingly.
 
-When saving to the database, the method will pass the attribute value through the C<format_boolean()> method of the object's C<db> attribute before returning it.  Otherwise, the value is returned as-is.
+If the value does not match any of those, then it is passed through the L<parse_boolean|Rose::DB/parse_boolean> method of the object's L<db|Rose::DB::Object/db> attribute.  If L<parse_boolean|Rose::DB/parse_boolean> returns true (1) or false (0), then the attribute is set accordingly.  If L<parse_boolean|Rose::DB/parse_boolean> returns undef, a fatal error will occur.  If the value is "false" according to Perl's rules, the attribute is set to zero (0).
+
+When saving to the database, the method will pass the attribute value through the L<format_boolean|Rose::DB/format_boolean> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
+
+=item C<get>
+
+Creates an accessor method for a boolean attribute.  When saving to the database, the method will pass the attribute value through the L<format_boolean|Rose::DB/format_boolean> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
+
+=item C<set>
+
+Creates a mutator method for a boolean attribute.  When setting the attribute, if the value is "true" according to Perl's rules, it is compared to a list of "common" true and false values: 1, 0, 1.0 (with any number of zeros), 0.0 (with any number of zeros), t, true, f, false, yes, no.  (All are case-insensitive.)  If the value matches, then it is set to true (1) or false (0) accordingly.
+
+If the value does not match any of those, then it is passed through the L<parse_boolean|Rose::DB/parse_boolean> method of the object's L<db|Rose::DB::Object/db> attribute.  If L<parse_boolean|Rose::DB/parse_boolean> returns true (1) or false (0), then the attribute is set accordingly.  If L<parse_boolean|Rose::DB/parse_boolean> returns undef, a fatal error will occur.  If the value is "false" according to Perl's rules, the attribute is set to zero (0).
+
+If called with no arguments, a fatal error will occur.
 
 =back
 
@@ -1494,7 +2037,8 @@ Example:
       boolean => 
       [
         'is_red',
-        'is_happy' => { default => 1 },
+        'is_happy'  => { default => 1 },
+        'set_happy' => { interface => 'set', hash_key => 'is_happy' },
       ],
     );
 
@@ -1506,6 +2050,8 @@ Example:
     $obj->is_red;         # returns 0
 
     $obj->is_happy;       # returns 1
+    $obj->set_happy(0);   # returns 0
+    $obj->is_happy;       # returns 0
 
 =item B<character>
 
@@ -1528,7 +2074,7 @@ attribute.  Defaults to the name of the method.
 
 =item C<interface>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The default is C<get_set>.
 
 =item C<length>
 
@@ -1542,7 +2088,15 @@ The number of characters in the string.  Any strings longer than this will be tr
 
 =item C<get_set>
 
-Creates a get/set accessor method for a fixed-length character string attribute.  When setting, any strings longer than C<length> will be truncated, and any strings shorter will be padded with spaces to meet the length requirement.  If C<length> is omitted, the string will be left unmodified.
+Creates a get/set method for a fixed-length character string attribute.  When setting, any strings longer than C<length> will be truncated, and any strings shorter will be padded with spaces to meet the length requirement.  If C<length> is omitted, the string will be left unmodified.
+
+=item C<get>
+
+Creates an accessor method for a fixed-length character string attribute.
+
+=item C<set>
+
+Creates a mutator method for a fixed-length character string attribute.  Any strings longer than C<length> will be truncated, and any strings shorter will be padded with spaces to meet the length requirement.  If C<length> is omitted, the string will be left unmodified.
 
 =back
 
@@ -1610,7 +2164,7 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 =item C<share_db>
 
-If true, the C<db> attribute of the current object is shared with all of the objects fetched.  Defaults to true.
+If true, the L<db|Rose::DB::Object/db> attribute of the current object is shared with all of the objects fetched.  Defaults to true.
 
 =item C<query_args>
 
@@ -1725,7 +2279,7 @@ The name of the "one to one" relationship or foreign key in C<map_class> that po
 
 =item C<share_db>
 
-If true, the C<db> attribute of the current object is shared with all of the objects fetched.  Defaults to true.
+If true, the L<db|Rose::DB::Object/db> attribute of the current object is shared with all of the objects fetched.  Defaults to true.
 
 =item C<query_args>
 
@@ -1779,7 +2333,7 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 =item C<share_db>
 
-If true, the C<db> attribute of the current object is shared with the object loaded.  Defaults to true.
+If true, the L<db|Rose::DB::Object/db> attribute of the current object is shared with the object loaded.  Defaults to true.
 
 =back
 
@@ -1887,14 +2441,14 @@ method.
 
 =item C<get>
 
-Creates an accessor method for an object attribute that returns the current
-value of the attribute.
-
 =item C<get_set>
 
-Creates a get/set accessor method for an object attribute.  When
+Creates a get/set method for an object attribute.  When
 called with an argument, the value of the attribute is set.  The current
 value of the attribute is returned.
+
+Creates an accessor method for an object attribute that returns the current
+value of the attribute.
 
 =item C<set>
 
@@ -1944,7 +2498,7 @@ Example:
 
 =item B<set>
 
-Create get/set methods for "set" attributes.   A "set" column in a database table contains an unordered group of values.
+Create get/set methods for "set" attributes.   A "set" column in a database table contains an unordered group of values.  Not all databases support a "set" column type.  Check the L<Rose::DB|Rose::DB/"DATABASE SUPPORT"> documentation for your database type.
 
 =over 4
 
@@ -1963,7 +2517,7 @@ attribute.  Defaults to the name of the method.
 
 =item C<interface>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The default is C<get_set>.
 
 =back
 
@@ -1973,11 +2527,29 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 =item C<get_set>
 
-Creates a simple get/set accessor method for a "set" object attribute.  A "set" column in a database table contains an unordered group of values.  On the Perl side of the fence, an ordered list (an array) is used to store the values, but keep in mind that the order is not significant, nor is it guaranteed to be preserved.
+Creates a get/set method for a "set" object attribute.  A "set" column in a database table contains an unordered group of values.  On the Perl side of the fence, an ordered list (an array) is used to store the values, but keep in mind that the order is not significant, nor is it guaranteed to be preserved.
 
-When setting the attribute, the value is passed through the C<parse_set()> method of the object's C<db> attribute.
+When setting the attribute, the value is passed through the L<parse_set|Rose::DB::Informix/parse_set> method of the object's L<db|Rose::DB::Object/db> attribute.
 
-When saving to the database, if the attribute value is defined, the method will pass the attribute value through the C<format_set()> method of the object's C<db> attribute before returning it.
+When saving to the database, if the attribute value is defined, the method will pass the attribute value through the L<format_set|Rose::DB::Informix/format_set> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.
+
+When not saving to the database, the method returns the set as a list in list context, or as a reference to the array in scalar context.
+
+=item C<get>
+
+Creates an accessor method for a "set" object attribute.  A "set" column in a database table contains an unordered group of values.  On the Perl side of the fence, an ordered list (an array) is used to store the values, but keep in mind that the order is not significant, nor is it guaranteed to be preserved.
+
+When saving to the database, if the attribute value is defined, the method will pass the attribute value through the L<format_set|Rose::DB::Informix/format_set> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.
+
+When not saving to the database, the method returns the set as a list in list context, or as a reference to the array in scalar context.
+
+=item C<set>
+
+Creates a mutator method for a "set" object attribute.  A "set" column in a database table contains an unordered group of values.  On the Perl side of the fence, an ordered list (an array) is used to store the values, but keep in mind that the order is not significant, nor is it guaranteed to be preserved.
+
+When setting the attribute, the value is passed through the L<parse_set|Rose::DB::Informix/parse_set> method of the object's L<db|Rose::DB::Object/db> attribute.
+
+When saving to the database, if the attribute value is defined, the method will pass the attribute value through the L<format_set|Rose::DB::Informix/format_set> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.
 
 When not saving to the database, the method returns the set as a list in list context, or as a reference to the array in scalar context.
 
@@ -1996,6 +2568,8 @@ Example:
       set => 
       [
         'nicknames',
+        'set_nicks' => { interface => 'set', hash_key => 'nicknames' },
+
         'parts' => { default => [ qw(arms legs) ] },
       ],
     );
@@ -2006,6 +2580,9 @@ Example:
 
     $person->nicknames('Jack', 'Gimpy');   # set with list
     $person->nicknames([ 'Slim', 'Gip' ]); # set with array ref
+
+    $person->set_nicks('Jack', 'Gimpy');   # set with list
+    $person->set_nicks([ 'Slim', 'Gip' ]); # set with array ref
 
 =item B<varchar>
 

@@ -10,7 +10,7 @@ our @ISA = qw(Rose::DB::Object::Metadata::Relationship);
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.02';
+our $VERSION = '0.021';
 
 __PACKAGE__->default_auto_method_types('get');
 
@@ -399,7 +399,7 @@ Get or set a boolean flag that indicates whether or not all of the classes invol
 
 =item B<type>
 
-Returns "one to many".
+Returns "many to many".
 
 =back
 

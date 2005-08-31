@@ -1,3 +1,8 @@
+0.072 (08.31.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added "get" and "set" interfaces to all default column method makers.
+    * More POD fixes.
+
 0.071 (08.30.2005) - John Siracusa <siracusa@mindspring.com>
 
     * POD fixes.

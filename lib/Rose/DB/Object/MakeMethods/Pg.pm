@@ -2,7 +2,7 @@ package Rose::DB::Object::MakeMethods::Pg;
 
 use strict;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Rose::Object::MakeMethods;
 our @ISA = qw(Rose::Object::MakeMethods);
@@ -100,6 +100,39 @@ sub chkpass
       }
 
       return undef;
+    };
+  }
+  elsif($interface eq 'get')
+  {
+    $methods{$name} = sub { shift->{$key} };
+  }
+  elsif($interface eq 'set')
+  {
+    my $encrypted = $key . ($args->{'encrypted_suffix'} || '_encrypted');
+
+    $methods{$name} = sub
+    {
+      my($self) = shift;
+
+      Carp::croak "Missing argument in call to $name"  unless(@_);
+
+      if(defined $_[0])
+      {
+        if(index($_[0], ':') == 0)
+        {
+          $self->{$key} = undef;
+          return $self->{$encrypted} = shift;
+        }
+        else
+        {
+          my $salt = substr(SALT_CHARS, int rand(length SALT_CHARS), 1) . 
+                     substr(SALT_CHARS, int rand(length SALT_CHARS), 1);
+          $self->{$encrypted} = ':' . crypt($_[0], $salt);
+          return $self->{$key} = $_[0];
+        }
+      }
+
+      return $self->{$encrypted} = $self->{$key} = undef;
     };
   }
   else { Carp::croak "Unknown interface: $interface" }
@@ -208,7 +241,7 @@ The encrypted value is stored in a hash key with the same name, but with C<encry
 
 =item C<interface>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The default is C<get_set>.
 
 =back
 
@@ -218,7 +251,7 @@ Choose the interface.  The only current interface is C<get_set>, which is the de
 
 =item C<get_set>
 
-Creates a family of methods for handling values stored in PostgreSQL's "CHKPASS" data type.  The methods are:
+Creates a family of methods for handling PostgreSQL's "CHKPASS" data type.  The methods are:
 
 =over 4
 
@@ -248,6 +281,14 @@ This method compares its argument to the unencrypted value and returns true if t
 
 =back
 
+=item C<get>
+
+Creates an accessor method for PostgreSQL's "CHKPASS" data type.  This method behaves like the C<get_set> method, except that the value cannot be set.
+
+=item C<set>
+
+Creates a mutator method for PostgreSQL's "CHKPASS" data type.  This method behaves like the C<get_set> method, except that a fatal error will occur if no arguments are passed. 
+
 =back
 
 Example:
@@ -261,6 +302,8 @@ Example:
       chkpass => 
       [
         'password',
+        'get_password' => { interface => 'get', hash_key => 'password' },
+        'set_password' => { interface => 'set', hash_key => 'password' },
         'secret' => 
         {
           encrypted_suffix => '_mangled',
@@ -273,12 +316,15 @@ Example:
 
     $o = MyDBObject->new(...);
 
+    $o->set_password('blah');
+
     $o->password('foobar');
 
     # Something like: ":vOR7BujbRZSLM" (varies based on salt used)
     print $o->password_encrypted;
 
-    print $o->password; # "foobar"
+    print $o->get_password; # "foobar"
+    print $o->password;     # "foobar"
     print "ok" if($o->password_is('foobar'); # "ok"
 
     $o->secret('baz');

@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 72;
+use Test::More tests => 123;
 
 BEGIN
 {
@@ -18,28 +18,43 @@ my $p = Person->new() || ok(0);
 ok(ref $p && $p->isa('Person'), 'Construct object (no init)');
 
 #
-# boolean
+# scalar
 #
 
-$p = Person->new(sql_is_happy => 1);
-ok(ref $p && $p->isa('Person'), 'boolean 1');
+is($p->scalar('foo'), 'foo', 'scalar get_set 1');
+is($p->scalar, 'foo', 'scalar get_set 2');
 
-is($p->sql_is_happy, 1, 'boolean 2');
-
-foreach my $val (qw(t true True TRUE T y Y yes Yes YES 1 1.0 1.00))
-{
-  eval { $p->sql_is_happy($val) };
-  ok(!$@ && $p->sql_is_happy, "boolean true '$val'");
-}
-
-foreach my $val (qw(f false False FALSE F n N no No NO 0 0.0 0.00))
-{
-  eval { $p->sql_is_happy($val) };
-  ok(!$@ && !$p->sql_is_happy, "boolean false '$val'");
-}
+is($p->set_scalar('bar'), 'bar', 'scalar set 1');
+eval { $p->set_scalar() };
+ok($@,  'scalar set 2');
+is($p->get_scalar, 'bar', 'scalar get');
 
 #
-# These tests require Rose::DB
+# character
+#
+
+is($p->character('booga'), 'boog', 'character get_set 1');
+is($p->character, 'boog', 'character get_set 2');
+
+is($p->set_character('woo'), 'woo ', 'character set 1');
+eval { $p->set_character() };
+ok($@,  'character set 2');
+is($p->get_character, 'woo ', 'character get');
+
+#
+# varchar
+#
+
+is($p->varchar('booga'), 'boog', 'varchar get_set 1');
+is($p->varchar, 'boog', 'varchar get_set 2');
+
+is($p->set_varchar('woo'), 'woo', 'varchar set 1');
+eval { $p->set_varchar() };
+ok($@,  'varchar set 2');
+is($p->get_varchar, 'woo', 'varchar get');
+
+#
+# These tests require a connected Rose::DB
 #
 
 our $db_type;
@@ -48,7 +63,7 @@ eval
 {
   require Rose::DB;
 
-  foreach my $type (qw(pg mysql))
+  foreach my $type (qw(pg mysql informix))
   {  
     Rose::DB->default_type($type);
     my $db = Rose::DB->new();
@@ -56,7 +71,11 @@ eval
     $db->raise_error(0);
     $db->print_error(0);
 
-    if($db->connect)
+    my $ret;
+
+    eval { $ret = $db->connect };
+
+    if($ret && !$@)
     {
       $db_type = $type;
       last;
@@ -68,18 +87,70 @@ eval
 
 SKIP:
 {
-  skip("Can't connect to db", 36)  if($@);
+  skip("Can't connect to db", 99)  if($@);
+
+  #
+  # boolean
+  #
+
+  is($p->boolean('true'), 1, 'boolean get_set 1');
+  is($p->boolean, 1, 'boolean get_set 2');
+  
+  is($p->set_boolean('F'), 0, 'boolean set 1');
+  eval { $p->set_boolean() };
+  ok($@,  'boolean set 2');
+  is($p->get_boolean, 0, 'boolean get');
+  
+  $p = Person->new(sql_is_happy => 1);
+  ok(ref $p && $p->isa('Person'), 'boolean 1');
+  
+  is($p->sql_is_happy, 1, 'boolean 2');
+  
+  foreach my $val (qw(t true True TRUE T y Y yes Yes YES 1 1.0 1.00))
+  {
+    eval { $p->sql_is_happy($val) };
+    ok(!$@ && $p->sql_is_happy, "boolean true '$val'");
+  }
+  
+  foreach my $val (qw(f false False FALSE F n N no No NO 0 0.0 0.00))
+  {
+    eval { $p->sql_is_happy($val) };
+    ok(!$@ && !$p->sql_is_happy, "boolean false '$val'");
+  }
 
   #
   # date
   #
+
+  is($p->date('12/24/1980')->ymd, '1980-12-24', 'date get_set 1');
+  is($p->date->ymd, '1980-12-24', 'date get_set 2');
+  
+  is($p->set_date('1980-12-25')->ymd, '1980-12-25', 'date set 1');
+  eval { $p->set_date() };
+  ok($@,  'date set 2');
+  is($p->get_date->ymd, '1980-12-25', 'date get');
 
   $p = Person->new(sql_date_birthday => '12/24/1980 1:00');
   ok(ref $p && $p->isa('Person'), 'date 1');
 
   is($p->sql_date_birthday->ymd, '1980-12-24', 'date 2');
 
-  is($p->sql_date_birthday(truncate => 'month'), '1980-12-01', 'date truncate');
+  if($p->db->driver =~ /^(?:Pg|mysql)$/)
+  {
+    is($p->sql_date_birthday(truncate => 'month'), '1980-12-01', 'date truncate');
+  }
+  elsif($p->db->driver eq 'Informix')
+  {
+    is($p->sql_date_birthday(truncate => 'month'), '12/01/1980', 'date truncate');
+  }
+  else
+  {
+    SKIP:
+    {
+      skip(1, 'date truncate skipped');
+    }
+  }
+
   is($p->sql_date_birthday(format => '%B'), 'December', 'date format');
 
   $p->sql_date_birthday('12/24/1980 1:00:01');
@@ -112,6 +183,16 @@ SKIP:
   # datetime
   #
 
+  is($p->datetime('12/24/1980 12:34:56')->strftime('%Y-%m-%d %H:%M:%S'), 
+                  '1980-12-24 12:34:56', 'datetime get_set 1');
+  is($p->datetime->strftime('%Y-%m-%d %H:%M:%S'), '1980-12-24 12:34:56', 'datetime get_set 2');
+  
+  is($p->set_datetime('1980-12-25 12:30:50')->strftime('%Y-%m-%d %H:%M:%S'),
+                      '1980-12-25 12:30:50', 'datetime set 1');
+  eval { $p->set_datetime() };
+  ok($@,  'datetime set 2');
+  is($p->get_datetime->strftime('%Y-%m-%d %H:%M:%S'), '1980-12-25 12:30:50', 'datetime get');
+
   $p = Person->new(sql_datetime_birthday => '12/24/1980 1:00');
   ok(ref $p && $p->isa('Person'), 'datetime 1');
 
@@ -135,6 +216,16 @@ SKIP:
   #
   # timestamp
   #
+
+  is($p->timestamp('12/24/1980 12:34:56')->strftime('%Y-%m-%d %H:%M:%S'), 
+                  '1980-12-24 12:34:56', 'timestamp get_set 1');
+  is($p->timestamp->strftime('%Y-%m-%d %H:%M:%S'), '1980-12-24 12:34:56', 'timestamp get_set 2');
+  
+  is($p->set_timestamp('1980-12-25 12:30:50')->strftime('%Y-%m-%d %H:%M:%S'), 
+                       '1980-12-25 12:30:50', 'timestamp set 1');
+  eval { $p->set_timestamp() };
+  ok($@,  'timestamp set 2');
+  is($p->get_timestamp->strftime('%Y-%m-%d %H:%M:%S'), '1980-12-25 12:30:50', 'timestamp get');
 
   $p = Person->new(sql_timestamp_birthday => '12/24/1980 1:00');
   ok(ref $p && $p->isa('Person'), 'timestamp 1');
@@ -162,6 +253,14 @@ SKIP:
 
   if($p->db->driver eq 'Pg')
   {
+    is($p->bitfield(2)->to_Bin, '00000000000000000000000000000010', 'bitfield get_set 1');
+    is($p->bitfield->to_Bin, '00000000000000000000000000000010', 'bitfield get_set 2');
+    
+    is($p->set_bitfield(1010)->to_Bin, '00000000000000000000000000001010', 'bitfield set 1');
+    eval { $p->set_bitfield() };
+    ok($@,  'bitfield set 2');
+    is($p->get_bitfield->to_Bin, '00000000000000000000000000001010', 'bitfield get');
+
     $p->sql_bits(2);
     is($p->sql_bits()->to_Bin, '00000000000000000000000000000010', 'bitfield() 2');
     $p->sql_bits(1010);
@@ -191,7 +290,7 @@ SKIP:
   {
     SKIP:
     {
-      skip("Not connected to PostgreSQL", 12);
+      skip("Not connected to PostgreSQL", 17);
     }
   }
 
@@ -207,12 +306,43 @@ SKIP:
 
     $p->sql_array([ 'a' .. 'c' ]);
     is($p->sql_array, '{"a","b","c"}', 'array 2');
+
+    is($p->array(-1, 2.5, 3), '{-1,2.5,3}', 'array get_set 1');
+    is($p->array, '{-1,2.5,3}', 'array get_set 2');
+    
+    is($p->set_array([ 'a' .. 'c' ]), '{"a","b","c"}', 'array set 1');
+    eval { $p->set_array() };
+    ok($@,  'array set 2');
+    is($p->get_array, '{"a","b","c"}', 'array get');
   }
   else
   {
     SKIP:
     {
-      skip("Not connected to PostgreSQL", 2);
+      skip("Not connected to PostgreSQL", 7);
+    }
+  }
+
+  #
+  # set
+  #
+
+  if($p->db->driver eq 'Informix')
+  {
+    local $p->{STATE_SAVING()} = 1;
+    is($p->set(-1, 2.5, 3), 'SET{-1,2.5,3}', 'set get_set 1');
+    is($p->set, 'SET{-1,2.5,3}', 'set get_set 2');
+    
+    is($p->set_set([ 'a' .. 'c' ]), q(SET{'a','b','c'}), 'set set 1');
+    eval { $p->set_set() };
+    ok($@,  'set set 2');
+    is($p->get_set, q(SET{'a','b','c'}), 'set get');
+  }
+  else
+  {
+    SKIP:
+    {
+      skip("Not connected to Informix", 5);
     }
   }
 }
@@ -226,10 +356,13 @@ $p->{'password_encrypted'} = ':8R1Kf2nOS0bRE';
 ok($p->password_is('xyzzy'), 'chkpass() 1');
 is($p->password, 'xyzzy', 'chkpass() 2');
 
-$p->password('foobar');
+eval { $p->set_password() };
+ok($@, 'chkpass() 3');
 
-ok($p->password_is('foobar'), 'chkpass() 3');
-is($p->password, 'foobar', 'chkpass() 4');
+$p->set_password('foobar');
+
+ok($p->password_is('foobar'), 'chkpass() 4');
+is($p->get_password, 'foobar', 'chkpass() 5');
 
 BEGIN
 {
@@ -275,11 +408,60 @@ BEGIN
     timestamp   => [ 'sql_timestamp_birthday' => { column => $meta->column('sql_timestamp_birthday') } ],
     timestamp   => [ 'sql_timestamp_birthday_def' => { default => '1/3/2002',
                      column => $meta->column('sql_timestamp_birthday_def') } ],
+
+    date =>
+    [
+     'date',
+      get_date => { interface => 'get', hash_key => 'date' },
+      set_date => { interface => 'set', hash_key => 'date' },
+    ],
+
+    datetime =>
+    [
+     'datetime',
+      get_datetime => { interface => 'get', hash_key => 'datetime' },
+      set_datetime => { interface => 'set', hash_key => 'datetime' },
+    ],
+
+    timestamp =>
+    [
+     'timestamp',
+      get_timestamp => { interface => 'get', hash_key => 'timestamp' },
+      set_timestamp => { interface => 'set', hash_key => 'timestamp' },
+    ],
   );
 
   Rose::DB::Object::MakeMethods::Generic->make_methods
   (
     { target_class => 'Person' },
+    scalar =>
+    [
+      'scalar',
+      get_scalar => { interface => 'get', hash_key => 'scalar' },
+      set_scalar => { interface => 'set', hash_key => 'scalar' },
+    ],
+    
+    character => 
+    [
+      'character' => { length => 4 },
+      get_character => { interface => 'get', hash_key => 'character', length => 4 },
+      set_character => { interface => 'set', hash_key => 'character', length => 4 },
+    ],
+
+    varchar => 
+    [
+      'varchar' => { length => 4 },
+      get_varchar => { interface => 'get', hash_key => 'varchar', length => 4 },
+      set_varchar => { interface => 'set', hash_key => 'varchar', length => 4 },
+    ],
+
+    boolean => 
+    [
+      'boolean',
+      get_boolean => { interface => 'get', hash_key => 'boolean' },
+      set_boolean => { interface => 'set', hash_key => 'boolean' },
+    ],
+
     boolean => [ 'sql_is_happy' => { column => $meta->column('sql_is_happy') } ],
 
     boolean =>
@@ -291,6 +473,10 @@ BEGIN
     bitfield => 
     [
       'sql_bits' => { with_intersects => 1, column => $meta->column('sql_bits') },
+
+      'bitfield',
+      get_bitfield => { interface => 'get', hash_key => 'bitfield' },
+      set_bitfield => { interface => 'set', hash_key => 'bitfield' },
     ],
 
     bitfield =>
@@ -300,11 +486,30 @@ BEGIN
     ],
 
     array => [ 'sql_array' => { column => $meta->column('sql_array') } ],
+
+    array =>
+    [
+      'array',
+      get_array => { interface => 'get', hash_key => 'array' },
+      set_array => { interface => 'set', hash_key => 'array' },
+    ],
+
+    set =>
+    [
+      'set',
+      get_set => { interface => 'get', hash_key => 'set' },
+      set_set => { interface => 'set', hash_key => 'set' },
+    ],
   );
 
   use Rose::DB::Object::MakeMethods::Pg
   (
-    chkpass => 'password',
+    chkpass => 
+    [
+      'password',
+      'get_password' => { interface => 'get', hash_key => 'password' },
+      'set_password' => { interface => 'set', hash_key => 'password' },
+    ],
   );
 
   sub db
