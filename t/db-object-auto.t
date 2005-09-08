@@ -985,6 +985,7 @@ EOF
 ALTER TABLE rose_db_object_test2 ADD CONSTRAINT PRIMARY KEY (k1, k2)
 EOF
 
+    $dbh->commit;
     $dbh->disconnect;
 
     # Create test subclass

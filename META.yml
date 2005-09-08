@@ -1,14 +1,14 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         Rose-DB-Object
-version:      0.072
+version:      0.0721
 version_from: lib/Rose/DB/Object.pm
 installdirs:  site
 requires:
     Bit::Vector::Overload:         0
     DateTime:                      0
     Rose::DateTime::Util:          0
-    Rose::DB:                      0.0261
+    Rose::DB:                      0.0262
     Rose::Object:                  0.015
     Scalar::Util:                  0
     Test::More:                    0

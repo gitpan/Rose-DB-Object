@@ -1262,6 +1262,7 @@ CREATE TABLE rose_db_object_colors_map
 )
 EOF
 
+    $dbh->commit;
     $dbh->disconnect;
 
     # Create test subclasses

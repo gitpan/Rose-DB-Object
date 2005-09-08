@@ -605,6 +605,7 @@ CREATE TABLE rose_db_object_test
 )
 EOF
 
+    $dbh->commit;
     $dbh->disconnect;
 
     # Create test subclass

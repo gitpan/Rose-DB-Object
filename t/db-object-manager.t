@@ -1203,6 +1203,8 @@ SKIP: foreach my $db_type (qw(informix))
      $objs->[0]->id == 12 && $objs->[1]->id == 11,
      "get_objects() with offset - $db_type");
 
+  #local $Rose::DB::Object::Manager::Debug = 1;
+
   $objs = 
     MyInformixObjectManager->get_objectz(
       sort_by      => 'id DESC',
@@ -1740,6 +1742,7 @@ CREATE TABLE rose_db_object_test
 )
 EOF
 
+    $dbh->commit;
     $dbh->disconnect;
 
     # Create test subclass
