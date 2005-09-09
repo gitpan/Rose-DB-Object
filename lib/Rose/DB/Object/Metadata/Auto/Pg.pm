@@ -9,7 +9,7 @@ use Rose::DB::Object::Metadata::UniqueKey;
 use Rose::DB::Object::Metadata::Auto;
 our @ISA = qw(Rose::DB::Object::Metadata::Auto);
 
-our $VERSION = '0.011';
+our $VERSION = '0.012';
 
 # Other useful columns, not selected for now
 #   pg_get_indexdef(i.oid) AS indexdef
@@ -18,6 +18,9 @@ our $VERSION = '0.011';
 #   i.relname AS indexname,
 #   t.spcname AS "tablespace",
 #   x.indisunique AS is_unique_index,
+#
+# Plus this join condition for table "t"
+# LEFT JOIN pg_catalog.pg_tablespace t ON t.oid = i.reltablespace
 use constant UNIQUE_INDEX_SQL => <<'EOF';
 SELECT 
   x.indrelid,
@@ -28,7 +31,6 @@ FROM
   JOIN pg_catalog.pg_class c ON c.oid = x.indrelid
   JOIN pg_catalog.pg_class i ON i.oid = x.indexrelid
   LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-  LEFT JOIN pg_catalog.pg_tablespace t ON t.oid = i.reltablespace
 WHERE
   x.indisunique = 't' AND
   c.relkind     = 'r' AND 
