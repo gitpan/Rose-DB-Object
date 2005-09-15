@@ -49,6 +49,7 @@ Getopt::Long::config('auto_abbrev');
 
 GetOptions(\%Opt, 'help',
                   'skip-intro',
+                  'benchmarks-match|filter|bench-match=s',
                   'debug',
                   'cpu-time=i',
                   'compare-to|cmp-to=s',
@@ -80,6 +81,8 @@ unless($Opt{'simple'} || $Opt{'complex'})
   delete @Opt{qw(simple complex)};
 }
 
+our $Bench_Match = $Opt{'benchmarks-match'} ? qr($Opt{'benchmarks-match'}|insert) : 0;
+
 our $Iterations = $Opt{'iterations'} || $Default_Iterations;
 
 Benchmark->import(':hireswallclock')  if($Opt{'hi-res-time'});
@@ -100,6 +103,7 @@ EOF
     Rose::DB->default_type($db_type);
 
     require MyTest::RDBO::Simple::Code;
+    require MyTest::RDBO::Simple::CodeName;
     require MyTest::RDBO::Simple::Category;
     require MyTest::RDBO::Simple::Product;
 
@@ -112,6 +116,7 @@ EOF
     if($Opt{'complex'} || $Opt{'simple-and-complex'})
     {
       require MyTest::RDBO::Complex::Code;
+      require MyTest::RDBO::Complex::CodeName;
       require MyTest::RDBO::Complex::Category;
       require MyTest::RDBO::Complex::Product;
       require MyTest::RDBO::Complex::Product::Manager;
@@ -124,12 +129,14 @@ EOF
     if($Use_PM{'Class::DBI'})
     {
       require MyTest::CDBI::Simple::Code;
+      require MyTest::CDBI::Simple::CodeName;
       require MyTest::CDBI::Simple::Category;
       require MyTest::CDBI::Simple::Product;
 
       if($Opt{'complex'} || $Opt{'simple-and-complex'})
       {
         require MyTest::CDBI::Complex::Code;
+        require MyTest::CDBI::Complex::CodeName;
         require MyTest::CDBI::Complex::Category;
         require MyTest::CDBI::Complex::Product;
       }
@@ -140,6 +147,7 @@ EOF
     if($Use_PM{'Class::DBI::Sweet'})
     {
       require MyTest::CDBI::Sweet::Simple::Code;
+      require MyTest::CDBI::Sweet::Simple::CodeName;
       require MyTest::CDBI::Sweet::Simple::Category;
       require MyTest::CDBI::Sweet::Simple::Product;
 
@@ -147,6 +155,7 @@ EOF
       if($Opt{'complex'} || $Opt{'simple-and-complex'})
       {
         require MyTest::CDBI::Sweet::Complex::Code;
+        require MyTest::CDBI::Sweet::Complex::CodeName;
         require MyTest::CDBI::Sweet::Complex::Category;
         require MyTest::CDBI::Sweet::Complex::Product;
       }      
@@ -157,12 +166,14 @@ EOF
     if($Use_PM{'DBIx::Class'})
     {  
       require MyTest::DBIC::Simple::Code;
+      require MyTest::DBIC::Simple::CodeName;
       require MyTest::DBIC::Simple::Category;
       require MyTest::DBIC::Simple::Product;
 
       if($Opt{'complex'} || $Opt{'simple-and-complex'})
       {
         require MyTest::DBIC::Complex::Code;
+        require MyTest::DBIC::Complex::CodeName;
         require MyTest::DBIC::Complex::Category;
         require MyTest::DBIC::Complex::Product;
       }
@@ -212,6 +223,13 @@ Usage: $prog --help | [--skip-intro] [--cpu-time <num>]
        [--time | --compare | --time-and-compare]
        [--simple | --complex | --simple-and-complex]
        [--iterations <num>] [--hi-res-time]
+       [--benchmarks-match <regex>]
+
+--benchmarks-match <regex>
+
+    Only run benchmarks whose names match <regex>.  Note: the "insert" 
+    benchmarks will always be run.  (Otherwise, there'd be no data to
+    benchmark against.)
 
 --compare-to | --cmp <modules>
 
@@ -474,7 +492,8 @@ EOF
 
 When benchmarking against DBI, you may need to increase the number of
 iterations to at least $Min_DBI_Iterations in oder to avoid a warning about "too few
-iterations" from the Benchmark.pm module.  Consider running the benchmark
+iterations" from the Benchmark.pm module.  (That number may be different,
+depending on how fast your system is.)  Consider running the benchmark
 again with "--iterations $Min_DBI_Iterations"
 
 Press return to continue (or wait 60 seconds)
@@ -584,6 +603,184 @@ sub Prompt
   }
 
   return $response;
+}
+
+use constant MAX_CODE_NAMES_RANGE => 10;
+use constant MIN_CODE_NAMES       => 1;
+
+sub Insert_Code_Names
+{
+  if($Bench_Match && 
+     'Simple: search with 1-to-1 and 1-to-n sub-objects' !~ $Bench_Match &&
+     'Complex: search with 1-to-1 and 1-to-n sub-objects' !~ $Bench_Match)
+  {
+    return;
+  }
+
+  local $|= 1;
+  print "\n# Inserting 1-to-n records";
+
+  my %cmp = map { $_ => 1 } @Cmp_To;
+
+  my $sql = 'INSERT INTO rose_db_object_test_code_names (product_id, name) VALUES (?, ?)';
+
+  my $dbi_factor = $Opt{'simple-and-complex'} ? 2 : 1;
+
+  foreach my $db_name (@Use_DBs)
+  {
+    my $db = Rose::DB->new($db_name);
+
+    $db->autocommit(0);
+    $db->begin_work;
+
+    my $dbh = $db->dbh;
+
+    my $sth = $dbh->prepare($sql);
+
+    # RDBO
+    foreach my $i (1 .. $Iterations)
+    {
+      foreach my $n (1 .. (int rand(MAX_CODE_NAMES_RANGE) + MIN_CODE_NAMES))
+      {
+        $sth->execute($i + 100_000, "CN 1x$n $i");
+        $sth->execute($i + 1_100_000, "CN 1.1x$n $i");
+      }
+    }
+
+    print '.';
+
+    # CDBI
+    if($cmp{'Class::DBI'})
+    {
+      foreach my $i (1 .. $Iterations)
+      {
+        foreach my $n (1 .. (int rand(MAX_CODE_NAMES_RANGE) + MIN_CODE_NAMES))
+        {
+          $sth->execute($i + 200_000, "CN 2x$n $i");
+          $sth->execute($i + 2_200_000, "CN 2.2x$n $i");
+        }
+      }    
+    }
+
+    print '.';
+
+    # CDBS
+    if($cmp{'Class::DBI::Sweet'})
+    {
+      foreach my $i (1 .. $Iterations)
+      {
+        foreach my $n (1 .. (int rand(MAX_CODE_NAMES_RANGE) + MIN_CODE_NAMES))
+        {
+          $sth->execute($i + 400_000, "CN 4x$n $i");
+          $sth->execute($i + 4_400_000, "CN 4.4x$n $i");
+        }
+      }
+    }
+
+    print '.';
+
+    # DBIC
+    if($cmp{'DBIx::Class'})
+    {
+      foreach my $i (1 .. $Iterations)
+      {
+        foreach my $n (1 .. (int rand(MAX_CODE_NAMES_RANGE) + MIN_CODE_NAMES))
+        {
+          $sth->execute($i + 300_000, "CN 3x$n $i");
+          $sth->execute($i + 3_300_000, "CN 3.3x$n $i");
+        }
+      }
+    }
+
+    print '.';
+
+    # DBI
+    if($cmp{'DBI'})
+    {
+      foreach my $i (1 .. ($Iterations * $dbi_factor))
+      {
+        foreach my $n (1 .. (int rand(MAX_CODE_NAMES_RANGE) + MIN_CODE_NAMES))
+        {
+          $sth->execute($i + 500_000, "CN 5x$n $i");
+          # No "complex" DBI tests
+          #$sth->execute($i + 5_500_000, "CN 5.5x$n $i");
+        }
+      }
+    }
+
+    $db->commit;
+    print ".\n";
+  }
+}
+
+sub Make_Indexes
+{
+  if($Bench_Match && 
+     'Simple: search with 1-to-1 and 1-to-n sub-objects' !~ $Bench_Match &&
+     'Complex: search with 1-to-1 and 1-to-n sub-objects' !~ $Bench_Match &&
+     'Simple: search with 1-to-1 sub-objects' !~ $Bench_Match &&
+     'Complex: search with 1-to-1 sub-objects' !~ $Bench_Match)
+  {
+    return;
+  }
+
+  print "\n# Making indexes...\n";
+
+  my %cmp = map { $_ => 1 } @Cmp_To;
+
+  foreach my $db_name (@Use_DBs)
+  {
+    my $db = Rose::DB->new($db_name);
+
+    my $dbh = $db->dbh;
+
+    $dbh->do(<<"EOF");
+CREATE INDEX rose_db_object_test_products_name_idx ON rose_db_object_test_products (name)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE INDEX rose_db_object_test_code_names_pid_idx ON rose_db_object_test_code_names (product_id)
+EOF
+  }
+}
+
+sub Drop_Indexes
+{
+  if($Bench_Match && 
+     'Simple: search with 1-to-1 and 1-to-n sub-objects' !~ $Bench_Match &&
+     'Complex: search with 1-to-1 and 1-to-n sub-objects' !~ $Bench_Match &&
+     'Simple: search with 1-to-1 sub-objects' !~ $Bench_Match &&
+     'Complex: search with 1-to-1 sub-objects' !~ $Bench_Match)
+  {
+    return;
+  }
+
+  print "\n# Dropping indexes...\n";
+
+  my %cmp = map { $_ => 1 } @Cmp_To;
+
+  foreach my $db_name (@Use_DBs)
+  {
+    my $db = Rose::DB->new($db_name);
+  
+    my $dbh = $db->dbh;
+  
+    my $on = ($db_name eq 'mysql') ? 'ON rose_db_object_test_products' : '';
+    
+    $dbh->do(<<"EOF");
+DROP INDEX rose_db_object_test_products_name_idx $on
+EOF
+  
+    $on = ($db_name eq 'mysql') ? 'ON rose_db_object_test_code_names' : '';
+
+    $dbh->do(<<"EOF");
+DROP INDEX rose_db_object_test_code_names_pid_idx $on
+EOF
+
+    $dbh->do(<<"EOF");
+DELETE FROM rose_db_object_test_code_names
+EOF
+  }
 }
 
 ##
@@ -1621,7 +1818,7 @@ EOF
           [
             't1.name' => { like => 'Product %2%' },
           ],
-          with_objects => [ 'category' ]);
+          require_objects => [ 'category' ]);
       die unless(@$ps);
 
       if($Debug && !$printed)
@@ -1709,6 +1906,197 @@ EOF
         my $cat = $p->category_id;
         my $n = $cat->name;
         die  unless($n =~ /\S/);
+      }
+    }
+  }
+
+  #
+  # Search with 1-to-1 and 1-to-n sub-objects
+  #
+  
+  SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_DBI:
+  {
+    my $printed = 0;
+
+    sub search_simple_product_and_category_and_code_name_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT
+  p.id,
+  p.name,
+  p.category_id,
+  p.status,
+  p.fk1,
+  p.fk2,
+  p.fk3,
+  p.published,
+  p.last_modified,
+  p.date_created,
+  c.id,
+  c.name,
+  n.id, 
+  n.product_id,
+  n.name
+FROM
+  rose_db_object_test_products p
+  LEFT OUTER JOIN rose_db_object_test_code_names n ON(n.product_id = p.id),
+  rose_db_object_test_categories c
+WHERE
+  c.id = p.category_id AND
+  n.product_id = p.id AND
+  p.name LIKE 'Product 200%'
+EOF
+
+      $sth->execute;
+      my %row;
+      $sth->bind_columns(\@row{qw(id name category_id status fk1 fk2 fk3 published
+                                  last_modified date_created cat_id cat_name
+                                  cn_id cn_product_id cn_name)});
+                                  
+      my @ps;
+      
+      while($sth->fetch)
+      {
+        push(@ps, { %row });
+      }
+
+      die unless(@ps);
+
+      if($Debug && !$printed)
+      {
+        my(%seen, $num);
+
+        foreach my $p (@ps)
+        {
+          $num++  unless($seen{$p->{'id'}}++);
+        }
+
+        print "search_simple_product_and_category_and_code_name_dbi GOT $num\n";
+        #$printed++;
+      }
+
+      foreach my $p (@ps)
+      {
+        my $n = $p->{'cat_name'};
+        die  unless($n =~ /\S/);
+        my $cn = $p->{'cn_name'};
+        die  unless($cn =~ /^CN /);
+      }
+    }
+  }
+
+  SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_RDBO:
+  {
+    my $printed = 0;
+
+    sub search_simple_product_and_category_and_code_name_rdbo
+    {
+      #local $Rose::DB::Object::Manager::Debug = 1;
+      my $ps =
+        MyTest::RDBO::Simple::Product::Manager->get_products(
+          db => $DB,
+          query =>
+          [
+            't1.name' => { like => 'Product 200%' },
+          ],
+          with_objects    => [ 'code_names' ],
+          require_objects => [ 'category' ]);
+      die unless(@$ps);
+
+      if($Debug && !$printed)
+      {
+        print "search_simple_product_and_category_and_code_name_rdbo GOT ", scalar(@$ps), "\n";
+        #$printed++;
+      }
+
+      foreach my $p (@$ps)
+      {
+        my $cat = $p->category;
+        my $n = $cat->name;
+        die  unless($n =~ /\S/);
+        my $cn = $p->code_names->[0];
+        die  unless($cn->name =~ /^CN /);
+      }
+    }
+  }
+
+  SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_CDBI:
+  {
+    my $printed = 0;
+
+    sub search_simple_product_and_category_and_code_name_cdbi
+    {
+      my @p = MyTest::CDBI::Simple::Product->search_like(name => 'Product 200%');
+      die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_simple_product_and_category_and_code_name_cdbi GOT ", scalar(@p), "\n";
+        #$printed++;
+      }
+
+      foreach my $p (@p)
+      {
+        my $cat = $p->category_id;
+        my $n = $cat->name;
+        die  unless($n =~ /\S/);
+        my $cn = ($p->code_names)[0];
+        die  unless($cn->name =~ /^CN /);
+      }
+    }
+  }
+
+  SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_CDBS:
+  {
+    my $printed = 0;
+
+    sub search_simple_product_and_category_and_code_name_cdbs
+    {
+      my @p = MyTest::CDBI::Sweet::Simple::Product->search(
+        { name => { -like => [ 'Product 200%' ] } },
+        { prefetch => [ 'category_id' ] });
+      die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_simple_product_and_category_and_code_name_cdbs GOT ", scalar(@p), "\n";
+        #$printed++;
+      }
+
+      foreach my $p (@p)
+      {
+        my $cat = $p->category_id;
+        my $n = $cat->name;
+        die  unless($n =~ /\S/);
+        my $cn = ($p->code_names)[0];
+        die  unless($cn->name =~ /^CN /);
+      }
+    }
+  }
+
+  SEARCH_SIMPLE_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_DBIC:
+  {
+    my $printed = 0;
+
+    sub search_simple_product_and_category_and_code_name_dbic
+    {
+      my @p = MyTest::DBIC::Simple::Product->search_like({ name => 'Product 200%' });
+      die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_simple_product_and_category_and_code_name_dbic GOT ", scalar(@p), "\n";
+        #$printed++;
+      }
+
+      foreach my $p (@p)
+      {
+        my $cat = $p->category_id;
+        my $n = $cat->name;
+        die  unless($n =~ /\S/);
+        my $rs = $p->code_names;
+        my $cn = $rs->next;
+        die  unless($cn->name =~ /^CN /);
       }
     }
   }
@@ -2405,7 +2793,7 @@ EOF
     sub insert_complex_product_rdbo
     {
       my $p =
-        MyTest::RDBO::Simple::Product->new(
+        MyTest::RDBO::Complex::Product->new(
           db           => $DB, 
           id           => $i + 1_100_000, 
           name         => "Product $i",
@@ -2423,7 +2811,7 @@ EOF
 
     sub insert_complex_product_cdbi
     {
-      MyTest::CDBI::Simple::Product->create({
+      MyTest::CDBI::Complex::Product->create({
         id           => $i + 2_200_000, 
         name         => "Product $i",
         category_id  => 2,
@@ -2439,7 +2827,7 @@ EOF
 
     sub insert_complex_product_cdbs
     {
-      MyTest::CDBI::Sweet::Simple::Product->create({
+      MyTest::CDBI::Sweet::Complex::Product->create({
         id           => $i + 4_400_000, 
         name         => "Product $i",
         category_id  => 2,
@@ -2455,7 +2843,7 @@ EOF
 
     sub insert_complex_product_dbic
     {
-      MyTest::DBIC::Simple::Product->create({
+      MyTest::DBIC::Complex::Product->create({
         id          => $i + 3_300_000, 
         name        => "Product $i",
         category_id => 2,
@@ -3159,6 +3547,197 @@ EOF
   }
 
   #
+  # Search with 1-to-1 and 1-to-n sub-objects
+  #
+  
+  SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_DBI:
+  {
+    my $printed = 0;
+
+    sub search_complex_product_and_category_and_code_name_dbi
+    {
+      my $sth = $DBH->prepare(<<"EOF");
+SELECT
+  p.id,
+  p.name,
+  p.category_id,
+  p.status,
+  p.fk1,
+  p.fk2,
+  p.fk3,
+  p.published,
+  p.last_modified,
+  p.date_created,
+  c.id,
+  c.name,
+  n.id, 
+  n.product_id,
+  n.name
+FROM
+  rose_db_object_test_products p
+  LEFT OUTER JOIN rose_db_object_test_code_names n ON(n.product_id = p.id),
+  rose_db_object_test_categories c
+WHERE
+  c.id = p.category_id AND
+  n.product_id = p.id AND
+  p.name LIKE 'Product 200%'
+EOF
+
+      $sth->execute;
+      my %row;
+      $sth->bind_columns(\@row{qw(id name category_id status fk1 fk2 fk3 published
+                                  last_modified date_created cat_id cat_name
+                                  cn_id cn_product_id cn_name)});
+                                  
+      my @ps;
+      
+      while($sth->fetch)
+      {
+        push(@ps, { %row });
+      }
+
+      die unless(@ps);
+
+      if($Debug && !$printed)
+      {
+        my(%seen, $num);
+
+        foreach my $p (@ps)
+        {
+          $num++  unless($seen{$p->{'id'}}++);
+        }
+
+        print "search_complex_product_and_category_and_code_name_dbi GOT $num\n";
+        #$printed++;
+      }
+
+      foreach my $p (@ps)
+      {
+        my $n = $p->{'cat_name'};
+        die  unless($n =~ /\S/);
+        my $cn = $p->{'cn_name'};
+        die  unless($cn =~ /^CN /);
+      }
+    }
+  }
+
+  SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_RDBO:
+  {
+    my $printed = 0;
+
+    sub search_complex_product_and_category_and_code_name_rdbo
+    {
+      #local $Rose::DB::Object::Manager::Debug = 1;
+      my $ps =
+        MyTest::RDBO::Complex::Product::Manager->get_products(
+          db => $DB,
+          query =>
+          [
+            't1.name' => { like => 'Product 200%' },
+          ],
+          with_objects    => [ 'code_names' ],
+          require_objects => [ 'category' ]);
+      die unless(@$ps);
+
+      if($Debug && !$printed)
+      {
+        print "search_complex_product_and_category_and_code_name_rdbo GOT ", scalar(@$ps), "\n";
+        #$printed++;
+      }
+
+      foreach my $p (@$ps)
+      {
+        my $cat = $p->category;
+        my $n = $cat->name;
+        die  unless($n =~ /\S/);
+        my $cn = $p->code_names->[0];
+        die  unless($cn->name =~ /^CN /);
+      }
+    }
+  }
+
+  SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_CDBI:
+  {
+    my $printed = 0;
+
+    sub search_complex_product_and_category_and_code_name_cdbi
+    {
+      my @p = MyTest::CDBI::Complex::Product->search_like(name => 'Product 200%');
+      die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_complex_product_and_category_and_code_name_cdbi GOT ", scalar(@p), "\n";
+        #$printed++;
+      }
+
+      foreach my $p (@p)
+      {
+        my $cat = $p->category_id;
+        my $n = $cat->name;
+        die  unless($n =~ /\S/);
+        my $cn = ($p->code_names)[0];
+        die  unless($cn->name =~ /^CN /);
+      }
+    }
+  }
+
+  SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_CDBS:
+  {
+    my $printed = 0;
+
+    sub search_complex_product_and_category_and_code_name_cdbs
+    {
+      my @p = MyTest::CDBI::Sweet::Complex::Product->search(
+        { name => { -like => [ 'Product 200%' ] } },
+        { prefetch => [ 'category_id' ] });
+      die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_complex_product_and_category_and_code_name_cdbs GOT ", scalar(@p), "\n";
+        #$printed++;
+      }
+
+      foreach my $p (@p)
+      {
+        my $cat = $p->category_id;
+        my $n = $cat->name;
+        die  unless($n =~ /\S/);
+        my $cn = ($p->code_names)[0];
+        die  unless($cn->name =~ /^CN /);
+      }
+    }
+  }
+
+  SEARCH_COMPLEX_PRODUCT_AND_CATEGORY_AND_CODE_NAMES_DBIC:
+  {
+    my $printed = 0;
+
+    sub search_complex_product_and_category_and_code_name_dbic
+    {
+      my @p = MyTest::DBIC::Complex::Product->search_like({ name => 'Product 200%' });
+      die unless(@p);
+
+      if($Debug && !$printed)
+      {
+        print "search_complex_product_and_category_and_code_name_dbic GOT ", scalar(@p), "\n";
+        #$printed++;
+      }
+
+      foreach my $p (@p)
+      {
+        my $cat = $p->category_id;
+        my $n = $cat->name;
+        die  unless($n =~ /\S/);
+        my $rs = $p->code_names;
+        my $cn = $rs->next;
+        die  unless($cn->name =~ /^CN /);
+      }
+    }
+  }
+
+  #
   # Search with limit and offset
   #
 
@@ -3643,7 +4222,7 @@ sub Bench
     $filtered_tests{$test_name} = $code;
   }
 
-  return  unless(%filtered_tests);
+  return  unless(%filtered_tests && (!$Bench_Match || $name =~ /$Bench_Match/));
   print "\n"  unless($no_newline);
   print "# $name\n";
 
@@ -3880,6 +4459,15 @@ sub Run_Tests
       'DBIC' => \&search_simple_product_dbic,
     });
 
+    Bench('Complex: search 2', $CPU_Time,
+    {
+      'DBI ' => \&search_simple_product_dbi,
+      'RDBO' => \&search_complex_product_rdbo,
+      'CDBI' => \&search_complex_product_cdbi,
+      'CDBS' => \&search_complex_product_cdbs,
+      'DBIC' => \&search_complex_product_dbic,
+    });
+
     Bench('Simple: search with limit and offset', $CPU_Time,
     {
       'DBI ' => \&search_limit_offset_simple_product_dbi,
@@ -3898,16 +4486,9 @@ sub Run_Tests
       'DBIC' => \&search_limit_offset_complex_product_dbic,
     });
 
-    Bench('Complex: search 2', $CPU_Time,
-    {
-      'DBI ' => \&search_simple_product_dbi,
-      'RDBO' => \&search_complex_product_rdbo,
-      'CDBI' => \&search_complex_product_cdbi,
-      'CDBS' => \&search_complex_product_cdbs,
-      'DBIC' => \&search_complex_product_dbic,
-    });
+    Make_Indexes();
 
-    Bench('Simple: search 3', $CPU_Time,
+    Bench('Simple: search with 1-to-1 sub-objects', $CPU_Time,
     {
       'DBI ' => \&search_simple_product_and_category_dbi,
       'RDBO' => \&search_simple_product_and_category_rdbo,
@@ -3916,7 +4497,7 @@ sub Run_Tests
       'DBIC' => \&search_simple_product_and_category_dbic,
     });
 
-    Bench('Complex: search 3', $CPU_Time ,
+    Bench('Complex: search with 1-to-1 sub-objects', $CPU_Time ,
     {
       'DBI ' => \&search_simple_product_and_category_dbi,
       'RDBO' => \&search_complex_product_and_category_rdbo,
@@ -3924,6 +4505,41 @@ sub Run_Tests
       'CDBS' => \&search_complex_product_and_category_cdbs,
       'DBIC' => \&search_complex_product_and_category_dbic,
     });
+
+    Insert_Code_Names(); # no reason to bench this
+
+    CPU_MISERS:
+    {
+      local $Benchmark::Min_Count = 0;
+      local $Benchmark::Min_CPU   = 0;
+
+      # These tests take forever (wallclock), even when set to 1 CPU
+      # second.  Force a reasonable number of iterations, scaled
+      # coarsely based on how many iterations other tests are using.
+    
+      my $Tiny_Interations = $Iterations <= 1000 ? 5 :
+                             $Iterations <= 3000 ? 2 :
+                             $Iterations <= 5000 ? 1 :
+                                                   1;
+
+      Bench('Simple: search with 1-to-1 and 1-to-n sub-objects', $Tiny_Interations,
+      {
+        'DBI ' => \&search_simple_product_and_category_and_code_name_dbi,
+        'RDBO' => \&search_simple_product_and_category_and_code_name_rdbo,
+        'CDBI' => \&search_simple_product_and_category_and_code_name_cdbi,
+        'CDBS' => \&search_simple_product_and_category_and_code_name_cdbs,
+        'DBIC' => \&search_simple_product_and_category_and_code_name_dbic,
+      });
+
+      Bench('Complex: search with 1-to-1 and 1-to-n sub-objects', $Tiny_Interations,
+      {
+        'DBI ' => \&search_complex_product_and_category_and_code_name_dbi,
+        'RDBO' => \&search_complex_product_and_category_and_code_name_rdbo,
+        'CDBI' => \&search_complex_product_and_category_and_code_name_cdbi,
+        'CDBS' => \&search_complex_product_and_category_and_code_name_cdbs,
+        'DBIC' => \&search_complex_product_and_category_and_code_name_dbic,
+      });
+    }
 
     #
     # Iterate
@@ -3987,6 +4603,8 @@ sub Run_Tests
   #
   # Delete
   #
+
+  Drop_Indexes();
 
   Bench('Simple: delete', $Iterations,
   {
@@ -4081,6 +4699,7 @@ sub Init_DB
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
+      $dbh->do('DROP TABLE rose_db_object_test_code_names');
       $dbh->do('DROP TABLE rose_db_object_test_products');
       $dbh->do('DROP TABLE rose_db_object_test_categories');
       $dbh->do('DROP TABLE rose_db_object_test_codes');
@@ -4121,6 +4740,15 @@ CREATE TABLE rose_db_object_test_products
   date_created   TIMESTAMP DEFAULT NOW(),
 
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_test_codes (k1, k2, k3)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_test_code_names
+(
+  id          SERIAL PRIMARY KEY,
+  product_id  INT NOT NULL REFERENCES rose_db_object_test_products (id),
+  name        VARCHAR(32)
 )
 EOF
 
@@ -4181,6 +4809,7 @@ EOF
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
+      $dbh->do('DROP TABLE rose_db_object_test_code_names');
       $dbh->do('DROP TABLE rose_db_object_test_products');
       $dbh->do('DROP TABLE rose_db_object_test_categories');
       $dbh->do('DROP TABLE rose_db_object_test_codes');
@@ -4219,6 +4848,15 @@ CREATE TABLE rose_db_object_test_products
   published      DATETIME,
   last_modified  DATETIME,
   date_created   DATETIME
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_test_code_names
+(
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  product_id  INT NOT NULL REFERENCES rose_db_object_test_products (id),
+  name        VARCHAR(32)
 )
 EOF
 
@@ -4277,6 +4915,7 @@ EOF
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
+      $dbh->do('DROP TABLE rose_db_object_test_code_names');
       $dbh->do('DROP TABLE rose_db_object_test_products');
       $dbh->do('DROP TABLE rose_db_object_test_categories');
       $dbh->do('DROP TABLE rose_db_object_test_codes');
@@ -4317,6 +4956,15 @@ CREATE TABLE rose_db_object_test_products
   date_created   DATETIME YEAR TO SECOND,
 
   FOREIGN KEY (fk1, fk2, fk3) REFERENCES rose_db_object_test_codes (k1, k2, k3)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_test_code_names
+(
+  id          SERIAL PRIMARY KEY,
+  product_id  INT NOT NULL REFERENCES rose_db_object_test_products (id),
+  name        VARCHAR(32)
 )
 EOF
 
@@ -4387,6 +5035,7 @@ END
     my $dbh = Rose::DB->new('pg')->retain_dbh()
       or die Rose::DB->error;
 
+    $dbh->do('DROP TABLE rose_db_object_test_code_names');
     $dbh->do('DROP TABLE rose_db_object_test_products');
     $dbh->do('DROP TABLE rose_db_object_test_categories');
     $dbh->do('DROP TABLE rose_db_object_test_codes');
@@ -4400,6 +5049,7 @@ END
     my $dbh = Rose::DB->new('mysql')->retain_dbh()
       or die Rose::DB->error;
 
+    $dbh->do('DROP TABLE rose_db_object_test_code_names');
     $dbh->do('DROP TABLE rose_db_object_test_products');
     $dbh->do('DROP TABLE rose_db_object_test_categories');
     $dbh->do('DROP TABLE rose_db_object_test_codes');
@@ -4413,6 +5063,7 @@ END
     my $dbh = Rose::DB->new('informix')->retain_dbh()
       or die Rose::DB->error;
 
+    $dbh->do('DROP TABLE rose_db_object_test_code_names');
     $dbh->do('DROP TABLE rose_db_object_test_products');
     $dbh->do('DROP TABLE rose_db_object_test_categories');
     $dbh->do('DROP TABLE rose_db_object_test_codes');

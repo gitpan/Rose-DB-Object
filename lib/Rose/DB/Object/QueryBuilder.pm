@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.0322';
+our $VERSION = '0.041';
 
 our $Debug = 0;
 
@@ -33,6 +33,8 @@ my %OP_MAP =
   all_in_set => 'ALL IN',
 );
 
+@OP_MAP{map { $_ . '_sql' } keys %OP_MAP} = values(%OP_MAP);
+
 sub build_where_clause { build_select(@_, where_only => 1) }
 
 sub build_select
@@ -51,6 +53,7 @@ sub build_select
   my $where_only  = delete $args{'where_only'};
   my $clauses_arg = delete $args{'clauses'};  
   my $pretty      = exists $args{'pretty'} ? $args{'pretty'} : $Debug;
+  my $joins       = $args{'joins'};
 
   $args{'_depth'}++;
 
@@ -276,10 +279,61 @@ sub build_select
 
   if(!$where_only)
   {
-    my $i = 0;
-    my $tables_sql = $multi_table ?
-      join(",\n", map { $i++; "  $_ t$i" } @$tables) :
-      "  $tables->[0]";
+    my $tables_sql;
+
+    # XXX: Undocumented "joins" parameter is an array indexed by table
+    # alias number.  Each value is a hashref that contains a key 'type'
+    # that contains the join type SQL, and 'conditions' that contains a
+    # ref to an array of join conditions SQL.
+    #
+    # If this parameter is passed, then every table except t1 that has 
+    # a join type and condition will be joined with an explicit JOIN
+    # statement.  Otherwise, an inplicit inner join willbe used.
+    if($joins && @$joins)
+    {
+      my $i = 1;
+      my($primary_table, @normal_tables, @joined_tables);
+
+      foreach my $table (@$tables)
+      {
+        # Main table gets treated specially
+        if($i == 1)
+        {
+          $primary_table = "  $table t$i";
+          $i++;
+          next;
+        }
+        elsif(!$joins->[$i])
+        {
+          push(@normal_tables, "  $table t$i");
+          $i++;
+          next;
+        }
+
+        Carp::croak "Missing join type for table '$table'"
+          unless($joins->[$i]{'type'});
+
+        Carp::croak "Missing join conditions for table '$table'"
+          unless($joins->[$i]{'conditions'});
+
+        push(@joined_tables, 
+             "  $joins->[$i]{'type'} $table t$i ON(" .
+             join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+
+        $i++;
+      }
+
+      # Primary table first, then explicit joins, then implicit inner joins
+      $tables_sql = join("\n", $primary_table, @joined_tables) .
+                    (@normal_tables ? ",\n" . join(",\n", @normal_tables) : '');
+    }
+    else
+    {
+      my $i = 0;
+      $tables_sql = $multi_table ?
+        join(",\n", map { $i++; "  $_ t$i" } @$tables) :
+        "  $tables->[0]";    
+    }
 
     my $prefix_limit = (defined $limit && $use_prefix_limit) ? $limit : '';
     $select ||= join(",\n", map { "  $_" } @select_columns);
@@ -309,12 +363,20 @@ sub build_select
 
 sub _build_clause
 {
-  my($dbh, $field, $op, $vals, $not, $field_mod, $bind, $db, $col_meta) = @_;
+  my($dbh, $field, $op, $vals, $not, $field_mod, $bind, $db, $col_meta,
+     $force_inline) = @_;
 
   if(!defined $op && ref $vals eq 'HASH' && keys(%$vals) == 1)
   {
-    $op = $OP_MAP{(keys(%$vals))[0]} or 
-      Carp::croak "Unknown comparison operator: ", (keys(%$vals))[0];
+    my $op_arg = (keys(%$vals))[0];
+
+    if($op_arg =~ s/_sql$//)
+    {
+      $force_inline = 1;
+    }
+
+    $op = $OP_MAP{$op_arg} or 
+      Carp::croak "Unknown comparison operator: $op_arg";
   }
   else { $op ||= '=' }
 
@@ -324,11 +386,12 @@ sub _build_clause
   {
     $field = $field_mod  if($field_mod);
 
-    my $should_inline = ($db && $col_meta && $col_meta->should_inline_value($db, $vals));
+    my $should_inline = 
+      ($db && $col_meta && $col_meta->should_inline_value($db, $vals));
 
     if(defined($vals))
     {
-      if($bind && !$should_inline)
+      if($bind && !$should_inline && !$force_inline)
       {
         push(@$bind, $vals);
 
@@ -350,7 +413,8 @@ sub _build_clause
       else
       {
         return ($not ? "$not(" : '') . "$field $op " .
-               ($should_inline ? $vals : $dbh->quote($vals)) . 
+               (($should_inline || $force_inline) ? $vals : 
+                                                   $dbh->quote($vals)) . 
                ($not ? ')' : '');
       }
     }
@@ -369,9 +433,10 @@ sub _build_clause
 
           foreach my $val (@$vals)
           {
-            my $should_inline = ($db && $col_meta && $col_meta->should_inline_value($db, $val));
+            my $should_inline = 
+              ($db && $col_meta && $col_meta->should_inline_value($db, $val));
 
-            if($should_inline)
+            if($should_inline || $force_inline)
             {
               push(@new_vals, $val);            
             }
@@ -387,7 +452,7 @@ sub _build_clause
 
         return "$field " . ($not ? "$not " : '') . 'IN (' . join(', ', map 
                {
-                 ($db && $col_meta && $col_meta->should_inline_value($db, $_)) ? 
+                 ($force_inline || ($db && $col_meta && $col_meta->should_inline_value($db, $_))) ? 
                  $_ : $dbh->quote($_)
                }
                @$vals) . ')';
@@ -421,11 +486,12 @@ sub _build_clause
 
         foreach my $val (@$vals)
         {
-          my $should_inline = ($db && $col_meta && $col_meta->should_inline_value($db, $val));
+          my $should_inline = 
+            ($db && $col_meta && $col_meta->should_inline_value($db, $val));
 
-          if($should_inline)
+          if($should_inline || $force_inline)
           {
-            push(@new_vals, $val);            
+            push(@new_vals, $val);
           }
           else
           {
@@ -441,8 +507,8 @@ sub _build_clause
       return '(' . join(' OR ', map 
       {
         ($not ? "$not(" : '') . "$field $op " . 
-        ($db && $col_meta && $col_meta->should_inline_value($db, $_) ? $_ : $dbh->quote($_)) .
-        ($not ? ')' : '') 
+        (($force_inline || ($db && $col_meta && $col_meta->should_inline_value($db, $_))) ? $_ : $dbh->quote($_)) .
+        ($not ? ')' : '')
       }
       @$vals) . ')';
     }
@@ -461,13 +527,13 @@ sub _build_clause
 
       if(!ref($vals->{$raw_op}))
       {
-        push(@clauses, _build_clause($dbh, $field, $sub_op, $vals->{$raw_op}, $not, $field_mod, $bind, $db, $col_meta));
+        push(@clauses, _build_clause($dbh, $field, $sub_op, $vals->{$raw_op}, $not, $field_mod, $bind, $db, $col_meta, $force_inline));
       }
       elsif(ref($vals->{$raw_op}) eq 'ARRAY')
       {
         foreach my $val (@{$vals->{$raw_op}})
         {
-          push(@clauses, _build_clause($dbh, $field, $sub_op, $val, $not, $field_mod, $bind, $db, $col_meta));
+          push(@clauses, _build_clause($dbh, $field, $sub_op, $val, $not, $field_mod, $bind, $db, $col_meta, $force_inline));
         }
       }
       else
@@ -788,6 +854,16 @@ Set operations:
     '!NAME' => { all_in_set => [ 'A', 'B'] } 
 
 The string "NAME" can take many forms, each of which eventually resolves to a database column (COLUMN in the examples above).
+
+Any of these operations described above can have "_sql" appended to indicate that the corresponding values are to be "inlined" (i.e., included in the SQL query as-is, with no quoting of any kind).  This is useful for comparing two columns.  For example, this query:
+
+    query => [ legs => { gt_sql => 'eyes' } ]
+
+would produce this SQL:
+
+    SELECT ... FROM animals WHERE legs > eyes
+
+where "legs" and "eyes" are both column names in the "animals" table.
 
 =over 4
 
