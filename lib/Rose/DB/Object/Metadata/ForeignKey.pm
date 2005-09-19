@@ -9,7 +9,7 @@ use Rose::DB::Object::Metadata::Util qw(:all);
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.03';
+our $VERSION = '0.031';
 
 use overload
 (
@@ -59,10 +59,43 @@ __PACKAGE__->method_maker_info
 
 sub type { 'foreign key' }
 
+sub is_required
+{
+  my($self) = shift;
+
+  return $self->{'is_required'}  if(defined $self->{'is_required'});
+
+  my $meta = $self->parent or 
+    Carp::croak "Missing parent for foreign key '", $self->name, "'";
+
+  my $key_columns = $self->key_columns;
+
+  foreach my $column_name (keys %$key_columns)
+  {
+    my $column = $meta->column($column_name) 
+      or Carp::confess "No such column '$column_name' for foreign key '",
+                        $self->name, "'";
+
+    unless($column->not_null)
+    {
+      return $self->{'is_required'} = 0;
+    }
+  }
+
+  return $self->{'is_required'} = 1;
+}
+
+sub make_methods
+{
+  my($self) = shift;
+  $self->is_required; # initialize
+  $self->SUPER::make_methods(@_);
+}
+
 sub build_method_name_for_type
 {
   my($self, $type) = @_;
-  
+
   if($type eq 'get_set')
   {
     return $self->name;
@@ -86,7 +119,7 @@ sub sanity_check
   my($self) = shift;
 
   my $key_columns = $self->key_columns;
-  
+
   no warnings;
   unless(ref $key_columns eq 'HASH' && keys %$key_columns)
   {
@@ -108,7 +141,7 @@ sub is_ready_to_make_methods
     my $fk_meta = $self->class->meta;
 
     my $key_columns = $self->key_columns || {};
-    
+
     foreach my $column_name (values %$key_columns)
     {
       unless($fk_meta->column_accessor_method_name($column_name) && 

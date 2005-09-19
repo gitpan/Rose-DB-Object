@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING);
 
-our $VERSION = '0.06';
+our $VERSION = '0.061';
 
 sub scalar
 {
@@ -785,25 +785,25 @@ sub bitfield
                $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
       };
 
-  
+
       if($args->{'with_intersects'})
       {
         my $method = $args->{'intersects'} || $name . '_intersects';
-  
+
         $methods{$method} = sub 
         {
           my($self, $vec) = @_;
-  
+
           my $val = $self->{$key} or return undef;
-  
+
           unless(ref $vec)
           {
             my $db = $self->db or die "Missing Rose::DB object attribute";
             $vec = $db->parse_bitfield($vec, $size);
           }
-  
+
           $vec = Bit::Vector->new_Bin($size, $vec->to_Bin)  if($vec->Size != $size);
-  
+
           my $test = Bit::Vector->new($size);
           $test->Intersection($val, $vec);
           return ($test->to_Bin > 0) ? 1 : 0;
@@ -1195,33 +1195,33 @@ sub object_by_key
     $methods{$name} = sub
     {
       my($self) = shift;
-  
+
       if(@_)
       {
         return $self->{$key} = undef  unless(defined $_[0]);
-  
+
         while(my($local_column, $foreign_column) = each(%$fk_columns))
         {
           my $local_method   = $meta->column_mutator_method_name($local_column);
           my $foreign_method = $fk_meta->column_accessor_method_name($foreign_column);
-  
+
           $self->$local_method($_[0]->$foreign_method);
         }
-  
+
         return $self->{$key} = $_[0];
       }
-  
+
       return $self->{$key}  if(defined $self->{$key});
-  
+
       my %key;
-  
+
       while(my($local_column, $foreign_column) = each(%$fk_columns))
       {
         my $local_method   = $meta->column_accessor_method_name($local_column);
         my $foreign_method = $fk_meta->column_mutator_method_name($foreign_column);
-  
+
         $key{$foreign_method} = $self->$local_method();
-  
+
         # Comment this out to allow null keys
         unless(defined $key{$foreign_method})
         {
@@ -1231,9 +1231,9 @@ sub object_by_key
           return undef;
         }
       }
-  
+
       my $obj;
-  
+
       if($share_db)
       {
         $obj = $fk_class->new(%key, db => $self->db);
@@ -1242,9 +1242,9 @@ sub object_by_key
       {
         $obj = $fk_class->new(%key);
       }
-  
+
       my $ret = $obj->load;
-  
+
       unless($ret)
       {
         $self->error("Could not load $fk_class with key ", 
@@ -1252,7 +1252,7 @@ sub object_by_key
                      " - " . $obj->error);
         return $ret;
       }
-  
+
       return $self->{$key} = $obj;
     };
   }
@@ -1297,26 +1297,26 @@ sub objects_by_key
     $methods{$name} = sub
     {
       my($self) = shift;
-  
+
       if(@_)
       {      
         return $self->{$key} = undef  if(@_ == 1 && !defined $_[0]);
         return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
       }
-  
+
       if(defined $self->{$key})
       {
         return wantarray ? @{$self->{$key}} : $self->{$key};  
       }
-  
+
       my %key;
-  
+
       while(my($local_column, $foreign_column) = each(%$ft_columns))
       {
         my $local_method = $meta->column_accessor_method_name($local_column);
-  
+
         $key{$foreign_column} = $self->$local_method();
-  
+
         # Comment this out to allow null keys
         unless(defined $key{$foreign_column})
         {
@@ -1326,9 +1326,9 @@ sub objects_by_key
           return wantarray ? () : undef;
         }
       }
-  
+
       my $objs;
-  
+
       if($share_db)
       {
         $objs = $ft_manager->$ft_method(query => [ %key, @$query_args ], %$mgr_args, db => $self->db);
@@ -1337,7 +1337,7 @@ sub objects_by_key
       {
         $objs = $ft_manager->$ft_method(query => [ %key, @$query_args ], %$mgr_args);
       }
-  
+
       unless($objs)
       {
         $self->error("Could not load $ft_class objects with key ", 
@@ -1345,16 +1345,16 @@ sub objects_by_key
                      " - " . $ft_manager->error);
         return $objs;
       }
-  
+
       $self->{$key} = $objs;
-  
+
       return wantarray ? @{$self->{$key}} : $self->{$key};
     };
-  
+
     if($interface eq 'get_set_load')
     {
       my $method_name = $args->{'load_method'} || 'load_' . $name;
-  
+
       $methods{$method_name} = sub
       {
         return (defined shift->$name(@_)) ? 1 : 0;
@@ -1376,14 +1376,15 @@ sub objects_by_map
   my $interface = $args->{'interface'} || 'get_set';
   my $target_class = $options->{'target_class'} or die "Missing target class";
 
-  my $map_class       = $args->{'map_class'} or die "Missing map class";
-  my $map_meta        = $map_class->meta or die "Missing meta for $map_class";
-  my $map_from        = $args->{'map_from'};
-  my $map_to          = $args->{'map_to'};
-  my $map_manager     = $args->{'manager_class'};
-  my $map_method      = $args->{'manager_method'} || 'get_objects';
-  my $mgr_args        = $args->{'manager_args'} || {};
-  my $query_args      = $args->{'query_args'} || [];
+  my $relationship = $args->{'relationship'} or die "Missing relationship";
+  my $map_class    = $args->{'map_class'} or die "Missing map class";
+  my $map_meta     = $map_class->meta or die "Missing meta for $map_class";
+  my $map_from     = $args->{'map_from'};
+  my $map_to       = $args->{'map_to'};
+  my $map_manager  = $args->{'manager_class'};
+  my $map_method   = $args->{'manager_method'} || 'get_objects';
+  my $mgr_args     = $args->{'manager_args'} || {};
+  my $query_args   = $args->{'query_args'} || [];
   my $map_to_method;
 
   if(@$query_args % 2 != 0)
@@ -1402,12 +1403,12 @@ sub objects_by_map
 
   # Build the map of "local" column names to "foreign" object method names. 
   # The words "local" and "foreign" are relative to the *mapper* class.
-  my %key_template;
+  my(%key_template, %column_map);
 
   # Also grab the foreign object class that the mapper points to,
   # the relationship name that points back to us, and the class 
   # name of the objects we really want to fetch.
-  my($with_objects, $local_rel, $foreign_class, %seen_fk);
+  my($require_objects, $local_rel, $foreign_class, %seen_fk);
 
   foreach my $item ($map_meta->foreign_keys, $map_meta->relationships)
   {
@@ -1436,7 +1437,7 @@ sub objects_by_map
                     "with a 'local' parameter in the 'map' hash";
       }
 
-      $local_rel = $item->name;
+      $map_from = $local_rel = $item->name;
 
       my $map_columns = 
         $item->can('column_map') ? $item->column_map : $item->key_columns;
@@ -1448,6 +1449,7 @@ sub objects_by_map
           or Carp::croak "Missing accessor method for column '$foreign_column'", 
                          " in class ", $meta->class;
         $key_template{$local_column} = $foreign_method;
+        $column_map{$local_column} = $foreign_column;
       }
     }
     elsif($item->isa('Rose::DB::Object::Metadata::ForeignKey') ||
@@ -1457,7 +1459,9 @@ sub objects_by_map
       # this is not that name.
       next  if($map_to && $item->name ne $map_to);
 
-      if($with_objects)
+      $map_to = $item->name;
+
+      if($require_objects)
       {
         Carp::croak "Map class $map_class has more than one foreign key ",
                     "and/or 'one to one' relationship that points to a ",
@@ -1465,7 +1469,7 @@ sub objects_by_map
                     "by name with a 'foreign' parameter in the 'map' hash";
       }
 
-      $with_objects  = [ $item->name ];
+      $require_objects  = [ $item->name ];
       $foreign_class = $item->class;
       $map_to_method = $item->method_name('get_set');
     }
@@ -1477,7 +1481,7 @@ sub objects_by_map
                 "in $map_class that points to $target_class";
   }
 
-  unless($with_objects)
+  unless($require_objects)
   {
     # Make a second attempt to find a a suitable foreign relationship in the
     # map class, this time looking for links back to $target_class so long as
@@ -1494,7 +1498,7 @@ sub objects_by_map
          $item->type eq 'one to one') &&
          $item->class eq $target_class && $item->name ne $local_rel)
       {  
-        if($with_objects)
+        if($require_objects)
         {
           Carp::croak "Map class $map_class has more than two foreign keys ",
                       "and/or 'one to one' relationships that points to a ",
@@ -1503,21 +1507,27 @@ sub objects_by_map
                       "'map' hash";
         }
 
-        $with_objects = [ $item->name ];
+        $require_objects = [ $item->name ];
         $foreign_class = $item->class;
         $map_to_method = $item->method_name('get_set');
       }
     }
   }
 
-  unless($with_objects)
+  unless($require_objects)
   {
     Carp::croak "Could not find a foreign key or 'one to one' relationship ",
                 "in $map_class that points to a class other than $target_class"
   }
 
+  # Populate relationship with the info we've extracted
+  $relationship->column_map(\%column_map);
+  $relationship->map_from($map_from);
+  $relationship->map_to($map_to);
+  $relationship->foreign_class($foreign_class);
+
   # Relationship names
-  $map_to   ||= $with_objects->[0];
+  $map_to   ||= $require_objects->[0];
   $map_from ||= $local_rel;
 
   if($interface eq 'get_set')
@@ -1559,14 +1569,14 @@ sub objects_by_map
       {
         $objs =
           $map_manager->$map_method(query        => [ %link, @$query_args ],
-                                    with_objects => $with_objects,
+                                    require_objects => $require_objects,
                                     %$mgr_args, db => $self->db);
       }
       else
       {
         $objs = 
           $map_manager->$map_method(query        => [ %link, @$query_args ],
-                                    with_objects => $with_objects,
+                                    require_objects => $require_objects,
                                     %$mgr_args);
       }
 
