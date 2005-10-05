@@ -1,3 +1,22 @@
+0.076 (10.05.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Fixed a bug that caused incorrect counts in get_objects_count()
+      when using the require_object parameter with "... to many" 
+      relationships.
+    * Added bulk update and delete methods to Manager.
+    * Added cascaded delete, plus a plea inthe documentation for users
+      to do this in the database instead.
+    * Added "many to one" relationship and made it the new default
+      relationship type for foreign keys.
+    * Added *_now and *_on_save method types for foreign keys and
+      "... to one" relationships.
+    * Made get_set_on_save and delete_on_save the default auto method 
+      types for foreign keys and "... to one" relationships.
+    * load() now returns the object itself on success, which allows
+      for the convenient $obj = MyObject->new(id => 123)->load;
+    * save() now returns the object itself on success, which allows
+      for the convenient $obj = MyObject->new(id => 123)->save;
+
 0.075 (09.19.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Added support for "many to many" relationships to Manager's

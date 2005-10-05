@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.042';
+our $VERSION = '0.051';
 
 our $Debug = 0;
 
@@ -28,6 +28,8 @@ my %OP_MAP =
   gt         => '>',
   ne         => '<>',
   eq         => '=',
+  ''         => '=',
+  sql        => '=',
   in_set     => 'ANY IN',
   any_in_set => 'ANY IN',
   all_in_set => 'ALL IN',
@@ -54,6 +56,9 @@ sub build_select
   my $clauses_arg = delete $args{'clauses'};  
   my $pretty      = exists $args{'pretty'} ? $args{'pretty'} : $Debug;
   my $joins       = $args{'joins'};
+  my $set         = delete $args{'set'};
+
+  $logic = " $logic"  unless($logic eq ',');
 
   $args{'_depth'}++;
 
@@ -87,7 +92,8 @@ sub build_select
             build_select(%args, 
                          where_only => 1,
                          query => $query_arg->[$i + 1],
-                         logic => uc $query_arg->[$i]);
+                         logic => uc $query_arg->[$i],
+                         set => $set);
 
           push(@bind, @$bind);
         }
@@ -97,7 +103,8 @@ sub build_select
             build_select(%args, 
                          where_only => 1,
                          query => $query_arg->[$i + 1],
-                         logic => uc $query_arg->[$i]);
+                         logic => uc $query_arg->[$i],
+                         set => $set);
         }
 
         if($pretty)
@@ -233,11 +240,12 @@ sub build_select
           {
             push(@clauses, _build_clause($dbh, $sql_column, $op, $val, $not, 
                                          undef, $do_bind ? \@bind : undef,
-                                         $db, $col_meta));
+                                         $db, $col_meta, $set));
           }
           elsif(!defined $val)
           {
-            push(@clauses, "$sql_column IS " . ($not ? "$not " : '') . 'NULL');
+            push(@clauses, $set ? "$sql_column = NULL" : 
+                                  ("$sql_column IS " . ($not ? "$not " : '') . 'NULL'));
           }
           else
           {
@@ -266,11 +274,11 @@ sub build_select
   if($pretty)
   {
     my $pad = '  ' x $args{'_depth'};
-    $where = join(" $logic\n", map { "$pad$_" } @clauses);
+    $where = join("$logic\n", map { "$pad$_" } @clauses);
   }
   else
   {
-    $where = join(" $logic\n", map { "  $_" } @clauses);
+    $where = join("$logic\n", map { "  $_" } @clauses);
   }
 
   my $qs;
@@ -364,13 +372,13 @@ sub build_select
 sub _build_clause
 {
   my($dbh, $field, $op, $vals, $not, $field_mod, $bind, $db, $col_meta,
-     $force_inline) = @_;
+     $force_inline, $set) = @_;
 
   if(!defined $op && ref $vals eq 'HASH' && keys(%$vals) == 1)
   {
     my $op_arg = (keys(%$vals))[0];
 
-    if($op_arg =~ s/_sql$//)
+    if($op_arg =~ s/_?sql$//)
     {
       $force_inline = 1;
     }
@@ -418,7 +426,8 @@ sub _build_clause
                ($not ? ')' : '');
       }
     }
-    return "$field IS " . ($not ? "$not " : '') . 'NULL';
+    return $set ? ("$field = NULL") :
+                  ("$field IS " . ($not ? "$not " : '') . 'NULL');
   }
 
   if($ref eq 'ARRAY')
@@ -527,13 +536,13 @@ sub _build_clause
 
       if(!ref($vals->{$raw_op}))
       {
-        push(@clauses, _build_clause($dbh, $field, $sub_op, $vals->{$raw_op}, $not, $field_mod, $bind, $db, $col_meta, $force_inline));
+        push(@clauses, _build_clause($dbh, $field, $sub_op, $vals->{$raw_op}, $not, $field_mod, $bind, $db, $col_meta, $force_inline, $set));
       }
       elsif(ref($vals->{$raw_op}) eq 'ARRAY')
       {
         foreach my $val (@{$vals->{$raw_op}})
         {
-          push(@clauses, _build_clause($dbh, $field, $sub_op, $val, $not, $field_mod, $bind, $db, $col_meta, $force_inline));
+          push(@clauses, _build_clause($dbh, $field, $sub_op, $val, $not, $field_mod, $bind, $db, $col_meta, $force_inline, $set));
         }
       }
       else
@@ -558,7 +567,9 @@ sub _format_value
 
   if(!ref $value || $asis)
   {
-    unless($col_meta->type eq 'set' && ref $store eq 'HASH' && $param =~ /^(?:a(?:ny|all)_)?in_set$/)
+    unless($col_meta->type eq 'set' && ref $store eq 'HASH' && 
+           ($param eq 'in_set' || $param eq 'all_in_set' || 
+            $param eq 'any_in_set'))
     {
       if($col_meta->manager_uses_method)
       {
@@ -594,6 +605,7 @@ sub _format_value
   {    
     foreach my $key (keys %$value)
     {
+      next  if($key =~ /_?sql$/); # skip inline values
       _format_value($db, $value, $key, $object, $col_meta, $get_method, $set_method, $value->{$key}, 0, $depth + 1);
     }
   }

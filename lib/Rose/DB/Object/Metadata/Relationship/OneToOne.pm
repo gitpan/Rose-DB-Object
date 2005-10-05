@@ -2,135 +2,12 @@ package Rose::DB::Object::Metadata::Relationship::OneToOne;
 
 use strict;
 
-use Carp();
+use Rose::DB::Object::Metadata::Relationship::ManyToOne;
+our @ISA = qw(Rose::DB::Object::Metadata::Relationship::ManyToOne);
 
-use Rose::DB::Object::Metadata::Relationship;
-our @ISA = qw(Rose::DB::Object::Metadata::Relationship);
-
-use Rose::Object::MakeMethods::Generic;
-use Rose::DB::Object::MakeMethods::Generic;
-
-our $VERSION = '0.02';
-
-__PACKAGE__->default_auto_method_types('get_set');
-
-__PACKAGE__->add_common_method_maker_argument_names
-(
-  qw(class share_db key_columns)
-);
-
-use Rose::Object::MakeMethods::Generic
-(
-  boolean =>
-  [
-    '_share_db' => { default => 1 },
-  ],
-
-  hash =>
-  [
-    _key_column  => { hash_key  => 'key_columns' },
-    _key_columns => { interface => 'get_set_all' },
-  ],
-);
-
-Rose::Object::MakeMethods::Generic->make_methods
-(
-  { preserve_existing => 1 },
-  scalar => 
-  [
-    'foreign_key',
-    __PACKAGE__->common_method_maker_argument_names
-  ],
-);
-
-__PACKAGE__->method_maker_info
-(
-  get_set =>
-  {
-    class => 'Rose::DB::Object::MakeMethods::Generic',
-    type  => 'object_by_key',
-  },
-);
+our $VERSION = '0.04';
 
 sub type { 'one to one' }
-
-sub share_db    { shift->_fk_or_self(share_db => @_)     }
-sub key_column  { shift->_fk_or_self(key_column => @_)   }
-sub key_columns { shift->_fk_or_self(key_columns => @_)  }
-
-*map_column = \&key_column;
-*column_map = \&key_columns;
-
-sub _fk_or_self
-{
-  my($self, $method) = (shift, shift);
-
-  if(my $fk = $self->foreign_key)
-  {
-    return $fk->$method(@_);
-  }
-
-  $method = "_$method"  if($self->can("_$method"));
-  return $self->$method(@_);
-}
-
-sub method_name
-{
-  my($self) = shift;
-
-  if(my $fk = $self->foreign_key)
-  {
-    return $fk->method_name(@_);
-  }
-
-  return $self->SUPER::method_name(@_);
-}
-
-sub is_ready_to_make_methods
-{
-  my($self) = shift;
-
-  if(my $fk = $self->foreign_key)
-  {
-    return $fk->is_ready_to_make_methods(@_);
-  }
-
-  return $self->SUPER::is_ready_to_make_methods(@_);
-}
-
-sub make_methods
-{
-  my($self) = shift;
-
-  if(my $fk = $self->foreign_key)
-  {
-    return $fk->make_methods(@_);
-  }
-
-  return $self->SUPER::make_methods(@_);
-}
-
-sub id
-{
-  my($self) = shift;
-
-  my $column_map = $self->column_map;
-
-  return $self->class . ' ' . 
-    join("\0", map { join("\1", lc $_, lc $column_map->{$_}) } sort keys %$column_map);
-}
-
-sub build_method_name_for_type
-{
-  my($self, $type) = @_;
-
-  if($type eq 'get_set')
-  {
-    return $self->name;
-  }
-
-  return undef;
-}
 
 1;
 
@@ -162,9 +39,35 @@ This class inherits from L<Rose::DB::Object::Metadata::Relationship>. Inherited 
 
 L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, ...
 
+=item C<get_set_now>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, C<interface =E<gt> 'get_set_now'>
+
+=item C<get_set_on_save>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, C<interface =E<gt> 'get_set_on_save'>
+
+=item C<delete_now>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, C<interface =E<gt> 'delete_now'>
+
+=item C<delete_on_save>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, C<interface =E<gt> 'delete_on_save'>
+
 =back
 
 See the L<Rose::DB::Object::Metadata::Relationship|Rose::DB::Object::Metadata::Relationship/"MAKING METHODS"> documentation for an explanation of this method map.
+
+=head1 CLASS METHODS
+
+=over 4
+
+=item B<default_auto_method_types [TYPES]>
+
+Get or set the default list of L<auto_method_types|Rose::DB::Object::Metadata::Relationship/auto_method_types>.  TYPES should be a list of relationship method types.  Returns the list of default relationship method types (in list context) or a reference to an array of the default relationship method types (in scalar context).  The default list contains "get_set_on_save" and "delete_on_save".
+
+=back
 
 =head1 OBJECT METHODS
 
@@ -172,7 +75,13 @@ See the L<Rose::DB::Object::Metadata::Relationship|Rose::DB::Object::Metadata::R
 
 =item B<build_method_name_for_type TYPE>
 
-Return a method name for the relationship method type TYPE.  Returns the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> for the method type "get_set", undef otherwise.
+Return a method name for the relationship method type TYPE.  
+
+For the method types "get_set", "get_set_now", and "get_set_on_save", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> is returned.
+
+For the method types "delete_now" and "delete_on_save", the relationship's  L<name|Rose::DB::Object::Metadata::Relationship/name> prefixed with "delete_" is returned.
+
+Otherwise, undef is returned.
 
 =item B<foreign_key [FK]>
 

@@ -123,6 +123,7 @@ __PACKAGE__->relationship_type_classes
 (
   'one to one'   => 'Rose::DB::Object::Metadata::Relationship::OneToOne',
   'one to many'  => 'Rose::DB::Object::Metadata::Relationship::OneToMany',
+  'many to one'  => 'Rose::DB::Object::Metadata::Relationship::ManyToOne',
   'many to many' => 'Rose::DB::Object::Metadata::Relationship::ManyToMany',
 );
 
@@ -341,6 +342,20 @@ sub prepare_delete_options
 {
   @_ > 1 ? $_[0]->{'prepare_delete_options'} = $_[1] : 
            $_[0]->{'prepare_delete_options'} ||= {}
+}
+
+sub prepare_bulk_delete_options
+{
+  @_ > 1 ? $_[0]->{'prepare_bulk_delete_options'} = $_[1] : 
+           $_[0]->{'prepare_bulk_delete_options'} ||= 
+           $_[0]->prepare_delete_options;
+}
+
+sub prepare_bulk_update_options
+{
+  @_ > 1 ? $_[0]->{'prepare_bulk_update_options'} = $_[1] : 
+           $_[0]->{'prepare_bulk_update_options'} ||= 
+           $_[0]->prepare_update_options;
 }
 
 sub prepare_options
@@ -865,7 +880,7 @@ sub add_foreign_keys
       unless(defined $self->relationship($fk->name))
       {
         $self->add_relationship(
-          $self->relationship_type_class('one to one')->new(
+          $self->relationship_type_class($fk->relationship_type)->new(
             parent      => $self,
             name        => $fk->name, 
             class       => $fk->class,
@@ -926,7 +941,7 @@ sub add_foreign_keys
       unless(defined $self->relationship($name))
       {
         $self->add_relationship(
-          $self->relationship_type_class('one to one')->new(
+          $self->relationship_type_class($fk->relationship_type)->new(
             name        => $name,
             class       => $fk->class,
             foreign_key => $fk));
@@ -1112,7 +1127,9 @@ sub make_column_methods
 
     foreach my $type ($column->auto_method_types)
     {
-      $method = $self->method_name_from_column_name($name, $type);
+      $method = $self->method_name_from_column_name($name, $type)
+        or Carp::croak "No method name defined for column '$name' ",
+                       "method type '$type'";
 
       if(my $reason = $self->method_name_is_reserved($method, $class))
       {
@@ -1190,8 +1207,11 @@ sub make_foreign_key_methods
   {
     foreach my $type ($foreign_key->auto_method_types)
     {
-      my $method = $foreign_key->method_name($type) || 
-                   $foreign_key->build_method_name_for_type($type);
+      my $method = 
+        $foreign_key->method_name($type) || 
+        $foreign_key->build_method_name_for_type($type) ||
+        Carp::croak "No method name defined for foreign key '",
+                    $foreign_key->name, "' method type '$type'";
 
       if(my $reason = $self->method_name_is_reserved($method, $class))
       {
@@ -1223,13 +1243,13 @@ sub make_foreign_key_methods
       $meta_class->add_deferred_foreign_key($foreign_key);
     }
 
-    # Keep foreign keys and their corresponding "one to one" 
-    # relationships in sync.
-    my $fk_id = $foreign_key->id;
-
+    # Keep foreign keys and their corresponding relationships in sync.
+    my $fk_id       = $foreign_key->id;
+    my $fk_rel_type = $foreign_key->relationship_type;
+    
     foreach my $relationship ($self->relationships)
     {
-      next  unless($relationship->type eq 'one to one');
+      next  unless($relationship->type eq $fk_rel_type);
 
       if($fk_id eq $relationship->id)
       {
@@ -1317,8 +1337,11 @@ sub make_relationship_methods
   {
     foreach my $type ($relationship->auto_method_types)
     {
-      my $method = $relationship->method_name($type) || 
-                   $relationship->build_method_name_for_type($type);
+      my $method = 
+        $relationship->method_name($type) || 
+        $relationship->build_method_name_for_type($type) ||
+        Carp::croak "No method name defined for relationship '",
+                    $relationship->name, "' method type '$type'";
 
       if(my $reason = $self->method_name_is_reserved($method, $class))
       {
@@ -1333,12 +1356,12 @@ sub make_relationship_methods
 
       # If a corresponding foreign key exists, the preserve any existing
       # methods with the same names.  This is a crude way to ensure that we
-      # can have a foreign key and a corresponding "one to one" relationship
-      # without any method name clashes.
-      if($relationship->type eq 'one to one')
+      # can have a foreign key and a corresponding relationship without any 
+      # method name clashes.
+      if($relationship->can('id'))
       {
         my $rel_id = $relationship->id;
-
+  
         FK: foreach my $fk ($self->foreign_keys)
         {
           if($rel_id eq $fk->id)
@@ -2148,7 +2171,7 @@ L<Rose::DB::Object::Metadata> objects store information about a single table in 
 
 L<Rose::DB::Object::Metadata> objects also store information about the L<Rose::DB::Object>s that front the database tables they describe.  What might normally be thought of as "class data" for the L<Rose::DB::Object> is stored in the metadata object instead, in order to keep the method namespace of the L<Rose::DB::Object>-derived class uncluttered.
 
-L<Rose::DB::Object::Metadata> objects objects are per-class singletons; there is one L<Rose::DB::Object::Metadata> object for each L<Rose::DB::Object>-derived class.  Metadata objects are almost never explicitly instantiated.  Rather, there are automatically created and access through L<Rose::DB::Object>-derived objects' L<meta|Rose::DB::Object/meta> method.
+L<Rose::DB::Object::Metadata> objects objects are per-class singletons; there is one L<Rose::DB::Object::Metadata> object for each L<Rose::DB::Object>-derived class.  Metadata objects are almost never explicitly instantiated.  Rather, there are automatically created and accessed through L<Rose::DB::Object>-derived objects' L<meta|Rose::DB::Object/meta> method.
 
 Once created, metadata objects can be populated manually or automatically.  Both techniques are shown in the L<synopsis|/SYNOPSIS> above.  The automatic mode works by asking the database itself for the information.  There are some caveats to this approach.  See the L<auto-initialization|/"AUTO-INITIALIZATION"> section for more information.
 
@@ -2184,7 +2207,7 @@ Also, don't forget that auto-initialization requires a database connection.  L<R
 
 First, auto-initialization cannot generate information that exists only in the mind of the programmer.  The most common example is a relationship between two database tables that is either ambiguous or totally unexpressed by the database itself.  
 
-For example, if a foreign key constraint does not exist, the "one to one" relationship between rows in two different tables cannot be extracted from the database, and therefore cannot be auto-initialized.
+For example, if a foreign key constraint does not exist, the relationship between rows in two different tables cannot be extracted from the database, and therefore cannot be auto-initialized.
 
 Similarly, in the L<synopsis|/SYNOPSIS> above, the "one to many" relationship between the C<Product> and C<Price> classes cannot be auto-initialized because it lacks an unambiguous analog within the database.  Even assuming that the "prices" table (fronted by the C<Price>) class has a foreign key that points to the "products" table, the lack of a corresponding foreign key in the "products" table that points back to the "prices" table does not necessarily mean that the relationship is "one product to many prices."  It could be that the relationship is really "one product to one price" and the foreign key constraint was omitted from the "products" table for performance reasons (to give just one example).
 
@@ -2379,8 +2402,10 @@ If passed MAP (a list of type/class pairs or a reference to a hash of the same) 
 
 The default mapping of type names to class names is:
 
-  'one to one'  => Rose::DB::Object::Metadata::Relationship::OneToOne
-  'one to many' => Rose::DB::Object::Metadata::Relationship::OneToMany
+  'one to one'   => Rose::DB::Object::Metadata::Relationship::OneToOne
+  'one to many'  => Rose::DB::Object::Metadata::Relationship::OneToMany
+  'many to one'  => Rose::DB::Object::Metadata::Relationship::ManyToOne
+  'many to many' => Rose::DB::Object::Metadata::Relationship::ManyToMany
 
 =back
 
@@ -2533,7 +2558,7 @@ Example:
       Rose::DB::Object::Metadata::ForeignKey->new(...),
     );
 
-For each foreign key added, a corresponding "one to one" relationship with the same name is added if it does not already exist.  The class of the relationship is chosen by calling L<relationship_type_class|/relationship_type_class> with the argument "one to one".
+For each foreign key added, a corresponding relationship with the same name is added if it does not already exist.  The relationship type is determined by the value o fthe foreign key object's L<relationship|Rose::DB::Object::Metadata::ForeignKey/relationship_type> attribute.  The default is "many to one".  The class of the relationship is chosen by calling L<relationship_type_class|/relationship_type_class> with the relationship type as an argument.
 
 =item B<add_primary_key_column COLUMN>
 
@@ -2576,7 +2601,7 @@ Example:
       # Add by name/hashref pair with explicit method type
       category => 
       {
-        type       => 'one to one',
+        type       => 'many to one',
         class      => 'Category', 
         column_map => { category_id => 'id' },
         methods    => [ 'get' ],
@@ -2584,7 +2609,7 @@ Example:
 
       # which is roughly equivalent to:
       #
-      # $class = $meta->relationship_type_class('one to one');
+      # $class = $meta->relationship_type_class('many to one');
       # $rel = $class->new(class      => 'Category', 
       #                    column_map => { category_id => 'id' },
       #                    name       => 'category');
@@ -2594,7 +2619,7 @@ Example:
       # Add by name/hashref pair with additional method type and name
       color => 
       {
-        type        => 'one to one',
+        type        => 'many to one',
         class       => 'Color', 
         column_map  => { color_id => 'id' },
         add_methods => { set => 'set_my_color' },
@@ -2602,7 +2627,7 @@ Example:
 
       # which is roughly equivalent to:
       #
-      # $class = $meta->relationship_type_class('one to one');
+      # $class = $meta->relationship_type_class('many to one');
       # $rel = $class->new(class      => 'Color', 
       #                    column_map => { color_id => 'id' },
       #                    name       => 'color');
@@ -2914,7 +2939,7 @@ If set to a true value, override any existing method with the same name.
 
 For each L<auto_method_type|Rose::DB::Object::Metadata::ForeignKey/auto_method_types> in each foreign key, the method name is determined by passing the method type to the L<method_name|Rose::DB::Object::Metadata::ForeignKey/method_name> method of the foreign key object, or the L<build_method_name_for_type|Rose::DB::Object::Metadata::ForeignKey/build_method_name_for_type> method if the L<method_name|Rose::DB::Object::Metadata::ForeignKey/method_name> call returns a false value.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>), a fatal error will occur.  The object methods for each foreign key are created by calling the foreign key  object's L<make_methods|Rose::DB::Object::Metadata::ForeignKey/make_methods> method.
 
-Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship/foreign_key> attribute of each "one to one" relationship object to be the corresponding foreign key object.
+Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" or "many to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship::ManyToOne/foreign_key> attribute of each "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>" or "L<many to one|Rose::DB::Object::Metadata::Relationship::ManyToOne>" relationship object to be the corresponding foreign key object.
 
 =item B<make_relationship_methods [ARGS]>
 
@@ -2934,7 +2959,7 @@ If set to a true value, override any existing method with the same name.
 
 For each L<auto_method_type|Rose::DB::Object::Metadata::Relationship/auto_method_types> in each relationship, the method name is determined by passing the method type to the L<method_name|Rose::DB::Object::Metadata::Relationship/method_name> method of the relationship object, or the L<build_method_name_for_type|Rose::DB::Object::Metadata::Relationship/build_method_name_for_type> method if the L<method_name|Rose::DB::Object::Metadata::Relationship/method_name> call returns a false value.  If the method name is reserved (according to L<method_name_is_reserved|/method_name_is_reserved>), a fatal error will occur.  The object methods for each relationship are created by calling the relationship  object's L<make_methods|Rose::DB::Object::Metadata::Relationship/make_methods> method.
 
-Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship/foreign_key> attribute of each "one to one" relationship object to be the corresponding foreign key object.
+Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" or "many to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship::ManyToOne/foreign_key> attribute of each "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>" or "L<many to one|Rose::DB::Object::Metadata::Relationship::ManyToOne>" relationship object to be the corresponding foreign key object.
 
 If a relationship corresponds exactly to a foreign key, and that foreign key already made an object method, then the relationship is not asked to make its own method.
 

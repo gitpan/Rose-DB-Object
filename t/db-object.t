@@ -62,11 +62,11 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   $o->code('C' x 50);
   is($o->code, 'C' x 6, "character truncation - $db_type");
 
-  my $ouk = MyPgObject->new(k1 => 1,
+  my $ouk;
+  ok($ouk = MyPgObject->new(k1 => 1,
                             k2 => undef,
-                            k3 => 3);
+                            k3 => 3)->load, "load() uk 1 - $db_type");
 
-  ok($ouk->load, "load() uk 1 - $db_type");
   ok(!$ouk->not_found, "not_found() uk 1 - $db_type");
 
   is($ouk->id, 1, "load() uk 2 - $db_type");
@@ -260,11 +260,11 @@ SKIP: foreach my $db_type ('mysql')
   $o->code('C' x 50);
   is($o->code, 'C' x 6, "character truncation - $db_type");
 
-  my $ouk = MyMySQLObject->new(k1 => 1,
+  my $ouk;
+  ok($ouk = MyMySQLObject->new(k1 => 1,
                                k2 => undef,
-                               k3 => 3);
+                               k3 => 3)->load, "load() uk 1 - $db_type");
 
-  ok($ouk->load, "load() uk 1 - $db_type");
   ok(!$ouk->not_found, "not_found() uk 1 - $db_type");
 
   is($ouk->id, 1, "load() uk 2 - $db_type");
@@ -436,11 +436,11 @@ SKIP: foreach my $db_type ('informix')
   $o->code('C' x 50);
   is($o->code, 'C' x 6, "character truncation - $db_type");
 
-  my $ouk = MyInformixObject->new(k1 => 1,
+  my $ouk;
+  ok($ouk = MyInformixObject->new(k1 => 1,
                                   k2 => undef,
-                                  k3 => 3);
+                                  k3 => 3)->load, "load() uk 1 - $db_type");
 
-  ok($ouk->load, "load() uk 1 - $db_type");
   ok(!$ouk->not_found, "not_found() uk 1 - $db_type");
 
   is($ouk->id, 1, "load() uk 2 - $db_type");
@@ -765,6 +765,7 @@ CREATE TABLE rose_db_object_test
   nums           VARCHAR(255),
   start          DATE,
   save           INT,
+  ndate          DATE NOT NULL DEFAULT '0000-00-00',
   last_modified  TIMESTAMP,
   date_created   TIMESTAMP,
 
@@ -807,6 +808,7 @@ EOF
       flag2    => { type => 'boolean' },
       status   => { default => 'active', methods => [ qw(get_set get set) ] },
       start    => { type => 'date', default => '12/24/1980' },
+      ndate    => { type => 'date', not_null => 1, default => '0000-00-00' },
       save     => { type => 'scalar' },
       nums     => { type => 'array' },
       bitz     => { type => 'bitfield', bits => 5, default => 101, alias => 'bits' },

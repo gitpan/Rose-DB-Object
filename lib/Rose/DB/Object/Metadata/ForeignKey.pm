@@ -9,7 +9,7 @@ use Rose::DB::Object::Metadata::Util qw(:all);
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.031';
+our $VERSION = '0.04';
 
 use overload
 (
@@ -19,11 +19,11 @@ use overload
    fallback => 1,
 );
 
-__PACKAGE__->default_auto_method_types('get_set');
+__PACKAGE__->default_auto_method_types(qw(get_set_on_save delete_on_save));
 
 __PACKAGE__->add_common_method_maker_argument_names
 (
-  qw(share_db class key_columns)
+  qw(hash_key share_db class key_columns foreign_key)
 );
 
 use Rose::Object::MakeMethods::Generic
@@ -45,8 +45,14 @@ use Rose::Object::MakeMethods::Generic
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
-  scalar => [ __PACKAGE__->common_method_maker_argument_names ],
+  scalar => 
+  [
+    __PACKAGE__->common_method_maker_argument_names,
+    relationship_type => { interface => 'get_set_init' },
+  ],
 );
+
+*rel_type = \&relationship_type;
 
 __PACKAGE__->method_maker_info
 (
@@ -54,8 +60,41 @@ __PACKAGE__->method_maker_info
   {
     class => 'Rose::DB::Object::MakeMethods::Generic',
     type  => 'object_by_key',
+    interface => 'get_set',
+  },
+
+  get_set_now =>
+  {
+    class => 'Rose::DB::Object::MakeMethods::Generic',
+    type  => 'object_by_key',  
+    interface => 'get_set_now',
+  },
+
+  get_set_on_save =>
+  {
+    class => 'Rose::DB::Object::MakeMethods::Generic',
+    type  => 'object_by_key',  
+    interface => 'get_set_on_save',
+  },
+
+  delete_now =>
+  {
+    class => 'Rose::DB::Object::MakeMethods::Generic',
+    type  => 'object_by_key',  
+    interface => 'delete_now',
+  },
+
+  delete_on_save =>
+  {
+    class => 'Rose::DB::Object::MakeMethods::Generic',
+    type  => 'object_by_key',  
+    interface => 'delete_on_save',
   },
 );
+
+sub init_relationship_type { 'many to one' }
+
+sub foreign_key { $_[0] }
 
 sub type { 'foreign key' }
 
@@ -96,9 +135,13 @@ sub build_method_name_for_type
 {
   my($self, $type) = @_;
 
-  if($type eq 'get_set')
+  if($type eq 'get_set' || $type eq 'get_set_now' || $type eq 'get_set_on_save')
   {
     return $self->name;
+  }
+  elsif($type eq 'delete_now' || $type eq 'delete_on_save')
+  {
+    return 'delete_' . $self->name;
   }
 
   return undef;
@@ -225,6 +268,8 @@ This class will create methods for C<the thing referenced by> the foreign key co
 
 Both the local table and the foreign table must have L<Rose::DB::Object>-derived classes fronting them.
 
+Foreign keys can represent both "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>" and "L<many to one|Rose::DB::Object::Metadata::Relationship::ManyToOne>" relationships.  To choose, set the L<relationship_type|/relationship_type> attribute to either "one to one" or "many to one".  The default is "many to one".
+
 =head2 MAKING METHODS
 
 A L<Rose::DB::Object::Metadata::ForeignKey>-derived object is responsible for creating object methods that manipulate objects referenced by a foreign key.  Each foreign key object can make zero or more methods for each available foreign key method type.  A foreign key method type describes the purpose of a method.  The default list of foreign key method types contains only one type:
@@ -265,13 +310,30 @@ The default method map for L<Rose::DB::Object::Metadata::ForeignKey> is:
 
 =item C<get_set>
 
-L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, ...
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, 
+C<interface =E<gt> 'get_set'> ...
+
+=item C<get_set_now>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, C<interface =E<gt> 'get_set_now'> ...
+
+=item C<get_set_on_save>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, C<interface =E<gt> 'get_set_on_save'> ...
+
+=item C<delete_now>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, C<interface =E<gt> 'delete_now'> ...
+
+=item C<delete_on_save>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/object_by_key>, C<interface =E<gt> 'delete_on_save'> ...
 
 =back
 
 Each item in the map is a foreign key method type.  For each foreign key method type, the method maker class, the method maker method type, and the "interesting" method maker arguments are listed, in that order.
 
-The "..." in the method maker arguments is meant to indicate that arguments have been omitted.  Arguments that are common to all foreign key method types are routinely omitted from the method map for the sake of brevity.  If there are no "interesting" method maker arguments, then "..." may appear by itself, as shown above.
+The "..." in the method maker arguments is meant to indicate that arguments have been omitted.  Arguments that are common to all foreign key method types are routinely omitted from the method map for the sake of brevity.
 
 The purpose of documenting the method map is to answer the question, "What kind of method(s) will be created by this foreign key object for a given method type?"  Given the method map, it's possible to read the documentation for each method maker class to determine how methods of the specified type behave when passed the listed arguments.
 
@@ -283,7 +345,7 @@ Remember, the existence and behavior of the method map is really implementation 
 
 =item B<default_auto_method_types [TYPES]>
 
-Get or set the default list of L<auto_method_types|/auto_method_types>.  TYPES should be a list of foreign key method types.  Returns the list of default foreign key method types (in list context) or a reference to an array of the default foreign key method types (in scalar context).  The default list contains only the "get_set" foreign key method type.
+Get or set the default list of L<auto_method_types|/auto_method_types>.  TYPES should be a list of foreign key method types.  Returns the list of default foreign key method types (in list context) or a reference to an array of the default foreign key method types (in scalar context).  The default list contains the "get_set_on_save" and "delete_on_save" foreign key method types.
 
 =back
 
@@ -301,7 +363,13 @@ Get or set the list of foreign key method types that are automatically created w
 
 =item B<build_method_name_for_type TYPE>
 
-Return a method name for the foreign key method type TYPE.  The default implementation returns the foreign key's L<name|/name> for the foreign key method type "get_set", and undef otherwise.
+Return a method name for the foreign key method type TYPE.  The default implementation returns the following.
+
+For the method types "get_set", "get_set_now", and "get_set_on_save", the foreign key's L<name|/name> is returned.
+
+For the method types "delete_now" and "delete_on_save", the foreign key's L<name|/name> prefixed with "delete_" is returned.
+
+Otherwise, undef is returned.
 
 =item B<class [CLASS]>
 
@@ -341,9 +409,29 @@ A reference to an array of foreign key method types to be created.  If omitted, 
 
 If any of the methods could not be created for any reason, a fatal error will occur.
 
+=item B<methods MAP>
+
+Set the list of L<auto_method_types|/auto_method_types> and method names all at once.  MAP should be a reference to a hash whose keys are method types and whose values are either undef or method names.  If a value is undef, then the method name for that method type will be generated by calling B<build_method_name_for_type|/build_method_name_for_type>, as usual.  Otherwise, the specified method name will be used.
+
+=item B<method_name TYPE [, NAME]>
+
+Get or set the name of the relationship method of type TYPE.
+
+=item B<method_types [TYPES]>
+
+This method is an alias for the L<auto_method_types|/auto_method_types> method.
+
 =item B<name [NAME]>
 
 Get or set the name of the foreign key.  This name must be unique among all other foreign keys for a given L<Rose::DB::Object>-derived class.
+
+=item B<rel_type [TYPE]>
+
+This method is an alias for the L<relationship_type|/relationship_type> method described below.
+
+=item B<relationship_type [TYPE]>
+
+Get or set the relationship type represented by this foreign key.  Valid values for TYPE are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>" and "L<many to one|Rose::DB::Object::Metadata::Relationship::ManyToOne>".
 
 =item B<share_db [BOOL]>
 

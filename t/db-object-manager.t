@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1016;
+use Test::More tests => 1025;
 
 BEGIN 
 {
@@ -19,7 +19,7 @@ our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 {
-  skip("Postgres tests", 335)  unless($HAVE_PG);
+  skip("Postgres tests", 338)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -138,6 +138,45 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
       sort_by => 'name DESC');
 
   is($count, 2, "get_objects_count() 1 - $db_type");
+
+  # Set up sub-object for this one test
+  my $b1 = MyPgBB->new(id   => 1, name => 'one');
+  $b1->save;
+  
+  $objs->[0]->b1(1);
+  $objs->[0]->save;
+
+  $count =
+    MyPgObjectManager->object_count(
+      share_db     => 1,
+      query_is_sql => 1,
+      require_objects => [ 'bb1' ],
+      query        =>
+      [
+        't2.name'  => { like => 'o%' },
+        't1.id'    => { ge => 2 },
+        't1.name'  => { like => '%e%' },
+        flag       => 't',
+        flag2      => 'f',
+        status     => 'active',
+        bits       => '00001',
+        start      => '2001-01-02',
+        save_col   => [ 1, 5 ],
+        nums       => '{1,2,3}',
+        last_modified => { le => 'now' },
+        date_created  => '2004-03-30 12:34:56',
+        status        => { like => 'AC%', field => 'UPPER(status)' },
+      ],
+      clauses => [ "LOWER(status) LIKE 'ac%'" ],
+      limit   => 5,
+      sort_by => 'name DESC');
+
+  is($count, 1, "get_objects_count() require 1 - $db_type");
+
+  # Clear sub-object
+  $objs->[0]->b1(undef);
+  $objs->[0]->save;
+  $b1->delete;
 
   my $iterator = 
     MyPgObjectManager->get_objectz_iterator(
@@ -274,34 +313,34 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
   # Start "one to many" tests
 
-  $fo = MyPgNick->new(id   => 1,
-                         o_id => 5,
-                         nick => 'none');
-  ok($fo->save, "nick object save() 1 - $db_type");
+  ok($fo = MyPgNick->new(id   => 1,
+                      o_id => 5,
+                      nick => 'none')->save,
+      "nick object save() 1 - $db_type");
 
   $fo = MyPgNick->new(id   => 2,
-                         o_id => 2,
-                         nick => 'ntwo');
+                      o_id => 2,
+                      nick => 'ntwo');
   ok($fo->save, "nick object save() 2 - $db_type");
 
   $fo = MyPgNick->new(id   => 3,
-                         o_id => 5,
-                         nick => 'nthree');
+                      o_id => 5,
+                      nick => 'nthree');
   ok($fo->save, "nick object save() 3 - $db_type");
 
   $fo = MyPgNick->new(id   => 4,
-                         o_id => 2,
-                         nick => 'nfour');
+                      o_id => 2,
+                      nick => 'nfour');
   ok($fo->save, "nick object save() 4 - $db_type");
 
   $fo = MyPgNick->new(id   => 5,
-                         o_id => 5,
-                         nick => 'nfive');
+                      o_id => 5,
+                      nick => 'nfive');
   ok($fo->save, "nick object save() 5 - $db_type");
 
   $fo = MyPgNick->new(id   => 6,
-                         o_id => 5,
-                         nick => 'nsix');
+                      o_id => 5,
+                      nick => 'nsix');
   ok($fo->save, "nick object save() 6 - $db_type");
 
   #local $Rose::DB::Object::Manager::Debug = 1;
@@ -842,8 +881,6 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   ok(!defined $objs->[7]->{'bb1'}, "get_objects() with many 37 - $db_type");
   ok(!defined $objs->[7]->{'nicks'}, "get_objects() with many 38 - $db_type");
 
-  local $Rose::DB::Object::Manager::Debug = 0;
-
   $fo = MyPgNick->new(id => 7);
   ok($fo->delete, "with many clean-up 1 - $db_type");
 
@@ -1316,6 +1353,34 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   is($o, 0, "get_objects_iterator() with many to many require 20 - $db_type");
   is($iterator->total, 2, "get_objects_iterator() with many to many require 21 - $db_type");
 
+  $iterator = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class    => 'MyPgObject',
+      share_db        => 1,
+      with_objects    => [ 'nicks', 'colors', 'bb2' ],
+      multi_many_ok   => 1,
+      require_objects => [ 'bb1', 'other_obj' ],
+      query           => [ 't1.id' => [ 1, 2, 5 ] ],
+      sort_by         => 't1.name',
+      limit           => 1,
+      offset          => 5);
+
+  ok(!$iterator->next, "get_objects_iterator() with many to many require 22 - $db_type");
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class    => 'MyPgObject',
+      share_db        => 1,
+      with_objects    => [ 'nicks', 'colors', 'bb2' ],
+      multi_many_ok   => 1,
+      require_objects => [ 'bb1', 'other_obj' ],
+      query           => [ 't1.id' => [ 1, 2, 5 ] ],
+      sort_by         => 't1.name',
+      limit           => 1,
+      offset          => 5);
+
+  ok(@$objs == 0, "get_objects_iterator() with many to many require 23 - $db_type");
+  
   # End "many to many" tests
 }
 
@@ -1325,7 +1390,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 337)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 340)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -1437,6 +1502,35 @@ SKIP: foreach my $db_type ('mysql')
       sort_by => 'name DESC');
 
   is($count, 2, "get_objects_count() 1 - $db_type");
+
+  # Set up sub-object for this one test
+  my $b1 = MyMySQLBB->new(id => 1, name => 'one');
+  $b1->save;
+  
+  $objs->[0]->b1(1);
+  $objs->[0]->save;
+
+  $count =
+    MyMySQLObjectManager->get_objectz_count(
+      share_db     => 1,
+      query_is_sql => 1,
+      require_objects => [ 'bb1' ],
+      query        =>
+      [
+        't2.name'  => { like => 'o%' },
+        't1.id'    => { ge => 2 },
+        't1.name'  => { like => '%e%' },
+      ],
+      clauses => [ "LOWER(status) LIKE 'ac%'" ],
+      limit   => 5,
+      sort_by => 'name DESC');
+
+  is($count, 1, "get_objects_count() require 1 - $db_type");
+
+  # Clear sub-object
+  $objs->[0]->b1(undef);
+  $objs->[0]->save;
+  $b1->delete;
 
   my $iterator = 
     MyMySQLObjectManager->get_objectz_iterator(
@@ -1552,10 +1646,10 @@ SKIP: foreach my $db_type ('mysql')
 
   # Start "one to many" tests
 
-  $fo = MyMySQLNick->new(id   => 1,
-                         o_id => 5,
-                         nick => 'none');
-  ok($fo->save, "nick object save() 1 - $db_type");
+  ok($fo = MyMySQLNick->new(id   => 1,
+                            o_id => 5,
+                            nick => 'none')->save,
+     "nick object save() 1 - $db_type");
 
   $fo = MyMySQLNick->new(id   => 2,
                          o_id => 2,
@@ -2122,7 +2216,7 @@ SKIP: foreach my $db_type ('mysql')
   ok(!defined $objs->[7]->{'bb1'}, "get_objects() with many 37 - $db_type");
   ok(!defined $objs->[7]->{'nicks'}, "get_objects() with many 38 - $db_type");
 
-  local $Rose::DB::Object::Manager::Debug = 0;
+  #local $Rose::DB::Object::Manager::Debug = 0;
 
   $fo = MyMySQLNick->new(id => 7);
   ok($fo->delete, "with many clean-up 1 - $db_type");
@@ -2341,8 +2435,10 @@ SKIP: foreach my $db_type ('mysql')
   my @colors = $o2->colors;
   ok(@colors == 2 && $colors[0]->name eq 'Red' &&
      $colors[1]->name eq 'Blue', "Fetch many to many 1 - $db_type");
-#local $Rose::DB::Object::Manager::Debug = 1;
-#$DB::single = 1;
+
+  #local $Rose::DB::Object::Manager::Debug = 1;
+  #$DB::single = 1;
+
   $objs = 
     Rose::DB::Object::Manager->get_objects(
       object_class  => 'MyMySQLObject',
@@ -2611,6 +2707,34 @@ SKIP: foreach my $db_type ('mysql')
   is($o, 0, "get_objects_iterator() with many to many require 20 - $db_type");
   is($iterator->total, 2, "get_objects_iterator() with many to many require 21 - $db_type");
 
+  $iterator = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class    => 'MyMySQLObject',
+      share_db        => 1,
+      with_objects    => [ 'nicks', 'colors', 'bb2' ],
+      multi_many_ok   => 1,
+      require_objects => [ 'bb1', 'other_obj' ],
+      query           => [ 't1.id' => [ 1, 2, 5 ] ],
+      sort_by         => 't1.name',
+      limit           => 1,
+      offset          => 5);
+
+  ok(!$iterator->next, "get_objects_iterator() with many to many require 22 - $db_type");
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class    => 'MyMySQLObject',
+      share_db        => 1,
+      with_objects    => [ 'nicks', 'colors', 'bb2' ],
+      multi_many_ok   => 1,
+      require_objects => [ 'bb1', 'other_obj' ],
+      query           => [ 't1.id' => [ 1, 2, 5 ] ],
+      sort_by         => 't1.name',
+      limit           => 1,
+      offset          => 5);
+
+  ok(@$objs == 0, "get_objects_iterator() with many to many require 23 - $db_type");
+
   # End "many to many" tests
 }
 
@@ -2620,7 +2744,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 342)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 345)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -2738,6 +2862,35 @@ SKIP: foreach my $db_type (qw(informix))
       sort_by => 'name DESC');
 
   is($count, 2, "get_objects_count() 1 - $db_type");
+
+  # Set up sub-object for this one test
+  my $b1 = MyInformixBB->new(id   => 1, name => 'one');
+  $b1->save;
+
+  $objs->[0]->b1(1);
+  $objs->[0]->save;
+
+  $count =
+    MyInformixObjectManager->get_objectz_count(
+      share_db     => 1,
+      query_is_sql => 1,
+      require_objects => [ 'bb1' ],
+      query        =>
+      [
+        't2.name'  => { like => 'o%' },
+        't1.id'    => { ge => 2 },
+        't1.name'  => { like => '%e%' },
+      ],
+      clauses => [ "LOWER(status) LIKE 'ac%'" ],
+      limit   => 5,
+      sort_by => 'name DESC');
+
+  is($count, 1, "get_objects_count() require 1 - $db_type");
+
+  # Clear sub-object
+  $objs->[0]->b1(undef);
+  $objs->[0]->save;
+  $b1->delete;
 
   my $save_o = $o;
 
@@ -2886,10 +3039,10 @@ SKIP: foreach my $db_type (qw(informix))
 
   # Start "one to many" tests
 
-  $fo = MyInformixNick->new(id   => 1,
-                         o_id => 5,
-                         nick => 'none');
-  ok($fo->save, "nick object save() 1 - $db_type");
+  ok($fo = MyInformixNick->new(id   => 1,
+                               o_id => 5,
+                               nick => 'none')->save,
+     "nick object save() 1 - $db_type");
 
   $fo = MyInformixNick->new(id   => 2,
                          o_id => 2,
@@ -3456,7 +3609,7 @@ SKIP: foreach my $db_type (qw(informix))
   ok(!defined $objs->[7]->{'bb1'}, "get_objects() with many 37 - $db_type");
   ok(!defined $objs->[7]->{'nicks'}, "get_objects() with many 38 - $db_type");
 
-  local $Rose::DB::Object::Manager::Debug = 0;
+  #local $Rose::DB::Object::Manager::Debug = 0;
 
   $fo = MyInformixNick->new(id => 7);
   ok($fo->delete, "with many clean-up 1 - $db_type");
@@ -3976,6 +4129,34 @@ SKIP: foreach my $db_type (qw(informix))
   $o = $iterator->next;
   is($o, 0, "get_objects_iterator() with many to many require 20 - $db_type");
   is($iterator->total, 2, "get_objects_iterator() with many to many require 21 - $db_type");
+
+  $iterator = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class    => 'MyInformixObject',
+      share_db        => 1,
+      with_objects    => [ 'nicks', 'colors', 'bb2' ],
+      multi_many_ok   => 1,
+      require_objects => [ 'bb1', 'other_obj' ],
+      query           => [ 't1.id' => [ 1, 2, 5 ] ],
+      sort_by         => 't1.name',
+      limit           => 1,
+      offset          => 5);
+
+  ok(!$iterator->next, "get_objects_iterator() with many to many require 22 - $db_type");
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class    => 'MyInformixObject',
+      share_db        => 1,
+      with_objects    => [ 'nicks', 'colors', 'bb2' ],
+      multi_many_ok   => 1,
+      require_objects => [ 'bb1', 'other_obj' ],
+      query           => [ 't1.id' => [ 1, 2, 5 ] ],
+      sort_by         => 't1.name',
+      limit           => 1,
+      offset          => 5);
+
+  ok(@$objs == 0, "get_objects_iterator() with many to many require 23 - $db_type");
 
   # End "many to many" tests
 }
@@ -4627,19 +4808,22 @@ EOF
           fk1 => 'k1',
           fk2 => 'k2',
           fk3 => 'k3',
-        }
+        },
+        method_types => [ 'get_set_now' ], # should be a no-op
       },
 
       bb1 =>
       {
         class => 'MyMySQLBB',
         key_columns => { b1 => 'id' },
+        method_types => [ 'get_set_now' ], # should be a no-op
       },
 
       bb2 =>
       {
         class => 'MyMySQLBB',
         key_columns => { b2 => 'id' },
+        method_types => [ 'get_set_now' ], # should be a no-op
       },
     );
 
