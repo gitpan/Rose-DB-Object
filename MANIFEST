@@ -2,6 +2,8 @@ Changes
 lib/Rose/DB/Object.pm
 lib/Rose/DB/Object/Cached.pm
 lib/Rose/DB/Object/Constants.pm
+lib/Rose/DB/Object/ConventionManager.pm
+lib/Rose/DB/Object/ConventionManager/Null.pm
 lib/Rose/DB/Object/Iterator.pm
 lib/Rose/DB/Object/MakeMethods/Date.pm
 lib/Rose/DB/Object/MakeMethods/Generic.pm
@@ -102,10 +104,11 @@ t/benchmarks/lib/MyTest/RDBO/Simple/Product.pm
 t/benchmarks/lib/MyTest/RDBO/Simple/Product/Manager.pm
 t/db-object-auto.t
 t/db-object-cached.t
+t/db-object-convention.t
 t/db-object-foreign-key-auto.t
 t/db-object-foreign-key.t
-t/db-object-manager.t
 t/db-object-manager-bulk-ops.t
+t/db-object-manager.t
 t/db-object-mapper.t
 t/db-object-metadata.t
 t/db-object-relationship.t
@@ -115,5 +118,20 @@ t/db-object.t
 t/makemethods-db.t
 t/makemethods.t
 t/pod.t
+t/sandbox/convention/convention-test-auto.pl
+t/sandbox/convention/convention-test.pl
+t/sandbox/convention/lib/My/Auto/Color.pm
+t/sandbox/convention/lib/My/Auto/Price.pm
+t/sandbox/convention/lib/My/Auto/Product.pm
+t/sandbox/convention/lib/My/Auto/ProductColors.pm
+t/sandbox/convention/lib/My/Auto/Vendor.pm
+t/sandbox/convention/lib/My/Color.pm
+t/sandbox/convention/lib/My/DB.pm
+t/sandbox/convention/lib/My/Object.pm
+t/sandbox/convention/lib/My/Price.pm
+t/sandbox/convention/lib/My/Product.pm
+t/sandbox/convention/lib/My/ProductColors.pm
+t/sandbox/convention/lib/My/Vendor.pm
+t/spot-check-01.t
 t/test-lib.pl
 META.yml                                 Module meta-data (added by MakeMaker)

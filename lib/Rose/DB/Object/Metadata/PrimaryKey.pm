@@ -5,7 +5,7 @@ use strict;
 use Rose::DB::Object::Metadata::UniqueKey;
 our @ISA = qw(Rose::DB::Object::Metadata::UniqueKey);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Rose::Object::MakeMethods::Generic
 (
@@ -17,6 +17,12 @@ use Rose::Object::MakeMethods::Generic
 
 sub init_name { 'primary_key' }
 
+sub auto_init_columns
+{
+  my($self) = shift;
+  my $meta = $self->parent || return [];
+  return $meta->convention_manager->auto_primary_key_column_names || [];
+}
 1;
 
 __END__

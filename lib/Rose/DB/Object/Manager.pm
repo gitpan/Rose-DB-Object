@@ -12,7 +12,7 @@ use Rose::DB::Object::Constants qw(STATE_LOADING STATE_IN_DB);
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.07';
+our $VERSION = '0.072';
 
 our $Debug = 0;
 
@@ -269,7 +269,9 @@ sub get_objects
   my $require_objects = delete $args{'require_objects'};
   my $with_objects    = !$count_only ? delete $args{'with_objects'} : undef;
   my $skip_first      = delete $args{'skip_first'} || 0;
-
+  my $distinct        = delete $args{'distinct'};
+  my $fetch           = delete $args{'fetch_only'};
+  my(%fetch, %rel_name);
 
   my $db  = delete $args{'db'} || $object_class->init_db;
   my $dbh = delete $args{'dbh'};
@@ -360,6 +362,9 @@ sub get_objects
   my %methods = ($tables[0] => scalar $meta->column_mutator_method_names);
   my @classes = ($object_class);
   my %meta    = ($object_class => $meta);
+
+  my @table_names = ($meta->table);
+
   my(@joins, @subobject_methods, $clauses);
 
   my $handle_dups = 0;
@@ -368,6 +373,66 @@ sub get_objects
   my $manual_limit = 0;
 
   my $num_subtables = $with_objects ? @$with_objects : 0;
+
+  if($distinct || $fetch)
+  {
+    if($fetch && ref $distinct)
+    {
+      Carp::croak "The 'distinct' and 'fetch' parameters cannot be used ",
+                  "together if they both contain lists of tables";
+    }
+
+    $args{'distinct'} = 1  if($distinct);
+
+    %fetch = (t1 => 1, $tables[0] => 1, $meta->table => 1);
+
+    if(ref $fetch || ref $distinct)
+    {
+      foreach my $arg (ref $distinct ? @$distinct : @$fetch)
+      {
+        $fetch{$arg} = 1;
+      }
+    }
+  }
+
+  # Pre-process sort_by args
+  if(my $sort_by = $args{'sort_by'})
+  {
+    # Alter sort_by SQL, replacing table and relationship names with aliases.
+    # This is to prevent databases like Postgres from "adding missing FROM
+    # clause"s.  See: http://sql-info.de/postgresql/postgres-gotchas.html#1_5
+    if($num_subtables > 0)
+    {
+      my $i = 0;
+      $sort_by = [ $sort_by ]  unless(ref $sort_by);
+  
+      foreach my $table (@tables)
+      {
+        $i++; # Table aliases are 1-based
+        
+        foreach my $sort (@$sort_by)
+        {
+          unless($sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t1.$sort/ ||
+                 $sort =~ s/\b$table\./t$i./g)
+          {
+            if(my $rel_name = $rel_name{"t$i"})
+            {
+              $sort =~ s/\b$rel_name\./t$i./g;
+            }
+          }
+        }
+      }
+    }
+    else # otherwise, trim t1. prefixes
+    {
+      foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
+      {
+        $sort =~ s/\bt1\.//g;
+      }
+    }
+
+    $args{'sort_by'} = $sort_by;
+  }
 
   if($with_objects)
   {
@@ -409,14 +474,15 @@ sub get_objects
           $manual_limit = delete $args{'limit'};
         }
 
-        if($required_object{$name} && $num_required_objects > 1 && $num_subtables > 1)
-        {
-          Carp::croak 
-            qq(The "require_objects" parameter cannot be used with ),
-            qq(a "one to many" relationship ("$name" in this case) ),
-            qq(unless that relationship is the only one listed and ),
-            qq(the "with_objects" parameter is not used);
-        }
+        # This restriction seems unnecessary now
+        #if($required_object{$name} && $num_required_objects > 1 && $num_subtables > 1)
+        #{
+        #  Carp::croak 
+        #    qq(The "require_objects" parameter cannot be used with ),
+        #    qq(a "... to many" relationship ("$name" in this case) ),
+        #    qq(unless that relationship is the only one listed and ),
+        #    qq(the "with_objects" parameter is not used);
+        #}
       }
 
       $i++;
@@ -460,6 +526,7 @@ sub get_objects
         $meta{$ft_class} = $ft_meta;
 
         push(@tables, $ft_meta->fq_table_sql);
+        push(@table_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
         push(@classes, $ft_class);
 
         # Iterator will be the tN value: the first sub-table is t2, and so on
@@ -500,7 +567,7 @@ sub get_objects
             $joins[$i]{'type'} = 'LEFT OUTER JOIN';
 
             # MySQL is stupid about using its indexes when "JOIN ... ON (...)"
-            # conditions are the only ones given, so teh code below adds some
+            # conditions are the only ones given, so the code below adds some
             # redundant WHERE conditions.  They should not change the meaning
             # of the query, but should nudge MySQL into using its indexes. 
             # The clauses: "((<ON conditions>) OR (<any columns are null>))"
@@ -540,15 +607,24 @@ sub get_objects
         # Add sub-object sort conditions
         if($rel->can('manager_args') && (my $mgr_args = $rel->manager_args))
         {
-          if($mgr_args->{'sort_by'})
+          # Don't bother sorting by columns if we're not even selecting them
+          if($mgr_args->{'sort_by'} && (!%fetch || 
+             ($fetch{$tables[-1]} && !$fetch{$table_names[-1]})))
           {
+            my $sort_by = $mgr_args->{'sort_by'};
+
+            foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
+            {
+              $sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t$i.$sort/;
+            }
+
             if($args{'sort_by'})
             {
-              $args{'sort_by'} .= ", $mgr_args->{'sort_by'}";
+              push(@{$args{'sort_by'}}, $sort_by);
             }
             else
             {
-              $args{'sort_by'} = $mgr_args->{'sort_by'};
+              $args{'sort_by'} = [ $sort_by ];
             }
           }
         }
@@ -567,6 +643,7 @@ sub get_objects
         $meta{$map_class} = $map_meta;
 
         push(@tables, $map_meta->fq_table_sql);
+        push(@table_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
         push(@classes, $map_class);
 
         $columns{$tables[-1]} = []; #$map_meta->columns;#_names;
@@ -628,6 +705,7 @@ sub get_objects
           or Carp::confess "$ft_class - Missing key columns for '$map_to'";
 
         push(@tables, $ft_meta->fq_table_sql);
+        push(@table_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
         push(@classes, $ft_class);
 
         $columns{$tables[-1]} = $ft_meta->columns;#_names;
@@ -676,15 +754,25 @@ sub get_objects
         # Add sub-object sort conditions
         if($rel->can('manager_args') && (my $mgr_args = $rel->manager_args))
         {
-          if($mgr_args->{'sort_by'})
+          # Don't bother sorting by columns if we're not even selecting them
+          if($mgr_args->{'sort_by'} && (!%fetch || 
+             ($fetch{$tables[-1]} && !$fetch{$table_names[-1]})))
           {
+            my $sort_by = $mgr_args->{'sort_by'};
+
+            # translate un-prefixed simple columns
+            foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
+            {
+              $sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t$i.$sort/;
+            }
+
             if($args{'sort_by'})
             {
-              $args{'sort_by'} .= ", $mgr_args->{'sort_by'}";
+              push(@{$args{'sort_by'}}, $sort_by);
             }
             else
             {
-              $args{'sort_by'} = $mgr_args->{'sort_by'};
+              $args{'sort_by'} = [ $sort_by ];
             }
           }
         }
@@ -697,6 +785,24 @@ sub get_objects
 
     $args{'clauses'} = $clauses; # restore clauses arg
   }
+
+  # Flesh out list of fetch tables and cull columns for those tables
+  if(%fetch)
+  {
+    foreach my $i (1 .. $#tables) # skip first table, which is always selected
+    {
+      my $tn = 't' . ($i + 1);
+      my $rel_name = $rel_name{$tn} || '';
+
+      unless($fetch{$tn} || $fetch{$tables[$i]} || $fetch{$table_names[$i]} || $fetch{$rel_name})
+      {
+        $columns{$tables[$i]} = [];
+        $methods{$tables[$i]} = [];
+      }
+    }
+  }
+
+  $args{'table_map'} = \%rel_name;
 
   if($count_only)
   {
@@ -776,20 +882,42 @@ sub get_objects
     return $count;
   }
 
-  # Alter sort_by SQL, replacing table names with aliases.  This is to
-  # prevent databases like Postgres from "adding missing FROM clause"s.
-  # See: http://sql-info.de/postgresql/postgres-gotchas.html#1_5
-  if((my $sort = $args{'sort_by'}) && $num_subtables > 0)
+  # Post-process sort_by args
+  if(my $sort_by = $args{'sort_by'})
   {
-    my $i = 0;
-
-    foreach my $table (@tables)
+    # Alter sort_by SQL, replacing table and relationship names with aliases.
+    # This is to prevent databases like Postgres from "adding missing FROM
+    # clause"s.  See: http://sql-info.de/postgresql/postgres-gotchas.html#1_5
+    if($num_subtables > 0)
     {
-      $i++; # Table aliases are 1-based            
-      $sort =~ s/\b$table\./t$i./g;
+      my $i = 0;
+  
+      foreach my $table (@tables)
+      {
+        $i++; # Table aliases are 1-based
+        
+        foreach my $sort (@$sort_by)
+        {
+          unless($sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t1.$sort/ ||
+                 $sort =~ s/\b$table\./t$i./g)
+          {
+            if(my $rel_name = $rel_name{"t$i"})
+            {
+              $sort =~ s/\b$rel_name\./t$i./g;
+            }
+          }
+        }
+      }
+    }
+    else # otherwise, trim t1. prefixes
+    {
+      foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
+      {
+        $sort =~ s/\bt1\.//g;
+      }
     }
 
-    $args{'sort_by'} = $sort;
+    $args{'sort_by'} = $sort_by;
   }
 
   if(defined $args{'offset'})
@@ -1866,8 +1994,11 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
         # "products" table is t1, "categories" is t2, and "code_names"
         # is t3.  You can read more about automatic table aliasing in
         # the documentation for the get_objects() method below.
+        #
+        # "category.name" and "categories.name" would work too, since
+        # table and relationship names are also valid prefixes.
 
-        't1.name'   => { like => [ '%foo%', '%bar%' ] },
+        't2.name'   => { like => [ '%foo%', '%bar%' ] },
       ],
       sort_by => 'category_id, start_date DESC',
       limit   => 100,
@@ -2066,6 +2197,22 @@ Valid parameters to C<get_objects()> are:
 
 A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> object method of the C<object_class>.
 
+=item C<distinct [BOOL|ARRAYREF]>
+
+If set to any kind of true value, then the "DISTINCT" SQL keyword will be added to the "SELECT" statement.  Specific values trigger the behaviors described below.
+
+If set to a simple scalar value that is true, then only the columns in the primary table ("t1") are fetched from the database.
+
+If set to a reference to an array of table names, "tN" table aliases, or relationship or foreign key names, then only the columns from the corresponding tables will be fetched.  In the case of relationships that involve more than one table, only the "most distant" table is considered.  (e.g., The map table is ignored in a "many to many" relationship.)  Columns from the primary table ("t1") are always selected, regardless of whether or not it appears in the list.
+
+This parameter conflicts with the C<fetch_only> parameter in the case where both provide a list of table names or aliases.  In this case, if the value of the C<distinct> parameter is also reference to an array table names or aliases, then a fatal error will occur.
+
+=item C<fetch_only [ARRAYREF]>
+
+ARRAYREF should be a reference to an array of table names or "tN" table aliases. Only the columns from the corresponding tables will be fetched.  In the case of relationships that involve more than one table, only the "most distant" table is considered.  (e.g., The map table is ignored in a "many to many" relationship.)  Columns from the primary table ("t1") are always selected, regardless of whether or not it appears in the list.
+
+This parameter conflicts with the C<distinct> parameter in the case where both provide a list of table names or aliases.  In this case, then a fatal error will occur.
+
 =item C<limit NUM>
 
 Return a maximum of NUM objects.
@@ -2092,8 +2239,6 @@ This parameter can only be used along with the C<limit> parameter, otherwise a f
 
 Only fetch rows from the primary table that have all of the associated sub-objects listed in OBJECTS, where OBJECTS is a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names defined for C<object_class>.  The supported relationship types are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>," "L<one to many|Rose::DB::Object::Metadata::Relationship::OneToMany>," and  "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>".
 
-A "one to many" or "many to many" relationship may be included in OBJECTS I<only> if it is the sole name listed in OBJECTs I<and> the C<with_objects> parameter is omitted entirely.  A fatal error will occur if these conditions are not met.
-
 For each foreign key or relationship listed in OBJECTS, another table will be added to the query via an implicit inner join.  The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.
 
 B<Note:> the C<require_objects> list currently cannot be used to simultaneously fetch two objects that both front the same database table, I<but are of different classes>.  One workaround is to make one class use a synonym or alias for one of the tables.  Another option is to make one table a trivial view of the other.  The objective is to get the table names to be different for each different class (even if it's just a matter of letter case, if your database is not case-sensitive when it comes to table names).
@@ -2101,6 +2246,12 @@ B<Note:> the C<require_objects> list currently cannot be used to simultaneously 
 =item C<share_db BOOL>
 
 If true, C<db> will be passed to each L<Rose::DB::Object>-derived object when it is constructed.  Defaults to true.
+
+=item B<sort_by CLAUSE | ARRAYREF>
+
+A fully formed SQL "ORDER BY ..." clause, sans the words "ORDER BY", or a reference to an array of strings to be joined with a comma and appended to the "ORDER BY" clause.
+
+Within each string, any instance of "NAME." will be replaced with the appropriate "tN." table alias, where NAME is a table, foreign key, or relationship name.  All unprefixed simple column names are assumed to belong to the primary table ("t1").
 
 =item C<with_objects OBJECTS>
 
@@ -2119,6 +2270,8 @@ B<Note:> the C<with_objects> list currently cannot be used to simultaneously fet
 The query parameters, passed as a reference to an array of name/value pairs.  These PARAMS are used to formulate the "where" clause of the SQL query that, in turn, is used to fetch the objects from the database.  Arbitrarily nested boolean logic is supported.
 
 For the complete list of valid parameter names and values, see the documentation for the C<query> parameter of the L<build_select|Rose::DB::Object::QueryBuilder/build_select> function in the L<Rose::DB::Object::QueryBuilder> module.
+
+This class also supports a useful extension to the query syntax supported by L<Rose::DB::Object::QueryBuilder>.  In addition to table names and aliases, column names may be prefixed with foreign key or relationship names as well.
 
 =back
 

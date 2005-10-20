@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util qw(row_id);
 
-our $VERSION = '0.076';
+our $VERSION = '0.077';
 
 our $Debug = 0;
 
@@ -1029,8 +1029,8 @@ sub AUTOLOAD
 Methods for the following relationships and foreign keys were deferred and
 then never actually created.
 
-TYPE           NAME
-----           ----
+TYPE            NAME
+----            ----
 EOF
 
       my $class = ref $self;
@@ -1046,7 +1046,7 @@ EOF
         $tmp_msg .= sprintf("%-15s %s\n", $type, $thing->name);
       }
 
-      $msg = "\n\n$tmp_msg"  if($tmp_msg);
+      $msg = "\n\n$tmp_msg\n"  if($tmp_msg);
     }
   };
 
@@ -1601,7 +1601,7 @@ The L<Rose development policy|Rose/"DEVELOPMENT POLICY"> applies to this, and al
 
 =head1 SUPPORT
 
-Any L<Rose::DB::Objects> questions or problems can be posted to the L<Rose::DB::Object> mailing list.  To subscribe to the list or view the archives, go here:
+Any L<Rose::DB::Object> questions or problems can be posted to the L<Rose::DB::Object> mailing list.  To subscribe to the list or view the archives, go here:
 
 L<http://lists.sourceforge.net/lists/listinfo/rose-db-object>
 

@@ -5,7 +5,7 @@ use strict;
 use Rose::DB::Object::Metadata::Object;
 our @ISA = qw(Rose::DB::Object::Metadata::Object);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use overload
 (
@@ -40,14 +40,31 @@ sub columns
     return wantarray ? @{$self->{'columns'} ||= []} :  ($self->{'columns'} ||= []);
   }
 
+  unless(@{$self->{'columns'} ||= []})
+  {
+    $self->{'columns'} = $self->auto_init_columns;
+  }
+
   # Expand into columns on return
   return wantarray ?  map { $meta->column($_) || $_ } @{$self->{'columns'} ||= []} : 
                     [ map { $meta->column($_) || $_ } @{$self->{'columns'} ||= []} ];
 }
 
+sub auto_init_columns { [] }
+
 sub column_names
 {
-  return wantarray ? @{shift->{'columns'} ||= []} : shift->{'columns'};
+  my($self) = shift;
+  
+  if(@{$self->{'columns'} ||= []})
+  {
+    return wantarray ? @{$self->{'columns'}} : $self->{'columns'};
+  }
+
+  # This call with auto-init the columns if necessary
+  my $columns = $self->columns; 
+
+  return wantarray ? @$columns : $columns;
 }
 
 sub add_columns

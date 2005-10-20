@@ -1,10 +1,25 @@
+0.077 (10.20.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added convention manager.
+    * Added "distinct" and "fetch_only" manager parameters.
+    * Added support for foreign key and relationship names as
+      column prefixes in manager query parameters and sort_by
+      arguments.
+    * Changed manager and query builder to default unprefixed
+      ambiguous columns to belong to the primary table ("t1").
+    * Fixed a bug that caused make_methods() to fail for "... to one"
+      relationships that have no corresponding foreign key.
+    * Fixed a bug in QueryBuilder that prevented the ability to check
+      for null columns.
+    * Added the ability to query columns that are not SELECTed.
+
 0.076 (10.05.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Fixed a bug that caused incorrect counts in get_objects_count()
       when using the require_object parameter with "... to many" 
       relationships.
     * Added bulk update and delete methods to Manager.
-    * Added cascaded delete, plus a plea inthe documentation for users
+    * Added cascaded delete, plus a plea in the documentation for users
       to do this in the database instead.
     * Added "many to one" relationship and made it the new default
       relationship type for foreign keys.

@@ -9,13 +9,15 @@ our @ISA = qw(Rose::Object);
 
 use Rose::DB::Object::Constants qw(PRIVATE_PREFIX);
 
+use Rose::DB::Object::ConventionManager;
+use Rose::DB::Object::ConventionManager::Null;
 use Rose::DB::Object::Metadata::PrimaryKey;
 use Rose::DB::Object::Metadata::UniqueKey;
 use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.062';
+our $VERSION = '0.07';
 
 our $Debug = 0;
 
@@ -38,6 +40,11 @@ use Rose::Object::MakeMethods::Generic
     allow_inline_column_values => { default => 0 },
     is_initialized => { default => 0 },
   ],
+  
+  array =>
+  [
+    'columns_ordered',
+  ]
 );
 
 use Rose::Class::MakeMethods::Generic
@@ -257,6 +264,42 @@ sub init_with_db
   return;
 }
 
+sub init_convention_manager { Rose::DB::Object::ConventionManager->new }
+
+sub convention_manager
+{
+  my($self) = shift;
+  
+  if(@_)
+  {
+    my $mgr = shift;
+
+    # Setting to undef means use the null convention manager    
+    if(!defined $mgr)
+    {
+      return $self->{'convention_manager'} = 
+        Rose::DB::Object::ConventionManager::Null->new(parent => $self);
+    }
+
+    unless(UNIVERSAL::isa($mgr, 'Rose::DB::Object::ConventionManager'))
+    {
+      Carp::croak "$mgr is not a Rose::DB::Object::ConventionManager-derived object";
+    }
+    
+    $mgr->parent($self);
+    return $self->{'convention_manager'} = $mgr;
+  }
+  
+  if(defined $self->{'convention_manager'})
+  {
+    return $self->{'convention_manager'};
+  }
+
+  my $mgr = $self->init_convention_manager;
+  $mgr->parent($self);
+  return $self->{'convention_manager'} = $mgr;
+}
+
 # Code borrowed from Cache::Cache
 my %Expiration_Units =
 (
@@ -373,7 +416,11 @@ sub prepare_options
 
 sub table
 {
-  return $_[0]->{'table'}  unless(@_ > 1);
+  unless(@_ > 1)
+  {
+    return $_[0]->{'table'} ||= $_[0]->convention_manager->auto_table_name;
+  }
+
   $_[0]->_clear_table_generated_values;
   return $_[0]->{'table'} = $_[1];
 }
@@ -480,6 +527,19 @@ sub delete_column
 {
   my($self, $name) = @_;
   delete $self->{'columns'}{$name};
+
+  # Remove from ordered list too  
+  my $columns = $self->columns_ordered || [];
+
+  for(my $i = 0; $i < @$columns; $i++)
+  {
+    if($columns->[$i]->name eq $name)
+    {
+      splice(@$columns, $i, 1);
+      last;
+    }
+  }
+
   return;
 }
 
@@ -487,8 +547,11 @@ sub delete_columns
 {
   my($self, $name) = @_;
   $self->{'columns'} = {};
+  $self->{'columns_ordered'} = [];
   return;
 }
+
+sub first_column { my $c = shift->columns_ordered || [];  return $c->[0] }
 
 sub sync_keys_to_columns
 {
@@ -562,6 +625,8 @@ sub add_columns
 
   $self->_clear_column_generated_values;
 
+  my @columns;
+
   ARG: while(@_)
   {
     my $name = shift;
@@ -575,6 +640,7 @@ sub add_columns
 
       $column->parent($self);
       $self->{'columns'}{$column->name} = $column;
+      push(@columns, $column);
       next;
     }
 
@@ -585,6 +651,7 @@ sub add_columns
 
       $Debug && warn $self->class, " - adding scalar column $name\n";
       $self->{'columns'}{$name} = $column_class->new(name => $name, parent => $self);
+      push(@columns, $self->{'columns'}{$name});
       next;
     }
 
@@ -594,6 +661,7 @@ sub add_columns
       $column->name($name);
       $column->parent($self);
       $self->{'columns'}{$name} = $column;
+      push(@columns, $column);
     }
     elsif(ref $_[0] eq 'HASH')
     {
@@ -629,6 +697,8 @@ sub add_columns
       $Debug && warn $self->class, " - adding $name $column_class\n";
       my $column = $self->{'columns'}{$name} = 
         $column_class->new(%$info, name => $name, parent => $self);
+
+      push(@columns, $column);
 
       # Set or add auto-created method names
       if($methods || $add_methods)
@@ -667,6 +737,8 @@ sub add_columns
       Carp::croak "Invalid column name or specification: $_[0]";
     }
   }
+
+  push(@{$self->{'columns_ordered'}}, @columns);
 }
 
 *add_column = \&add_columns;
@@ -678,7 +750,7 @@ sub relationship
   if(@_)
   {
     $self->delete_relationship($name);
-    $self->add_relationship($name => @_);
+    $self->add_relationship($name => $_[0]);
   }
 
   return $self->{'relationships'}{$name}  if($self->{'relationships'}{$name});
@@ -724,6 +796,7 @@ sub add_relationships
   {
     my $name = shift;
 
+    # Relationship object
     if(UNIVERSAL::isa($name, 'Rose::DB::Object::Metadata::Relationship'))
     {
       my $relationship = $name;
@@ -742,14 +815,19 @@ sub add_relationships
       next;
     }
 
-    unless(ref $_[0])
+    # Name and type only: recurse with hashref arg
+    if(!ref $_[0])
     {
-      Carp::croak "No relationship specificaton found for relationship name '$name'";
+      my $type = shift;
+
+      $self->add_relationships($name => { type => $type });
+      next ARG;
     }
 
     if(UNIVERSAL::isa($_[0], 'Rose::DB::Object::Metadata::Relationship'))
     {
-      my $relationship = $_[0];
+      my $relationship = shift;
+
       $relationship->name($name);
       $relationship->parent($self);
       $self->{'relationships'}{$name} = $relationship;
@@ -785,7 +863,16 @@ sub add_relationships
 
       $Debug && warn $self->class, " - adding $name $relationship_class\n";
       my $relationship = $self->{'relationships'}{$name} = 
-        $relationship_class->new(%$info, name => $name, parent => $self);
+        $self->convention_manager->auto_relationship($name, $relationship_class, $info) ||
+        $relationship_class->new(%$info, name => $name);
+
+      unless($relationship)
+      {
+        Carp::croak "$class - Incomplete relationship specification could not be ",
+                    "completed by convention manager: $name";
+      }
+
+      $relationship->parent($self);
 
       # Set or add auto-created method names
       if($methods || $add_methods)
@@ -860,6 +947,7 @@ sub add_foreign_keys
   {
     my $name = shift;
 
+    # Foreign key object
     if(UNIVERSAL::isa($name, 'Rose::DB::Object::Metadata::ForeignKey'))
     {
       my $fk = $name;
@@ -890,6 +978,23 @@ sub add_foreign_keys
       next ARG;
     }
 
+    # Name only: try to get all the other info by convention
+    if(!ref $_[0])
+    {
+      if(my $fk = $self->convention_manager->auto_foreign_key($name))
+      {
+        $self->add_foreign_keys($fk);
+        next ARG;
+      }
+      else
+      {
+        Carp::croak $self->class, 
+                    " - Incomplete foreign key specification could not be ",
+                    "completed by convention manager: $name";
+      }
+    }
+
+    # Name and hashref spec
     if(ref $_[0] eq 'HASH')
     {
       my $info = shift;
@@ -910,7 +1015,10 @@ sub add_foreign_keys
 
       $Debug && warn $self->class, " - adding $name foreign key\n";
       my $fk = $self->{'foreign_keys'}{$name} = 
-        Rose::DB::Object::Metadata::ForeignKey->new(%$info, name => $name, parent => $self);
+        $self->convention_manager->auto_foreign_key($name, $info) ||
+        Rose::DB::Object::Metadata::ForeignKey->new(%$info, name => $name);
+
+      $fk->parent($self);
 
       # Set or add auto-created method names
       if($methods || $add_methods)
@@ -1058,7 +1166,7 @@ sub register_class
   # against someone changing it to "-" (or whatever) elsewhere in the code.
   local $; = "\034";
 
-   # Register with all available information
+  # Register with all available information
   $reg->{'catalog-schema-table',$catalog,$schema,$table} =
     $reg->{'schema-table',$schema,$table}  =
     $reg->{'catalog-table',$catalog,$table} =
@@ -1298,6 +1406,14 @@ sub retry_deferred_foreign_keys
   # Check to see if any deferred foreign keys are ready now
   foreach my $foreign_key ($meta_class->deferred_foreign_keys)
   {
+    # XXX: this is not necessary, so it's commented out for now.
+    # Try to rebuild the relationship using the convention manager, since
+    # new info may be available now.  Otherwise, leave it as-is.
+    # $foreign_key = 
+    #   $self->convention_manager->auto_foreign_key(
+    #     $def_fk->name, scalar $def_fk->spec_hash) ||
+    #     $def_fk;
+
     if($foreign_key->is_ready_to_make_methods)
     {
       $Debug && warn $foreign_key->parent->class,
@@ -1435,6 +1551,20 @@ sub retry_deferred_relationships
   # Check to see if any deferred relationships are ready now
   foreach my $relationship ($self->deferred_relationships)
   {
+    # Try to rebuild the relationship using the convention manager, since
+    # new info may be available now.  Otherwise, leave it as-is.
+    my $rebuild_rel = 
+         $self->convention_manager->auto_relationship(
+           $relationship->name, ref $relationship, 
+           scalar $relationship->spec_hash);
+
+    if($rebuild_rel)
+    {
+      # XXX: This is pretty evil.  I need some sort of copy operator, but
+      # XXX: a straight hash copy will do for now...
+      %$relationship = %$rebuild_rel;
+    }
+
     if($relationship->is_ready_to_make_methods)
     {
       $Debug && warn $relationship->parent->class, 
@@ -1442,7 +1572,11 @@ sub retry_deferred_relationships
                      $relationship->name, "\n";
 
       my $args = $relationship->deferred_make_method_args || {};
+      $args->{'preserve_existing'} = 1;
       $relationship->make_methods(%$args);
+
+      # Reassign to list in case we rebuild above
+      $self->relationship($relationship->name => $relationship);
     }
     else
     {
@@ -2713,7 +2847,7 @@ Get or set the database catalog name.  This attribute is not applicable to any o
 
 =item B<class [CLASS]>
 
-Get or set the L<Rose::DB::object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by L<make_methods|/make_methods>).
+Get or set the L<Rose::DB::Object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by L<make_methods|/make_methods>).
 
 =item B<class_for PARAMS>
 
@@ -2776,6 +2910,14 @@ Returns the name of the "get_set" method for the column named NAME.  This is jus
 =item B<column_rw_method_names>
 
 Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "get_set" methods for all the columns, in the order that the columns are returned by L<column_names|/column_names>.
+
+=item B<convention_manager [CM]>
+
+Get or set the convention manager for this L<class|/class>.  Defaults to the return value of the L<init_convention_manager|/init_convention_manager> method.
+
+If undef is passed, then a L<Rose::DB::Object::ConventionManager::Null> object is stored instead.
+
+See the L<Rose::DB::Object::ConventionManager> documentation for more information on convention managers.
 
 =item B<db>
 
@@ -2847,6 +2989,10 @@ Return a value that indicates that an error has occurred, as described in the L<
 
 In all cases, the object's L<error|Rose::DB::Object/error> attribute will also contain the error message.
 
+=item B<first_column>
+
+Returns the first column, determined by the orider that columns were L<added|/add_columns>, or undef if there are no columns.
+
 =item B<foreign_key NAME [, FOREIGNKEY | HASHREF ]>
 
 Get or set the foreign key named NAME.  NAME should be the name of the thing being referenced by the foreign key, I<not> the name of any of the columns that make up the foreign key.  If called with just a NAME argument, the foreign key stored under that name is returned.  Undef is returned if there is no such foreign key.
@@ -2875,9 +3021,15 @@ Given the L<Rose::DB>-derived object DB, generate a new primary key column value
 
 If no L<primary_key_generator|/primary_key_generator> is defined, a new primary key value will be generated, if possible, using the native facilities of the current database.  Note that this may not be possible for databases that auto-generate such values only after an insertion.  In that case, undef will be returned.
 
+=item B<init_convention_manager>
+
+Returns the default L<Rose::DB::Object::ConventionManager>-derived object used as the L<convention manager|/convention_manager> for this L<class|/class>.  
+
+Override this method in your L<Rose::DB::Object::Metadata> subclass in order to use a custom convention manager class.  See the L<tips and tricks|Rose::DB::Object::ConventionManager/"TIPS AND TRICKS"> section of the L<Rose::DB::Object::ConventionManager> documentation for an example.
+
 =item B<initialize [ARGS]>
 
-Initialize the L<Rose::DB::object>-derived class associated with this metadata object by creating accessor methods for each column and foreign key.  The L<table|/table> name and the L<primary_key_columns|/primary_key_columns> must be defined or a fatal error will occur.
+Initialize the L<Rose::DB::Object>-derived class associated with this metadata object by creating accessor methods for each column and foreign key.  The L<table|/table> name and the L<primary_key_columns|/primary_key_columns> must be defined or a fatal error will occur.
 
 If any column name in the primary key or any of the unique keys does not exist in the list of L<columns|/columns>, then that primary or unique key is deleted.  (As per the above, this will trigger a fatal error if any column in the primary key is not in the column list.)
 
