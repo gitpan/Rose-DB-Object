@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata;
 our @ISA = qw(Rose::DB::Object::Metadata);
 
-our $VERSION = '0.031';
+our $VERSION = '0.032';
 
 use Rose::Class::MakeMethods::Generic
 (
@@ -49,6 +49,8 @@ sub auto_generate_columns
     my $dbh = $db->dbh or die $db->error;
 
     $table = ($db->driver eq 'mysql') ? $self->table : lc $self->table;
+
+    $table = lc $table  if($db->likes_lowercase_table_names);
 
     $schema = $self->schema;
     $schema = $db->default_implicit_schema  unless(defined $schema);
@@ -315,6 +317,8 @@ sub auto_retrieve_primary_key_column_names
   return wantarray ? @columns : \@columns;
 }
 
+my %Warned;
+    
 sub auto_generate_foreign_keys
 {
   my($self, %args) = @_;
@@ -335,8 +339,10 @@ sub auto_generate_foreign_keys
     my $db  = $self->db;
     my $dbh = $db->dbh or die $db->error;
 
+    my $table = $db->likes_lowercase_table_names ? lc $self->table : $self->table;
+
     my $sth = $dbh->foreign_key_info(undef, undef, undef,
-                                     $self->catalog, $self->schema, $self->table);
+                                     $self->catalog, $self->schema, $table);
 
     # This happens when the table has no foreign keys
     return  unless(defined $sth);
@@ -345,7 +351,10 @@ sub auto_generate_foreign_keys
 
     my $schema = $self->schema;
     $schema = $db->default_implicit_schema  unless(defined $schema);
-
+if($table eq 'rose_db_object_test')
+{
+  $DB::single = 1;
+}
     FK: while(my $fk_info = $sth->fetchrow_hashref)
     {
       CHECK_TABLE: # Make sure this column is from the right table
@@ -353,7 +362,7 @@ sub auto_generate_foreign_keys
         no warnings; # Allow undef coercion to empty string
         next FK  unless($fk_info->{'FK_TABLE_CAT'}   eq $self->catalog &&
                         $fk_info->{'FK_TABLE_SCHEM'} eq $schema &&
-                        $fk_info->{'FK_TABLE_NAME'}  eq $self->table);
+                        $fk_info->{'FK_TABLE_NAME'}  eq $table);
       }
 
       push(@fk_info, $fk_info);
@@ -366,8 +375,6 @@ sub auto_generate_foreign_keys
     # key auto generation.
     @fk_info = 
       sort { lc $a->{'UK_TABLE_NAME'} cmp lc $b->{'UK_TABLE_NAME'} } @fk_info;
-
-    my %warned;
 
     my $cm = $self->convention_manager;
 
@@ -393,16 +400,38 @@ sub auto_generate_foreign_keys
 
       unless($foreign_class)
       {
-        my $key = join($;, map { defined($_) ? $_ : '' } 
-                       @$fk_info{qw(UK_TABLE_CAT UK_TABLE_NAME UK_TABLE_SCHEM)});
+        my $key = join($;, map { defined($_) ? $_ : "\034" } $self->class,
+                       @$fk_info{qw(UK_TABLE_CAT UK_TABLE_SCHEM UK_TABLE_NAME)});
 
-        unless($no_warnings || $warned{$key}++)
+        # Add deferred task
+        $self->add_deferred_task(
+        {
+          class  => $self->class, 
+          method => 'auto_init_foreign_keys',
+          args   => \%args,
+
+          code   => sub
+          {
+            $self->auto_init_foreign_keys(%args);
+            $self->make_foreign_key_methods(%args, preserve_existing => 1);
+          },
+
+          check  => sub
+          {
+            my $num = scalar @foreign_keys;
+            my $fks = $self->foreign_keys;
+            return @$fks > $num ? 1 : 0;
+          }
+        });
+
+        unless($no_warnings || $Warned{$key}++)
         {
           no warnings; # Allow undef coercion to empty string
-          warn "No Rose::DB::Object-derived class found for catalog '",
-                $fk_info->{'UK_TABLE_CAT'}, "' schema '", 
-                $fk_info->{'UK_TABLE_SCHEM'}, "' table '", 
-                $fk_info->{'UK_TABLE_NAME'}, "'";
+          Carp::carp
+            "No Rose::DB::Object-derived class found for catalog '",
+            $fk_info->{'UK_TABLE_CAT'}, "' schema '", 
+            $fk_info->{'UK_TABLE_SCHEM'}, "' table '", 
+            $fk_info->{'UK_TABLE_NAME'}, "'";
         }
 
         next FK_INFO;
@@ -413,18 +442,14 @@ sub auto_generate_foreign_keys
 
       if(defined $key_name && length $key_name)
       {
-        $fk{$key_name}{'name'} = $key_name;
-      }
-      else
-      {
-        $key_name = $fk_info->{'UK_NAME'};
+        $fk{$fk_info->{'UK_NAME'}}{'name'} = $key_name;
       }
 
       my $local_column   = $fk_info->{'FK_COLUMN_NAME'};
       my $foreign_column = $fk_info->{'UK_COLUMN_NAME'};
 
-      $fk{$key_name}{'class'} = $foreign_class;
-      $fk{$key_name}{'key_columns'}{$local_column} = $foreign_column;
+      $fk{$fk_info->{'UK_NAME'}}{'class'} = $foreign_class;
+      $fk{$fk_info->{'UK_NAME'}}{'key_columns'}{$local_column} = $foreign_column;
     }
 
     my(%seen, %seen_name);
@@ -760,7 +785,7 @@ sub auto_init_foreign_keys
 
       foreach my $existing_key (@$existing_foreign_keys)
       {
-        next KEY  if($id eq $existing_key->id);#__fk_key_to_id($existing_key));
+        next KEY  if($id eq $existing_key->id);
       }
 
       $self->add_foreign_key($key);
@@ -809,6 +834,15 @@ sub auto_initialize
   $self->auto_init_unique_keys(@_);
   $self->auto_init_foreign_keys(@_);
   $self->initialize;
+
+  for(1 .. 2) # two passes are required to catch everything
+  {
+    $self->retry_deferred_foreign_keys;
+    $self->retry_deferred_relationships;
+    $self->retry_deferred_tasks;
+  }
+
+  return;
 }
 
 1;

@@ -17,7 +17,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.07';
+our $VERSION = '0.072';
 
 our $Debug = 0;
 
@@ -222,6 +222,7 @@ sub init_with_db
 
   my $catalog = $db->{'catalog'};
   my $schema  = $db->{'schema'};
+  my $driver  = $db->{'driver'};
   my $changed = 0;
 
   UNDEF_IS_OK: # Avoid undef string comparison warnings
@@ -1158,6 +1159,8 @@ sub register_class
   my $table = $self->table 
     or Carp::croak "Missing table for metadata object $self";
 
+  $table = lc $table  if($db->likes_lowercase_table_names);
+
   my $reg = $self->class_registry;
 
   # Combine keys using $;, which is "\034" (0x1C) by default. But just to
@@ -1166,11 +1169,17 @@ sub register_class
   # against someone changing it to "-" (or whatever) elsewhere in the code.
   local $; = "\034";
 
-  # Register with all available information
+  # Register with all available information.
+  # Ug, have to store lowercase versions too because MySQL sometimes returns
+  # lowercase names for tables that are actually mixed case.  Grrr...
   $reg->{'catalog-schema-table',$catalog,$schema,$table} =
     $reg->{'schema-table',$schema,$table}  =
     $reg->{'catalog-table',$catalog,$table} =
-    $reg->{'table',$table} = $class;
+    $reg->{'table',$table} =
+    $reg->{'lc-catalog-schema-table',$catalog,$schema,lc $table} =
+    $reg->{'lc-schema-table',$schema,lc $table}  =
+    $reg->{'lc-catalog-table',$catalog,lc $table} =
+    $reg->{'lc-table',lc $table} = $class;
 
   return;
 }
@@ -1187,8 +1196,13 @@ sub class_for
   $catalog = NULL_CATALOG  unless(defined $catalog);
   $schema  = NULL_SCHEMA   unless(defined $schema);
 
+  my $default_schema = $db->default_implicit_schema;
+  $default_schema = NULL_SCHEMA   unless(defined $default_schema);
+
   my $table = $args{'table'} 
     or Carp::croak "Missing required table parameter";
+
+  $table = lc $table  if($db->likes_lowercase_table_names);
 
   my $reg = $self->class_registry;
 
@@ -1198,12 +1212,28 @@ sub class_for
   # against someone changing it to "-" elsewhere in the code or whatever.
   local $; = "\034";
 
-  return 
+  my $f_table =
     $reg->{'catalog-schema-table',$catalog,$schema,$table} ||
-    $reg->{'catalog-schema-table',$catalog,$db->default_implicit_schema,$table} ||
+    $reg->{'catalog-schema-table',$catalog,$default_schema,$table} ||
     $reg->{'schema-table',$schema,$table}  ||
     $reg->{'catalog-table',$catalog,$table} ||
     $reg->{'table',$table};
+
+  # Ug, have to check lowercase versions too because MySQL sometimes returns
+  # lowercase names for tables that are actually mixed case.  Grrr...
+  unless($f_table)
+  {
+    $table = lc $table;
+
+    return
+      $reg->{'lc-catalog-schema-table',$catalog,$schema,$table} ||
+      $reg->{'lc-catalog-schema-table',$catalog,$default_schema,$table} ||
+      $reg->{'lc-schema-table',$schema,$table}  ||
+      $reg->{'lc-catalog-table',$catalog,$table} ||
+      $reg->{'lc-table',$table};  
+  }
+  
+  return $f_table;
 }
 
 #sub made_method_for_column 
@@ -1371,6 +1401,56 @@ sub make_foreign_key_methods
   return;
 }
 
+our @Deferred_Tasks;
+
+sub deferred_tasks
+{
+  return wantarray ? @Deferred_Tasks : \@Deferred_Tasks;
+}
+
+sub add_deferred_tasks
+{
+  my($class) = shift;  
+
+  ARG: foreach my $arg (@_)
+  {
+    foreach my $task (@Deferred_Tasks)
+    {
+      next  ARG if($arg->{'class'}  eq $task->{'class'} &&
+                   $arg->{'method'} eq $task->{'method'});
+    }
+
+    push(@Deferred_Tasks, $arg);
+  }
+}
+
+*add_deferred_task = \&add_deferred_tasks;
+
+sub retry_deferred_tasks
+{
+  my($self) = shift;
+
+  my @tasks;
+
+  foreach my $task (@Deferred_Tasks)
+  {
+    my $code  = $task->{'code'};
+    my $check = $task->{'check'};
+
+    $code->();
+
+    unless($check->())
+    {
+      push(@tasks, $task);
+    }
+  }
+
+  if(@Deferred_Tasks != @tasks)
+  {
+    @Deferred_Tasks = @tasks;
+  }
+}
+
 our @Deferred_Foreign_Keys;
 
 sub deferred_foreign_keys
@@ -1382,11 +1462,11 @@ sub add_deferred_foreign_keys
 {
   my($class) = shift;  
 
-  foreach my $arg (@_)
+  ARG: foreach my $arg (@_)
   {
     foreach my $fk (@Deferred_Foreign_Keys)
     {
-      next  if($fk->id eq $arg->id);
+      next ARG  if($fk->id eq $arg->id);
     }
 
     push(@Deferred_Foreign_Keys, $arg);
@@ -1421,7 +1501,7 @@ sub retry_deferred_foreign_keys
                      $foreign_key->name, "\n";
 
       my $args = $foreign_key->deferred_make_method_args || {};
-      $foreign_key->make_methods(%$args, preserve_existing => 1);
+      $foreign_key->make_methods(%$args); #, preserve_existing => 1);
     }
     else
     {
@@ -1527,11 +1607,11 @@ sub add_deferred_relationships
 {
   my($class) = shift;
 
-  foreach my $arg (@_)
+  ARG: foreach my $arg (@_)
   {
     foreach my $rel (@Deferred_Relationships)
     {
-      next  if($rel->id eq $arg->id);
+      next ARG  if($rel->id eq $arg->id);
     }
 
     push(@Deferred_Relationships, $arg);
