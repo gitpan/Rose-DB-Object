@@ -544,7 +544,7 @@ C<interface =E<gt> 'get_set'> ...
 
 =item C<get_set_now>
 
-L<Rose::DB::Object::MakeMethods::Generic>, L<object_by_key|Rose::DB::Object::MakeMethods::Generic/objects_by_map>, C<interface =E<gt> 'get_set_now'> ...
+L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_map|Rose::DB::Object::MakeMethods::Generic/objects_by_map>, C<interface =E<gt> 'get_set_now'> ...
 
 =item C<get_set_on_save>
 
@@ -653,6 +653,10 @@ This would ensure that a C<Widget>'s C<colors()> would be limited to those that 
 =item B<share_db [BOOL]>
 
 Get or set a boolean flag that indicates whether or not all of the classes involved in fetching objects via this relationship (including the objects themselves) will share the same L<Rose::DB>-derived L<db|Rose::DB::Object/db> object.  Defaults to true.
+
+=item C<query_args>
+
+A reference to an array of arguments added to the value of the C<query> parameter passed to the call to C<manager_class>'s C<manager_method> class method.
 
 =item B<type>
 

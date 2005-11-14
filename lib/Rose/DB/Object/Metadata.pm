@@ -17,7 +17,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.072';
+our $VERSION = '0.09';
 
 our $Debug = 0;
 
@@ -40,7 +40,7 @@ use Rose::Object::MakeMethods::Generic
     allow_inline_column_values => { default => 0 },
     is_initialized => { default => 0 },
   ],
-  
+
   array =>
   [
     'columns_ordered',
@@ -63,6 +63,10 @@ use Rose::Class::MakeMethods::Generic
     delete_relationship_type_class => { interface => 'delete', hash_key => 'relationship_type_classes' },
 
     class_registry => => { interface => 'get_set_all' },
+
+    convention_manager_classes => { interface => 'get_set_all' },
+    convention_manager_class   => { interface => 'get_set', hash_key => 'convention_manager_classes' },
+    delete_convention_manager_class => { interface => 'delete', hash_key => 'convention_manager_classes' },
   ],
 );
 
@@ -70,9 +74,16 @@ __PACKAGE__->class_registry({});
 
 __PACKAGE__->auto_helper_classes
 (
-  'Informix' => 'Rose::DB::Object::Metadata::Auto::Informix',
-  'Pg'       => 'Rose::DB::Object::Metadata::Auto::Pg',
+  'informix' => 'Rose::DB::Object::Metadata::Auto::Informix',
+  'pg'       => 'Rose::DB::Object::Metadata::Auto::Pg',
   'mysql'    => 'Rose::DB::Object::Metadata::Auto::MySQL',
+  'generic'  => 'Rose::DB::Object::Metadata::Auto::Generic',
+);
+
+__PACKAGE__->convention_manager_classes
+(
+  'default' => 'Rose::DB::Object::ConventionManager',
+  'null'    => 'Rose::DB::Object::ConventionManager::Null',
 );
 
 __PACKAGE__->column_type_classes
@@ -222,7 +233,6 @@ sub init_with_db
 
   my $catalog = $db->{'catalog'};
   my $schema  = $db->{'schema'};
-  my $driver  = $db->{'driver'};
   my $changed = 0;
 
   UNDEF_IS_OK: # Avoid undef string comparison warnings
@@ -244,33 +254,18 @@ sub init_with_db
   if($changed)
   {
     $self->_clear_table_generated_values;
+    $self->{'db'} = $db;
   }
-
-  UNDEF_IS_OK: # Avoid undef string comparison warnings
-  {
-    no warnings 'uninitialized';
-    # If necessary, also clear the select few column-generated values that
-    # depend on the database driver.
-    if($db->{'driver'} ne $self->{'db_driver'})
-    {
-      # This is a call to _clear_db_generated_values() that
-      # has been inlined for speed.
-      $self->{'column_names_string_sql'} = undef;
-      $self->{'column_names_sql'} = undef;
-    }
-  }
-
-  $self->{'db_driver'} = $db->{'driver'};
 
   return;
 }
 
-sub init_convention_manager { Rose::DB::Object::ConventionManager->new }
+sub init_convention_manager { shift->convention_manager_class('default')->new }
 
 sub convention_manager
 {
   my($self) = shift;
-  
+
   if(@_)
   {
     my $mgr = shift;
@@ -281,16 +276,22 @@ sub convention_manager
       return $self->{'convention_manager'} = 
         Rose::DB::Object::ConventionManager::Null->new(parent => $self);
     }
+    elsif(!ref $mgr)
+    {
+      my $class = $self->convention_manager_class($mgr) or
+        Carp::croak "No convention manager class registered under the name '$mgr'";
 
-    unless(UNIVERSAL::isa($mgr, 'Rose::DB::Object::ConventionManager'))
+      $mgr = $class->new;
+    }
+    elsif(!UNIVERSAL::isa($mgr, 'Rose::DB::Object::ConventionManager'))
     {
       Carp::croak "$mgr is not a Rose::DB::Object::ConventionManager-derived object";
     }
-    
+
     $mgr->parent($self);
     return $self->{'convention_manager'} = $mgr;
   }
-  
+
   if(defined $self->{'convention_manager'})
   {
     return $self->{'convention_manager'};
@@ -1129,6 +1130,11 @@ sub initialize
 
   $self->register_class;
 
+  # Retry deferred stuff
+  $self->retry_deferred_tasks;
+  $self->retry_deferred_foreign_keys;
+  $self->retry_deferred_relationships;
+
   $self->db(undef); # make sure to ditch any db we may have retained
 
   $self->is_initialized(1);
@@ -1232,7 +1238,7 @@ sub class_for
       $reg->{'lc-catalog-table',$catalog,$table} ||
       $reg->{'lc-table',$table};  
   }
-  
+
   return $f_table;
 }
 
@@ -1384,7 +1390,7 @@ sub make_foreign_key_methods
     # Keep foreign keys and their corresponding relationships in sync.
     my $fk_id       = $foreign_key->id;
     my $fk_rel_type = $foreign_key->relationship_type;
-    
+
     foreach my $relationship ($self->relationships)
     {
       next  unless($relationship->type eq $fk_rel_type);
@@ -1557,7 +1563,7 @@ sub make_relationship_methods
       if($relationship->can('id'))
       {
         my $rel_id = $relationship->id;
-  
+
         FK: foreach my $fk ($self->foreign_keys)
         {
           if($rel_id eq $fk->id)
@@ -1780,20 +1786,20 @@ sub column_names
 
 sub column_names_string_sql
 {
-  my($self) = shift;
+  my($self, $db) = @_;
 
-  return $self->{'column_names_string_sql'} ||= 
-    join(', ', map { $_->name_sql } sort { $a->name cmp $b->name } $self->columns);
+  return $self->{'column_names_string_sql'}{$db->{'driver'}} ||= 
+    join(', ', map { $_->name_sql($db) } sort { $a->name cmp $b->name } $self->columns);
 }
 
 sub column_names_sql
 {
-  my($self) = shift;
+  my($self, $db) = @_;
 
-  $self->{'column_names_sql'} ||= 
-    [ map { $_->name_sql } sort { $a->name cmp $b->name } $self->columns ];
+  my $list = $self->{'column_names_sql'}{$db->{'driver'}} ||= 
+    [ map { $_->name_sql($db) } sort { $a->name cmp $b->name } $self->columns ];
 
-  return wantarray ? @{$self->{'column_names_sql'}} : $self->{'column_names_sql'};
+  return wantarray ? @$list : $list;
 }
 
 sub method_column
@@ -1922,26 +1928,26 @@ sub fq_table_sql
 
 sub load_sql
 {
-  my($self, $key_columns) = @_;
+  my($self, $key_columns, $db) = @_;
 
   $key_columns ||= $self->primary_key_column_names;
 
   no warnings;
-  return $self->{'load_sql'}{join("\0", @$key_columns)} ||= 
-    'SELECT ' . $self->column_names_string_sql . ' FROM ' .
+  return $self->{'load_sql'}{$db->{'driver'}}{join("\0", @$key_columns)} ||= 
+    'SELECT ' . $self->column_names_string_sql($db) . ' FROM ' .
     $self->fq_table_sql . ' WHERE ' .
     join(' AND ',  map { "$_ = ?" } @$key_columns);
 }
 
 sub load_sql_with_null_key
 {
-  my($self, $key_columns, $key_values) = @_;
+  my($self, $key_columns, $key_values, $db) = @_;
 
   my $i = 0;
 
   no warnings;
   return 
-    'SELECT ' . $self->column_names_string_sql . ' FROM ' .
+    'SELECT ' . $self->column_names_string_sql($db) . ' FROM ' .
     $self->fq_table_sql . ' WHERE ' .
     join(' AND ',  map { defined $key_values->[$i++] ? "$_ = ?" : "$_ IS NULL" }
     @$key_columns);
@@ -1949,11 +1955,11 @@ sub load_sql_with_null_key
 
 sub update_sql
 {
-  my($self, $key_columns) = @_;
+  my($self, $key_columns, $db) = @_;
 
   $key_columns ||= $self->primary_key_column_names;
 
-  my $cache_key = join("\0", @$key_columns);
+  my $cache_key = "$db->{'driver'}:" . join("\0", @$key_columns);
 
   return $self->{'update_sql'}{$cache_key}
     if($self->{'update_sql'}{$cache_key});
@@ -1963,10 +1969,10 @@ sub update_sql
   no warnings;
   return $self->{'update_sql'}{$cache_key} = 
     'UPDATE ' . $self->fq_table_sql . " SET \n" .
-    join(",\n", map { '    ' . $self->column($_)->name_sql . ' = ?' } 
+    join(",\n", map { '    ' . $self->column($_)->name_sql($db) . ' = ?' } 
                 grep { !$key{$_} } $self->column_names) .
     "\nWHERE " . 
-    join(' AND ', map { $self->column($_)->name_sql . ' = ?' } @$key_columns);
+    join(' AND ', map { $self->column($_)->name_sql($db) . ' = ?' } @$key_columns);
 }
 
 # This is nonsensical right now because the primary key always has to be
@@ -1975,7 +1981,7 @@ sub update_sql
 #
 # sub update_sql_with_null_key
 # {
-#   my($self, $key_columns, $key_values) = @_;
+#   my($self, $key_columns, $key_values, $db) = @_;
 # 
 #   my %key = map { ($_ => 1) } @$key_columns;
 #   my $i = 0;
@@ -1983,10 +1989,10 @@ sub update_sql
 #   no warnings;
 #   return
 #     'UPDATE ' . $self->fq_table_sql . " SET \n" .
-#     join(",\n", map { '    ' . $self->column($_)->name_sql . ' = ?' } 
+#     join(",\n", map { '    ' . $self->column($_)->name_sql($db) . ' = ?' } 
 #                 grep { !$key{$_} } $self->column_names) .
 #     "\nWHERE " . join(' AND ', map { defined $key_values->[$i++] ? "$_ = ?" : "$_ IS NULL" }
-#     map { $self->column($_)->name_sql } @$key_columns);
+#     map { $self->column($_)->name_sql($db) } @$key_columns);
 # }
 #
 # Ditto for this version of update_sql_with_inlining which handles null keys
@@ -2011,11 +2017,11 @@ sub update_sql
 #     
 #     if($column->should_inline_value($db, $value))
 #     {
-#       push(@updates, '  ' . $column->name_sql . " = $value");
+#       push(@updates, '  ' . $column->name_sql($db) . " = $value");
 #     }
 #     else
 #     {
-#       push(@updates, '  ' . $column->name_sql . ' = ?');
+#       push(@updates, '  ' . $column->name_sql($db) . ' = ?');
 #       push(@bind, $value);
 #     }
 #   }
@@ -2029,7 +2035,7 @@ sub update_sql
 #      'UPDATE ' . $self->fq_table_sql . " SET \n") .
 #     join(",\n", @updates) . "\nWHERE " . 
 #     join(' AND ', map { defined $key_values->[$i++] ? "$_ = ?" : "$_ IS NULL" }
-#                   map { $self->column($_)->name_sql } @$key_columns),
+#                   map { $self->column($_)->name_sql($db) } @$key_columns),
 #     \@bind
 #   );
 # }
@@ -2054,11 +2060,11 @@ sub update_sql_with_inlining
 
     if($column->should_inline_value($db, $value))
     {
-      push(@updates, '  ' . $column->name_sql . " = $value");
+      push(@updates, '  ' . $column->name_sql($db) . " = $value");
     }
     else
     {
-      push(@updates, '  ' . $column->name_sql . ' = ?');
+      push(@updates, '  ' . $column->name_sql($db) . ' = ?');
       push(@bind, $value);
     }
   }
@@ -2071,19 +2077,19 @@ sub update_sql_with_inlining
     ($self->{'update_sql_with_inlining_start'} ||= 
      'UPDATE ' . $self->fq_table_sql . " SET \n") .
     join(",\n", @updates) . "\nWHERE " . 
-    join(' AND ', map { $self->column($_)->name_sql . ' = ?' } @$key_columns),
+    join(' AND ', map { $self->column($_)->name_sql($db) . ' = ?' } @$key_columns),
     \@bind
   );
 }
 
 sub insert_sql
 {
-  my($self) = shift;
+  my($self, $db) = @_;
 
   no warnings;
-  return $self->{'insert_sql'} ||= 
-    'INSERT INTO ' . $self->fq_table_sql . "\n(\n" .
-    join(",\n", map { "  $_" } $self->column_names_sql) .
+  return $self->{'insert_sql'}{$db->{'driver'}} ||= 
+    'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n" .
+    join(",\n", map { "  $_" } $self->column_names_sql($db)) .
     "\n)\nVALUES\n(\n" . join(",\n", map { "  ?" } $self->column_names) .
     "\n)";
 }
@@ -2123,7 +2129,7 @@ sub insert_sql_with_inlining
   (
     ($self->{'insert_sql_with_inlining_start'} ||=
     'INSERT INTO ' . $self->fq_table_sql . "\n(\n" .
-    join(",\n", map { "  $_" } $self->column_names_sql) .
+    join(",\n", map { "  $_" } $self->column_names_sql($db)) .
     "\n)\nVALUES\n(\n") . join(",\n", @places) . "\n)",
     \@bind
   );
@@ -2131,10 +2137,10 @@ sub insert_sql_with_inlining
 
 sub delete_sql
 {
-  my($self) = shift;
-  return $self->{'delete_sql'} ||= 
-    'DELETE FROM ' . $self->fq_table_sql . ' WHERE ' .
-    join(' AND ', map {  $self->column($_)->name_sql . ' = ?' } 
+  my($self, $db) = @_;
+  return $self->{'delete_sql'}{$db->{'driver'}} ||= 
+    'DELETE FROM ' . $self->fq_table_sql($db) . ' WHERE ' .
+    join(' AND ', map {  $self->column($_)->name_sql($db) . ' = ?' } 
                   $self->primary_key_column_names);
 }
 
@@ -2172,14 +2178,6 @@ sub _clear_column_generated_values
   $self->{'insert_sql'} = undef;
   $self->{'insert_sql_with_inlining_start'} = undef;
   $self->{'delete_sql'} = undef;
-}
-
-sub _clear_db_generated_values
-{
-  my($self) = shift;
-
-  $self->{'column_names_string_sql'} = undef;
-  $self->{'column_names_sql'} = undef;
 }
 
 sub method_name_is_reserved
@@ -2241,6 +2239,86 @@ sub method_name_from_column
   return $method_name;
 }
 
+sub make_manager_class
+{
+  eval shift->perl_manager_class(@_);
+}
+
+sub perl_manager_class
+{
+  my($self) = shift;
+
+  my %args;
+
+  if(@_ == 1)
+  {
+    $args{'class'} = shift;
+  }
+  else
+  {
+    %args = @_;
+  }
+
+  $args{'base_name'} ||= $self->convention_manager->class_to_table_singular;
+
+  $args{'class'} ||= $self->class . '::Manager';
+
+  unless($args{'class'} =~ /^\w+(?:::\w+)*$/)
+  {
+    no warnings;
+    Carp::croak "Missing or invalid class", 
+                (length $args{'class'} ? ": '$args{'class'}'" : '');
+  }
+
+  $args{'isa'} ||= [ 'Rose::DB::Object::Manager' ];
+  $args{'isa'} = [ $args{'isa'} ]  unless(ref $args{'isa'});
+
+  my($isa, $ok);
+
+  foreach my $class (@{$args{'isa'}})
+  {
+    unless($class =~ /^\w+(?:::\w+)*$/)
+    {
+      no warnings;
+      Carp::croak "Invalid isa class: '$class'";
+    }
+
+    $isa .= "use $class;\n";
+
+    $ok = 1  if(UNIVERSAL::isa($class, 'Rose::DB::Object::Manager'));
+  }
+
+  unless($ok)
+  {
+    Carp::croak 
+      "None of these classes inherit from Rose::DB::Object::Manager: ",
+      join(', ', @{$args{'isa'}});
+  }
+
+  $isa .= "our \@ISA = qw(@{$args{'isa'}});";
+
+  no strict 'refs';
+  if(@{"$args{'class'}::ISA"})
+  {
+    Carp::croak "Can't override class $args{'class'} which already ",
+                "appears to be defined.";
+  }
+
+  my $object_class = $self->class;
+
+  return<<"EOF";
+package $args{'class'};
+
+$isa
+
+sub object_class { '$object_class' }
+
+__PACKAGE__->meta->make_manager_methods('$args{'base_name'}');
+
+1;
+EOF
+}
+
 #
 # Automatic metadata setup
 #
@@ -2274,14 +2352,17 @@ sub auto_helper_class
 
   if(@_)
   {
-    my $driver = shift;
+    my $driver = lc shift;
     return $self->auto_helper_classes->{$driver} = shift  if(@_);
     return $self->auto_helper_classes->{$driver};
   }
   else
   {
     my $db = $self->db or die "Missing db";
-    return $self->auto_helper_classes->{$db->driver};
+    return $self->auto_helper_classes->{$db->driver} || 
+      $self->auto_helper_classes->{'generic'} ||
+      Carp::croak "Don't know how to auto-initialize using driver '", 
+                  $db->driver, "'";
   }
 }
 
@@ -2513,9 +2594,11 @@ This hybrid approach to metadata population strikes a good balance between upfro
 
 =over 4
 
-=item B<column_type_class TYPE>
+=item B<column_type_class TYPE [, CLASS]>
 
 Given the column type string TYPE, return the name of the L<Rose::DB::Object::Metadata::Column>-derived class used to store metadata and create the accessor method(s) for columns of that type.
+
+If a CLASS is passed, the column type TYPE is mapped to CLASS.
 
 =item B<column_type_classes [MAP]>
 
@@ -2591,6 +2674,25 @@ The default mapping of type names to class names is:
   set       => Rose::DB::Object::Metadata::Column::Set
 
   chkpass   => Rose::DB::Object::Metadata::Column::Pg::Chkpass
+
+=item B<convention_manager_class NAME [, CLASS]>
+
+Given the string NAME, return the name of the L<Rose::DB::Object::ConventionManager>-derived class L<mapped|/convention_manager_classes> to that name.
+
+If a CLASS is passed, then NAME is mapped to CLASS.
+
+=item B<convention_manager_classes [MAP]>
+
+Get or set the hash that maps names to L<Rose::DB::Object::ConventionManager>-derived class names.
+
+This hash is class data.  If you want to modify it, I suggest making your own subclass of L<Rose::DB::Object::Metadata> and then setting that as the L<meta_class|Rose::DB::Object/meta_class> of your L<Rose::DB::Object> subclass.
+
+If passed MAP (a list of name/class pairs or a reference to a hash of the same) then MAP replaces the current mapping.  Returns a list of name/class pairs (in list context) or a reference to the hash of name/class mappings (in scalar context).
+
+The default mapping of names to classes is:
+
+  default => Rose::DB::Object::ConventionManager
+  null    => Rose::DB::Object::ConventionManager::Null
 
 =item B<for_class CLASS>
 
@@ -2855,7 +2957,7 @@ Example:
 
 =item B<add_unique_key KEY>
 
-This method is an alias for L<add_unique_key|/add_unique_key>.
+This method is an alias for L<add_unique_keys|/add_unique_keys>.
 
 =item B<add_unique_keys KEYS>
 
@@ -2991,11 +3093,15 @@ Returns the name of the "get_set" method for the column named NAME.  This is jus
 
 Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "get_set" methods for all the columns, in the order that the columns are returned by L<column_names|/column_names>.
 
-=item B<convention_manager [CM]>
+=item B<convention_manager [ OBJECT | NAME ]>
 
 Get or set the convention manager for this L<class|/class>.  Defaults to the return value of the L<init_convention_manager|/init_convention_manager> method.
 
 If undef is passed, then a L<Rose::DB::Object::ConventionManager::Null> object is stored instead.
+
+If a L<Rose::DB::Object::ConventionManager>-derived object is passed, its L<meta|Rose::DB::Object::ConventionManager/meta> attribute set to this metadata object and then it is used as the convention manager for this L<class|/class>.
+
+If a convention manager name is passed, then the corresponding class is looked up in the L<convention manager class map|convention_manager_classes>, a new object of that class is constructed, its L<meta|Rose::DB::Object::ConventionManager/meta> attribute set to this metadata object, and it is used as the convention manager for this L<class|/class>.  If there is no class mapped to NAME, a fatal error will occur.
 
 See the L<Rose::DB::Object::ConventionManager> documentation for more information on convention managers.
 
@@ -3013,7 +3119,11 @@ Delete all of the columns.
 
 =item B<delete_column_type_class TYPE>
 
-Delete the type/class mapping entry for the column type TYPE.
+Delete the type/class L<mapping|/column_type_classes> entry for the column type TYPE.
+
+=item B<delete_convention_manager_class NAME>
+
+Delete the name/class L<mapping|/convention_manager_classes> entry for the convention manager class mapped to NAME.
 
 =item B<delete_relationship NAME>
 
@@ -3103,9 +3213,9 @@ If no L<primary_key_generator|/primary_key_generator> is defined, a new primary 
 
 =item B<init_convention_manager>
 
-Returns the default L<Rose::DB::Object::ConventionManager>-derived object used as the L<convention manager|/convention_manager> for this L<class|/class>.  
+Returns the default L<Rose::DB::Object::ConventionManager>-derived object used as the L<convention manager|/convention_manager> for this L<class|/class>.  This object will be of the class returned by L<convention_manager_class('default')|/convention_manager_class>.
 
-Override this method in your L<Rose::DB::Object::Metadata> subclass in order to use a custom convention manager class.  See the L<tips and tricks|Rose::DB::Object::ConventionManager/"TIPS AND TRICKS"> section of the L<Rose::DB::Object::ConventionManager> documentation for an example.
+Override this method in your L<Rose::DB::Object::Metadata> subclass, or L<re-map|/convention_manager_class> the "default" convention manager class, in order to use a different convention manager class.  See the L<tips and tricks|Rose::DB::Object::ConventionManager/"TIPS AND TRICKS"> section of the L<Rose::DB::Object::ConventionManager> documentation for an example of the subclassing approach.
 
 =item B<initialize [ARGS]>
 
@@ -3114,6 +3224,10 @@ Initialize the L<Rose::DB::Object>-derived class associated with this metadata o
 If any column name in the primary key or any of the unique keys does not exist in the list of L<columns|/columns>, then that primary or unique key is deleted.  (As per the above, this will trigger a fatal error if any column in the primary key is not in the column list.)
 
 ARGS, if any, are passed to the call to L<make_methods|/make_methods> that actually creates the methods.
+
+=item B<make_manager_class [PARAMS | CLASS]>
+
+This method creates a L<Rose::DB::Object::Manager>-derived class to manage objects of this L<class|/class>.  To do so, it simply calls L<perl_manager_class|/perl_manager_class>, passing all arguments, and then L<eval|perlfunc/eval>uates the result.  See the L<perl_manager_class|/perl_manager_class> documentation for more information.
 
 =item B<make_methods [ARGS]>
 
@@ -3272,6 +3386,10 @@ Get or set the database schema name.  This attribute is only applicable to Postg
 =item B<table [TABLE]>
 
 Get or set the name of the database table.  The table name should not include any sort of prefix to indicate the L<schema|/schema> or L<catalog|/catalog>; there are separate attributes for those values.
+
+=item B<unique_key KEY>
+
+This method is an alias for L<add_unique_keys|/add_unique_keys>.
 
 =item B<unique_keys KEYS>
 
@@ -3613,6 +3731,51 @@ The integer number of spaces to use for each level of indenting in the generated
 =back
 
 See the larger example in the documentation for the L<perl_class_definition|/perl_class_definition> method to see what the generated Perl code looks like.
+
+=item B<perl_manager_class [PARAMS | CLASS]>
+
+Returns a Perl class definition for a L<Rose::DB::Object::Manager>-derived class to manage objects of this L<class|/class>.  If a single string is passed, it is taken as the value of the C<class> parameter.  PARAMS are optional name/value pairs that may include the following:
+
+=over 4
+
+=item * base_name NAME
+
+The value of the L<base_name|Rose::DB::Object::Manager/base_name> parameter that will be passed to the call to L<Rose::DB::Object::Manager>'s L<make_manager_methods|Rose::DB::Object::Manager/make_manager_methods> method.  Defaults to the return value of the L<convention manager|/convention_manager>'s L<class_to_table_singular|Rose::DB::Object::ConventionManager/class_to_table_singular> method.
+
+=item * class CLASS
+
+The name of the manager class.  Defaults to the L<object class|/class> with "::Manager" appended.
+
+=item * isa CLASSES
+
+The name of a single class or a reference to an array of class names to be included in the C<@ISA> array for the manager class.  One of these classes must inherit from L<Rose::DB::Object::Manager>.  Defaults to C<Rose::DB::Object::Manager>.
+
+=back
+
+For example, given this class:
+
+    package Product;
+
+    use Rose::DB::Object;
+    our @ISA = qw(Rose::DB::Object);
+    ...
+
+    print Product->meta->perl_manager_class(
+                           class     => 'Prod::Mgr',
+                           base_name => 'prod');
+
+The following would be printed:
+
+    package Prod::Mgr;
+
+    use Rose::DB::Object::Manager;
+    our @ISA = qw(Rose::DB::Object::Manager);
+
+    sub object_class { 'Product' }
+
+    __PACKAGE__->meta->make_manager_methods('prod');
+
+    1;
 
 =item B<perl_primary_key_columns_definition>
 

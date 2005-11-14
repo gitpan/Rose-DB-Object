@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util qw(row_id);
 
-our $VERSION = '0.079';
+our $VERSION = '0.080';
 
 our $Debug = 0;
 
@@ -253,12 +253,12 @@ sub load
 
     if($null_key)
     {
-      $sql = $meta->load_sql_with_null_key(\@key_columns, \@key_values);
+      $sql = $meta->load_sql_with_null_key(\@key_columns, \@key_values, $db);
       $sth = $dbh->prepare($sql, $meta->prepare_select_options);
     }
     else
     {
-      $sql = $meta->load_sql(\@key_columns);
+      $sql = $meta->load_sql(\@key_columns, $db);
 
       # Was prepare_cached() but that can't be used across transactions
       $sth = $dbh->prepare($sql, $meta->prepare_select_options);
@@ -279,24 +279,27 @@ sub load
 
     if($rows > 0)
     {
-      my $object = (ref $self)->new(db => $self->db);
       my $methods = $meta->column_mutator_method_names_hash;
 
-      # Sneaky init by object replacement
+      # Empty existing object?
+      #%$self = (db => $self->db, meta => $meta, STATE_LOADING() => 1);
+
       foreach my $name (@$column_names)
       {
         my $method = $methods->{$name};
-        $object->$method($row{$name});
+        $self->$method($row{$name});
       }
 
-      $self = $_[0] = $object;
-
-      # Init by copying
+      # Sneaky init by object replacement
+      #my $object = (ref $self)->new(db => $self->db);
+      #
       #foreach my $name (@$column_names)
       #{
       #  my $method = $methods->{$name};
-      #  $self->$method($row{$name});
+      #  $object->$method($row{$name});
       #}
+      #
+      #$self = $_[0] = $object;
     }
     else
     {
@@ -359,8 +362,15 @@ sub save
 
       foreach my $fk_name (keys %{$todo->{'fk'}})
       {
-        my $fk = $meta->foreign_key($fk_name) 
-          or Carp::confess "No foreign key named '$fk_name'";
+        # No real need to check for this, I suppose.  Still, the 'fk' name
+        # for the hash key above could be a bit better...
+        #my $fk = $meta->foreign_key($fk_name) || $meta->relationship($fk_name);
+        #
+        #unless(UNIVERSAL::isa($fk, 'Rose::DB::Object::Metadata::ForeignKey') ||
+        #       $fk->type =~ /^(?:one|many) to one$/)
+        #{
+        #  Carp::confess "No foreign key or '... to one' relationship named '$fk_name'";
+        #}
 
         my $code   = $todo->{'fk'}{$fk_name}{'set'} or next;
         my $object = $code->();
@@ -563,17 +573,17 @@ sub update
       #
       #if($null_key)
       #{
-      #  $sql = $meta->update_sql_with_null_key(\@key_columns, \@key_values);
+      #  $sql = $meta->update_sql_with_null_key(\@key_columns, \@key_values, $db);
       #  $sth = $dbh->prepare($sql, $meta->prepare_update_options);
       #}
       #else
       #{
-      #  $sql = $meta->update_sql(\@key_columns);
+      #  $sql = $meta->update_sql(\@key_columns, $db);
       #  # Was prepare_cached() but that can't be used across transactions
       #  $sth = $dbh->prepare($sql, $meta->prepare_update_options);
       #}
 
-      my $sql = $meta->update_sql(\@key_columns);
+      my $sql = $meta->update_sql(\@key_columns, $db);
       # Was prepare_cached() but that can't be used across transactions
       my $sth = $dbh->prepare($sql, $meta->prepare_update_options);
 
@@ -654,7 +664,10 @@ sub insert
       return undef;
     }
 
-    foreach my $name (@pk_methods)
+    my @pk_set_methods = map { $meta->column_mutator_method_name($_) } 
+                         $meta->primary_key_column_names;
+
+    foreach my $name (@pk_set_methods)
     {
       $self->$name(shift @pk_values);
     }
@@ -687,12 +700,12 @@ sub insert
       my $column_names = $meta->column_names;
 
       # Was prepare_cached() but that can't be used across transactions
-      $sth = $dbh->prepare($meta->insert_sql, $options);
+      $sth = $dbh->prepare($meta->insert_sql($db), $options);
 
       if($Debug)
       {
         no warnings;
-        warn $meta->insert_sql, " - bind params: ", 
+        warn $meta->insert_sql($db), " - bind params: ", 
           join(', ', (map { $self->$_() } $meta->column_accessor_method_names)), 
           "\n";
       }
@@ -702,15 +715,16 @@ sub insert
 
     if(@pk_methods == 1)
     {
-      my $pk = $pk_methods[0];
+      my $get_pk = $pk_methods[0];
 
-      if($using_pk_placeholders || !defined $self->$pk())
+      if($using_pk_placeholders || !defined $self->$get_pk())
       {
-        #$self->$pk($db->last_insertid_from_sth($sth, $self));
-        $self->$pk($db->last_insertid_from_sth($sth));
+        my $set_pk = $meta->column_mutator_method_name($meta->primary_key_column_names);
+        #$self->$set_pk($db->last_insertid_from_sth($sth, $self));
+        $self->$set_pk($db->last_insertid_from_sth($sth));
         $self->{STATE_IN_DB()} = 1;
       }
-      elsif(!$using_pk_placeholders && defined $self->$pk())
+      elsif(!$using_pk_placeholders && defined $self->$get_pk())
       {
         $self->{STATE_IN_DB()} = 1;
       }
@@ -898,9 +912,9 @@ sub delete
       local $dbh->{'RaiseError'} = 1;
 
       # Was prepare_cached() but that can't be used across transactions
-      my $sth = $dbh->prepare($meta->delete_sql, $meta->prepare_delete_options);
+      my $sth = $dbh->prepare($meta->delete_sql($db), $meta->prepare_delete_options);
 
-      $Debug && warn $meta->delete_sql, " - bind params: ", join(', ', @pk_values), "\n";
+      $Debug && warn $meta->delete_sql($db), " - bind params: ", join(', ', @pk_values), "\n";
       $sth->execute(@pk_values);
 
       unless($sth->rows > 0)
@@ -969,7 +983,8 @@ sub delete
   }
   else
   {
-    my $dbh = $self->dbh or return 0;
+    my $db  = $self->db or return 0;
+    my $dbh = $db->dbh or return 0;
 
     eval
     {
@@ -977,9 +992,9 @@ sub delete
       local $dbh->{'RaiseError'} = 1;
 
       # Was prepare_cached() but that can't be used across transactions
-      my $sth = $dbh->prepare($meta->delete_sql, $meta->prepare_delete_options);
+      my $sth = $dbh->prepare($meta->delete_sql($db), $meta->prepare_delete_options);
 
-      $Debug && warn $meta->delete_sql, " - bind params: ", join(', ', @pk_values), "\n";
+      $Debug && warn $meta->delete_sql($db), " - bind params: ", join(', ', @pk_values), "\n";
       $sth->execute(@pk_values);
 
       unless($sth->rows > 0)
@@ -1025,17 +1040,17 @@ sub AUTOLOAD
 
     if(@fks || @rels)
     {
+      my $class = ref $self;
+
       my $tmp_msg =<<"EOF";
 Methods for the following relationships and foreign keys were deferred and
-then never actually created.
+then never actually created in the class $class.
 
 TYPE            NAME
 ----            ----
 EOF
 
-      my $class = ref $self;
-
-      foreach my $thing (@fks || @rels)
+      foreach my $thing (@fks, @rels)
       {
         next  unless($thing->parent->class eq $class);
         my $type = 

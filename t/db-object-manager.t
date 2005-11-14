@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1325;
+use Test::More tests => 1327;
 
 BEGIN 
 {
@@ -21,7 +21,7 @@ our($HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX);
 
 SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 {
-  skip("Postgres tests", 452)  unless($HAVE_PG);
+  skip("Postgres tests", 454)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -5211,13 +5211,13 @@ BEGIN
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
-      $dbh->do('DROP TABLE rose_db_object_color_map');
-      $dbh->do('DROP TABLE rose_db_object_colors');
-      $dbh->do('DROP TABLE rose_db_object_nicks');
-      $dbh->do('DROP TABLE rose_db_object_nicks2');
-      $dbh->do('DROP TABLE rose_db_object_test');
-      $dbh->do('DROP TABLE rose_db_object_other');
-      $dbh->do('DROP TABLE rose_db_object_bb');
+      $dbh->do('DROP TABLE rose_db_object_color_map CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_nicks CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_nicks2 CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_other CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_bb CASCADE');
     }
 
     $dbh->do(<<"EOF");
@@ -5529,6 +5529,23 @@ EOF
     eval { Rose::DB::Object::Manager->make_manager_methods('objectz') };
     Test::More::ok($@, 'make_manager_methods clash - pg');
 
+    Test::More::is(MyPgObject->meta->perl_manager_class('MyPgObjectMgr'), 
+                  <<"EOF", 'perl_manager_class - pg');
+package MyPgObjectMgr;
+
+use Rose::DB::Object::Manager;
+our \@ISA = qw(Rose::DB::Object::Manager);
+
+sub object_class { 'MyPgObject' }
+
+__PACKAGE__->meta->make_manager_methods('my_pg_object');
+
+1;
+EOF
+
+    eval { MyPgObject->meta->perl_manager_class('MyPgObjectMgr') };
+    Test::More::ok(!$@, 'make_manager_class - pg');
+
     package MyPgObjectManager;
     our @ISA = qw(Rose::DB::Object::Manager);
 
@@ -5560,13 +5577,13 @@ EOF
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
-      $dbh->do('DROP TABLE rose_db_object_color_map');
-      $dbh->do('DROP TABLE rose_db_object_colors');
-      $dbh->do('DROP TABLE rose_db_object_nicks');
-      $dbh->do('DROP TABLE rose_db_object_nicks2');
-      $dbh->do('DROP TABLE rose_db_object_test');
-      $dbh->do('DROP TABLE rose_db_object_bb');
-      $dbh->do('DROP TABLE rose_db_object_other');
+      $dbh->do('DROP TABLE rose_db_object_color_map CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_nicks CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_nicks2 CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_other CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_bb CASCADE');
     }
 
     $dbh->do(<<"EOF");
@@ -5915,13 +5932,13 @@ EOF
     {
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
-      $dbh->do('DROP TABLE rose_db_object_color_map');
-      $dbh->do('DROP TABLE rose_db_object_colors');
-      $dbh->do('DROP TABLE rose_db_object_nicks');
-      $dbh->do('DROP TABLE rose_db_object_nicks2');
-      $dbh->do('DROP TABLE rose_db_object_test');
-      $dbh->do('DROP TABLE rose_db_object_other');
-      $dbh->do('DROP TABLE rose_db_object_bb');
+      $dbh->do('DROP TABLE rose_db_object_color_map CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_colors CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_nicks CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_nicks2 CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_other CASCADE');
+      $dbh->do('DROP TABLE rose_db_object_bb CASCADE');
     }
 
     $dbh->do(<<"EOF");
@@ -6252,13 +6269,13 @@ END
     my $dbh = Rose::DB->new('pg_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE rose_db_object_color_map');
-    $dbh->do('DROP TABLE rose_db_object_colors');
-    $dbh->do('DROP TABLE rose_db_object_nicks');
-    $dbh->do('DROP TABLE rose_db_object_nicks2');
-    $dbh->do('DROP TABLE rose_db_object_test');
-    $dbh->do('DROP TABLE rose_db_object_other');
-    $dbh->do('DROP TABLE rose_db_object_bb');
+    $dbh->do('DROP TABLE rose_db_object_color_map CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_nicks CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_nicks2 CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_other CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_bb CASCADE');
 
     $dbh->disconnect;
   }
@@ -6269,13 +6286,13 @@ END
     my $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE rose_db_object_color_map');
-    $dbh->do('DROP TABLE rose_db_object_colors');
-    $dbh->do('DROP TABLE rose_db_object_nicks');
-    $dbh->do('DROP TABLE rose_db_object_nicks2');
-    $dbh->do('DROP TABLE rose_db_object_test');
-    $dbh->do('DROP TABLE rose_db_object_other');
-    $dbh->do('DROP TABLE rose_db_object_bb');
+    $dbh->do('DROP TABLE rose_db_object_color_map CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_nicks CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_nicks2 CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_other CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_bb CASCADE');
 
     $dbh->disconnect;
   }
@@ -6286,13 +6303,13 @@ END
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE rose_db_object_color_map');
-    $dbh->do('DROP TABLE rose_db_object_colors');
-    $dbh->do('DROP TABLE rose_db_object_nicks');
-    $dbh->do('DROP TABLE rose_db_object_nicks2');
-    $dbh->do('DROP TABLE rose_db_object_test');
-    $dbh->do('DROP TABLE rose_db_object_other');
-    $dbh->do('DROP TABLE rose_db_object_bb');
+    $dbh->do('DROP TABLE rose_db_object_color_map CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_colors CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_nicks CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_nicks2 CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_test CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_other CASCADE');
+    $dbh->do('DROP TABLE rose_db_object_bb CASCADE');
 
     $dbh->disconnect;
   }

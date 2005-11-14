@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata;
 our @ISA = qw(Rose::DB::Object::Metadata);
 
-our $VERSION = '0.032';
+our $VERSION = '0.04';
 
 use Rose::Class::MakeMethods::Generic
 (
@@ -80,6 +80,8 @@ sub auto_generate_columns
         Carp::croak "Could not extract column name from DBI column_info()";
       }
 
+      $db->refine_dbi_column_info($col_info);
+
       $columns{$col_info->{'COLUMN_NAME'}} = 
         $self->auto_generate_column($col_info->{'COLUMN_NAME'}, $col_info);
     }
@@ -128,15 +130,11 @@ sub auto_alias_columns
       }
     }
   }
-
 }
+
 sub auto_generate_column
 {
   my($self, $name, $col_info) = @_;
-
-  my $db = $self->db or Carp::confess "Could not get db";
-
-  $db->refine_dbi_column_info($col_info);
 
   my $type = $col_info->{'TYPE_NAME'};
 
@@ -351,10 +349,7 @@ sub auto_generate_foreign_keys
 
     my $schema = $self->schema;
     $schema = $db->default_implicit_schema  unless(defined $schema);
-if($table eq 'rose_db_object_test')
-{
-  $DB::single = 1;
-}
+
     FK: while(my $fk_info = $sth->fetchrow_hashref)
     {
       CHECK_TABLE: # Make sure this column is from the right table
@@ -553,13 +548,27 @@ sub perl_columns_definition
 
   my @col_defs;
 
-  foreach my $column ($self->columns)
+  no warnings 'uninitialized'; # ordinal_position may be undef
+  foreach my $column (sort __by_rank $self->columns)
   {
     push(@col_defs, $column->perl_hash_definition(inline       => 1, 
                                                   name_padding => $max_len));
   }
 
   return $def_start . join(",\n", map { "$indent$_" } @col_defs) . ",\n);\n";
+}
+
+sub __by_rank
+{  
+  my $pos1 = $a->ordinal_position;
+  my $pos2 = $b->ordinal_position;
+  
+  if(defined $pos1 && defined $pos2)
+  {
+    return $pos1 <=> $pos2 || lc $a->name cmp lc $b->name;
+  }
+  
+  return lc $a->name cmp lc $b->name;
 }
 
 sub perl_foreign_keys_definition
@@ -705,12 +714,15 @@ sub perl_class_definition
 {
   my($self, %args) = @_;
 
-  my $isa = delete $args{'isa'} || [ 'Rose::DB::Object' ];
+  my $class = $self->class;
+
+  no strict 'refs';
+  my $isa = delete $args{'isa'} || [ ${"${class}::ISA"}[0] || 'Rose::DB::Object' ];
 
   $isa = [ $isa ]  unless(ref $isa);
 
   return<<"EOF";
-package @{[$self->class]};
+package $class;
 
 use strict;
 

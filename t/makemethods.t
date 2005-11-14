@@ -135,21 +135,7 @@ SKIP:
 
   is($p->sql_date_birthday->ymd, '1980-12-24', 'date 2');
 
-  if($p->db->driver =~ /^(?:Pg|mysql)$/)
-  {
-    is($p->sql_date_birthday(truncate => 'month'), '1980-12-01', 'date truncate');
-  }
-  elsif($p->db->driver eq 'Informix')
-  {
-    is($p->sql_date_birthday(truncate => 'month'), '12/01/1980', 'date truncate');
-  }
-  else
-  {
-    SKIP:
-    {
-      skip(1, 'date truncate skipped');
-    }
-  }
+  is($p->sql_date_birthday(truncate => 'month')->ymd, '1980-12-01', 'date truncate');
 
   is($p->sql_date_birthday(format => '%B'), 'December', 'date format');
 
@@ -251,7 +237,7 @@ SKIP:
   # bitfield
   #
 
-  if($p->db->driver eq 'Pg')
+  if($p->db->driver eq 'pg')
   {
     is($p->bitfield(2)->to_Bin, '00000000000000000000000000000010', 'bitfield get_set 1');
     is($p->bitfield->to_Bin, '00000000000000000000000000000010', 'bitfield get_set 2');
@@ -298,7 +284,7 @@ SKIP:
   # array
   #
 
-  if($p->db->driver eq 'Pg')
+  if($p->db->driver eq 'pg')
   {
     local $p->{STATE_SAVING()} = 1;
     $p->sql_array(-1, 2.5, 3);
@@ -327,7 +313,7 @@ SKIP:
   # set
   #
 
-  if($p->db->driver eq 'Informix')
+  if($p->db->driver eq 'informix')
   {
     local $p->{STATE_SAVING()} = 1;
     is($p->set(-1, 2.5, 3), 'SET{-1,2.5,3}', 'set get_set 1');

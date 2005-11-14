@@ -15,7 +15,9 @@ use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
      STATE_SAVING ON_SAVE_ATTR_NAME);
 
-our $VERSION = '0.07';
+use Rose::DB::Object::Util qw(column_value_formatted_key);
+
+our $VERSION = '0.09';
 
 sub scalar
 {
@@ -697,7 +699,7 @@ sub bitfield
     my $size = $args->{'bits'} ||= 32;
 
     my $default = $args->{'default'};
-    my $formatted_key = PRIVATE_PREFIX . "_${key}_formatted";
+    my $formatted_key = column_value_formatted_key($key);
 
     if(defined $default)
     {
@@ -706,13 +708,14 @@ sub bitfield
         my $self = shift;
 
         my $db = $self->db or die "Missing Rose::DB object attribute";
+        my $driver = $db->driver || 'unknown';
 
         if(@_)
         {
           if($self->{STATE_LOADING()})
           {
             $self->{$key} = undef;
-            $self->{$formatted_key} = $_[0];
+            $self->{$formatted_key,$driver} = $_[0];
           }
           else
           {
@@ -724,7 +727,7 @@ sub bitfield
             }
           }
         }
-        elsif(!defined $self->{$key} && (!$self->{STATE_SAVING()} || !defined $self->{$formatted_key}))
+        elsif(!defined $self->{$key} && (!$self->{STATE_SAVING()} || !defined $self->{$formatted_key,$driver}))
         {
           $self->{$key} = $db->parse_bitfield($default, $size);
 
@@ -736,16 +739,16 @@ sub bitfield
 
         if($self->{STATE_SAVING()})
         {
-          $self->{$formatted_key} = $db->format_bitfield($self->{$key})
-            unless(defined $self->{$formatted_key} || !defined $self->{$key});
+          $self->{$formatted_key,$driver} = $db->format_bitfield($self->{$key})
+            unless(defined $self->{$formatted_key,$driver} || !defined $self->{$key});
 
-          return $self->{$formatted_key};
+          return $self->{$formatted_key,$driver};
         }
 
         return unless(defined wantarray);
 
         return $self->{$key} ? $self->{$key} : 
-               $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+               $self->{$formatted_key,$driver} ? $db->parse_bitfield($self->{$formatted_key,$driver}) : undef;
       };
     }
     else
@@ -755,13 +758,14 @@ sub bitfield
         my $self = shift;
 
         my $db = $self->db or die "Missing Rose::DB object attribute";
+        my $driver = $db->driver || 'unknown';
 
         if(@_)
         {
           if($self->{STATE_LOADING()})
           {
             $self->{$key} = undef;
-            $self->{$formatted_key} = $_[0];
+            $self->{$formatted_key,$driver} = $_[0];
           }
           else
           {
@@ -771,18 +775,18 @@ sub bitfield
 
         if($self->{STATE_SAVING()})
         {
-          return undef  unless(defined($self->{$formatted_key}) || $self->{$key});
+          return undef  unless(defined($self->{$formatted_key,$driver}) || $self->{$key});
 
-          $self->{$formatted_key} = $db->format_bitfield($self->{$key})
-            unless(defined $self->{$formatted_key} || !defined $self->{$key});
+          $self->{$formatted_key,$driver} = $db->format_bitfield($self->{$key})
+            unless(defined $self->{$formatted_key,$driver} || !defined $self->{$key});
 
-          return $self->{$formatted_key};
+          return $self->{$formatted_key,$driver};
         }
 
         return unless(defined wantarray);
 
         return $self->{$key} ? $self->{$key} : 
-               $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+               $self->{$formatted_key,$driver} ? $db->parse_bitfield($self->{$formatted_key,$driver}) : undef;
       };
 
 
@@ -816,7 +820,7 @@ sub bitfield
     my $size = $args->{'bits'} ||= 32;
 
     my $default = $args->{'default'};
-    my $formatted_key = PRIVATE_PREFIX . "_${key}_formatted";
+    my $formatted_key = column_value_formatted_key($key);
 
     if(defined $default)
     {
@@ -825,8 +829,9 @@ sub bitfield
         my $self = shift;
 
         my $db = $self->db or die "Missing Rose::DB object attribute";
+        my $driver = $db->driver || 'unknown';
 
-        if(!defined $self->{$key} && (!$self->{STATE_SAVING()} || !defined $self->{$formatted_key}))
+        if(!defined $self->{$key} && (!$self->{STATE_SAVING()} || !defined $self->{$formatted_key,$driver}))
         {
           $self->{$key} = $db->parse_bitfield($default, $size);
 
@@ -838,16 +843,16 @@ sub bitfield
 
         if($self->{STATE_SAVING()})
         {
-          $self->{$formatted_key} = $db->format_bitfield($self->{$key})
-            unless(defined $self->{$formatted_key} || !defined $self->{$key});
+          $self->{$formatted_key,$driver} = $db->format_bitfield($self->{$key})
+            unless(defined $self->{$formatted_key,$driver} || !defined $self->{$key});
 
-          return $self->{$formatted_key};
+          return $self->{$formatted_key,$driver};
         }
 
         return unless(defined wantarray);
 
         return $self->{$key} ? $self->{$key} : 
-               $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+               $self->{$formatted_key,$driver} ? $db->parse_bitfield($self->{$formatted_key,$driver}) : undef;
       };
     }
     else
@@ -857,21 +862,22 @@ sub bitfield
         my $self = shift;
 
         my $db = $self->db or die "Missing Rose::DB object attribute";
+        my $driver = $db->driver || 'unknown';
 
         if($self->{STATE_SAVING()})
         {
-          return undef  unless(defined($self->{$formatted_key}) || $self->{$key});
+          return undef  unless(defined($self->{$formatted_key,$driver}) || $self->{$key});
 
-          $self->{$formatted_key} = $db->format_bitfield($self->{$key})
-            unless(defined $self->{$formatted_key} || !defined $self->{$key});
+          $self->{$formatted_key,$driver} = $db->format_bitfield($self->{$key})
+            unless(defined $self->{$formatted_key,$driver} || !defined $self->{$key});
 
-          return $self->{$formatted_key};
+          return $self->{$formatted_key,$driver};
         }
 
         return unless(defined wantarray);
 
         return $self->{$key} ? $self->{$key} : 
-               $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+               $self->{$formatted_key,$driver} ? $db->parse_bitfield($self->{$formatted_key,$driver}) : undef;
       };
     }
   }
@@ -880,20 +886,21 @@ sub bitfield
     my $size = $args->{'bits'} ||= 32;
 
     my $default = $args->{'default'};
-    my $formatted_key = PRIVATE_PREFIX . "_${key}_formatted";
+    my $formatted_key = column_value_formatted_key($key);
 
     $methods{$name} = sub
     {
       my $self = shift;
 
       my $db = $self->db or die "Missing Rose::DB object attribute";
+      my $driver = $db->driver || 'unknown';
 
       Carp::croak "Missing argument in call to $name"  unless(@_);
 
       if($self->{STATE_LOADING()})
       {
         $self->{$key} = undef;
-        $self->{$formatted_key} = $_[0];
+        $self->{$formatted_key,$driver} = $_[0];
       }
       else
       {
@@ -902,18 +909,18 @@ sub bitfield
 
       if($self->{STATE_SAVING()})
       {
-        return undef  unless(defined($self->{$formatted_key}) || $self->{$key});
+        return undef  unless(defined($self->{$formatted_key,$driver}) || $self->{$key});
 
-        $self->{$formatted_key} = $db->format_bitfield($self->{$key})
-          unless(defined $self->{$formatted_key} || !defined $self->{$key});
+        $self->{$formatted_key,$driver} = $db->format_bitfield($self->{$key})
+          unless(defined $self->{$formatted_key,$driver} || !defined $self->{$key});
 
-        return $self->{$formatted_key};
+        return $self->{$formatted_key,$driver};
       }
 
       return unless(defined wantarray);
 
       return $self->{$key} ? $self->{$key} : 
-             $self->{$formatted_key} ? $db->parse_bitfield($self->{$formatted_key}) : undef;
+             $self->{$formatted_key,$driver} ? $db->parse_bitfield($self->{$formatted_key,$driver}) : undef;
     };
   }
   else { Carp::croak "Unknown interface: $interface" }
@@ -1187,6 +1194,7 @@ sub object_by_key
   my $fk_class   = $args->{'class'} or die "Missing foreign object class";
   my $fk_meta    = $fk_class->meta;
   my $meta       = $target_class->meta;
+  my $fk_pk;
 
   my $fk_columns = $args->{'key_columns'} or die "Missing key columns hash";
   my $share_db   = $args->{'share_db'};
@@ -1199,17 +1207,35 @@ sub object_by_key
 
       if(@_)
       {
-        return $self->{$key} = undef  unless(defined $_[0]);
+        # If loading, just assign
+        if($self->{STATE_LOADING()})
+        {
+          return $self->{$key} = $_[0];
+        }
+
+        unless(defined $_[0]) # undef argument
+        {
+          # Set the foreign key columns
+          while(my($local_column, $foreign_column) = each(%$fk_columns))
+          {
+            my $local_method = $meta->column_mutator_method_name($local_column);
+            $self->$local_method(undef);
+          }
+
+          return $self->{$key} = undef;
+        }
+
+        my $object = __args_to_object($self, $key, $fk_class, \$fk_pk, \@_);
 
         while(my($local_column, $foreign_column) = each(%$fk_columns))
         {
           my $local_method   = $meta->column_mutator_method_name($local_column);
           my $foreign_method = $fk_meta->column_accessor_method_name($foreign_column);
 
-          $self->$local_method($_[0]->$foreign_method);
+          $self->$local_method($object->$foreign_method);
         }
 
-        return $self->{$key} = $_[0];
+        return $self->{$key} = $object;
       }
 
       return $self->{$key}  if(defined $self->{$key});
@@ -1280,46 +1306,19 @@ sub object_by_key
           Carp::croak "Can't $name() until this object is loaded or saved";
         }
 
-        my $object;
-
-        if(@_ == 1)
+        unless(defined $_[0]) # undef argument
         {
-          # Object argument
-          if(my $arg_class = ref $_[0])
+          # Set the foreign key columns
+          while(my($local_column, $foreign_column) = each(%$fk_columns))
           {
-            unless($arg_class eq $fk_class)
-            {
-              Carp::croak "$arg_class is not a $fk_class object";
-            }
+            my $local_method = $meta->column_mutator_method_name($local_column);
+            $self->$local_method(undef);
+          }
 
-            $object = $_[0];
-          }
-          elsif(!defined $_[0]) # undef argument
-          {
-            return $self->{$key} = undef;
-          }
+          return $self->{$key} = undef;
         }
-        else
-        {
-          # Primary key value
-          if(@_ == 1)
-          {
-            my @pk_columns  = $fk_meta->primary_key_columns;
 
-            if(@pk_columns > 1)
-            {
-              Carp::croak "Single argument is insufficient to add an object ",
-                          "of class $fk_class which has ", scalar(@pk_columns),
-                          " primary key columns";
-            }
-
-            $object = $fk_class->new($pk_columns[0]->name => $_[0]);
-          }
-          else # Object constructor arguments
-          {
-            $object = $fk_class->new(@_);
-          }
-        }  
+        my $object = __args_to_object($self, $key, $fk_class, \$fk_pk, \@_);
 
         my($db, $started_new_tx);
 
@@ -1344,8 +1343,18 @@ sub object_by_key
           }
           else
           {
-            $object->load(speculative => 1);
-            $object->save or die $object->error;
+            my $dbh = $object->dbh;
+
+            my $ret;
+
+            # Ignore any errors due to missing primary keys
+            local $dbh->{'PrintError'} = 0;
+            eval { $ret = $object->load(speculative => 1) };
+
+            unless($ret)
+            {
+              $object->save or die $object->error;
+            }
           }
 
           while(my($local_column, $foreign_column) = each(%$fk_columns))
@@ -1446,60 +1455,20 @@ sub object_by_key
           return $self->{$key} = $_[0];
         }
 
-        my $object;
-
-        if(@_ == 1)
+        unless(defined $_[0]) # undef argument
         {
-          # Object argument
-          if(my $arg_class = ref $_[0])
+          # Set the foreign key columns
+          while(my($local_column, $foreign_column) = each(%$fk_columns))
           {
-            unless($arg_class eq $fk_class)
-            {
-              Carp::croak "$arg_class is not a $fk_class object";
-            }
-
-            $object = $_[0];
+            my $local_method = $meta->column_mutator_method_name($local_column);
+            $self->$local_method(undef);
           }
-          elsif(!defined $_[0]) # undef argument
-          {
-            # Clear foreign key columns
-            foreach my $local_column (keys %$fk_columns)
-            {
-              my $local_method = $meta->column_accessor_method_name($local_column);
-              $self->$local_method(undef);
-            }
 
-            delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
-            return $self->{$key} = undef;
-          }
-        }
-        else
-        {
-          # Primary key value
-          if(@_ == 1)
-          {
-            my @pk_columns  = $fk_meta->primary_key_columns;
-
-            if(@pk_columns > 1)
-            {
-              Carp::croak "Single argument is insufficient to add an object ",
-                          "of class $fk_class which has ", scalar(@pk_columns),
-                          " primary key columns";
-            }
-
-            $object = $fk_class->new($pk_columns[0]->name => $_[0]);
-          }
-          else # Object constructor arguments
-          {
-            $object = $fk_class->new(@_);
-          }
+          delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
+          return $self->{$key} = undef;
         }
 
-        # Try loading the object
-        unless($object->{STATE_IN_DB()})
-        {
-          $object->load(speculative => 1);
-        }
+        my $object = __args_to_object($self, $key, $fk_class, \$fk_pk, \@_);
 
         # Set the foreign key columns
         while(my($local_column, $foreign_column) = each(%$fk_columns))
@@ -1533,8 +1502,18 @@ sub object_by_key
             }
             else
             {
-              $object->load(speculative => 1);
-              $object->save or die $object->error;
+              my $dbh = $object->dbh;
+  
+              my $ret;
+  
+              # Ignore any errors due to missing primary keys
+              local $dbh->{'PrintError'} = 0;
+              eval { $ret = $object->load(speculative => 1) };
+              
+              unless($ret)
+              {
+                $object->save or die $object->error;
+              }
             }
 
             # Set the foreign key columns
@@ -1847,6 +1826,7 @@ sub objects_by_key
 
   my $ft_class   = $args->{'class'} or die "Missing foreign object class";
   my $meta       = $target_class->meta;
+  my $ft_pk;
 
   my $ft_columns = $args->{'key_columns'} or die "Missing key columns hash";
   my $ft_manager = $args->{'manager_class'};
@@ -1854,6 +1834,12 @@ sub objects_by_key
   my $share_db   = $args->{'share_db'} || 1;
   my $mgr_args   = $args->{'manager_args'} || {};
   my $query_args = $args->{'query_args'} || [];
+
+  if($mgr_args->{'query'})
+  {
+    Carp::croak "Cannot use the key 'query' in the manager_args parameter ",
+                "hash.  Use the separate query_args parameter instead";
+  }
 
   if(@$query_args % 2 != 0)
   {
@@ -1865,7 +1851,7 @@ sub objects_by_key
     $ft_manager = 'Rose::DB::Object::Manager';
     $mgr_args->{'object_class'} = $ft_class;
   }
-
+  
   if($interface eq 'get_set' || $interface eq 'get_set_load')
   {
     $methods{$name} = sub
@@ -1875,7 +1861,8 @@ sub objects_by_key
       if(@_)
       {      
         return $self->{$key} = undef  if(@_ == 1 && !defined $_[0]);
-        return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
+        $self->{$key} = __args_to_objects($self, $key, $ft_class, \$ft_pk, \@_);
+        return wantarray ? @{$self->{$key}} : $self->{$key};
       }
 
       if(defined $self->{$key})
@@ -2032,15 +2019,7 @@ sub objects_by_key
           die $ft_manager->error  unless(defined $deleted);
 
           # Save all the new objects
-          my $objects;
-
-          if(@_ == 1)
-          {    
-            if(ref $_[0] eq 'ARRAY') { $objects = $_[0]  }
-            else                     { $objects = [ @_ ] }
-
-          }
-          else { $objects = [ @_ ] }
+          my $objects = __args_to_objects($self, $key, $ft_class, \$ft_pk, \@_);
 
           foreach my $object (@$objects)
           {
@@ -2049,10 +2028,15 @@ sub objects_by_key
             # the current transaction
             $object->db($db); 
 
-            # Try to load the object if doesn't appear to exist already
-            unless($object->{STATE_IN_DB()})
+            # Try to load the object if doesn't appear to exist already.
+            # If anything was delete above, we have to try loading no
+            # matter what.
+            unless(!$deleted && $object->{STATE_IN_DB()})
             {
+              my $dbh = $object->dbh;
+
               # It's okay if this fails (e.g., if the primary key is undefined)
+              local $dbh->{'PrintError'} = 0;
               eval { $object->load(speculative => 1) };
             }
 
@@ -2176,26 +2160,19 @@ sub objects_by_key
           return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
         }
 
-        my $objects;
-
-        if(@_ == 1)
+        # Set to undef resets the attr  
+        if(@_ == 1 && !defined $_[0])
         {
-          # Set to undef resets the attr  
-          unless(defined $_[0])
-          {
-            # Delete any pending set or add actions
-            delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'};
-            delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
+          # Delete any pending set or add actions
+          delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'};
+          delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
 
-            $self->{$key} = undef;
-            return;
-          }
-
-          if(ref $_[0] eq 'ARRAY') { $objects = $_[0]  }
-          else                     { $objects = [ @_ ] }
+          $self->{$key} = undef;
+          return;
         }
-        else { $objects = [ @_ ] }
 
+        my $objects = __args_to_objects($self, $key, $ft_class, \$ft_pk, \@_);
+          
         my $db = $self->db;
 
         # Set up column map
@@ -2264,10 +2241,15 @@ sub objects_by_key
             # the current transaction
             $object->db($db); 
 
-            # Try to load the object if doesn't appear to exist already
-            unless($object->{STATE_IN_DB()})
+            # Try to load the object if doesn't appear to exist already.
+            # If anything was delete above, we have to try loading no
+            # matter what.
+            unless(!$deleted && $object->{STATE_IN_DB()})
             {
+              my $dbh = $object->dbh;
+
               # It's okay if this fails (e.g., if the primary key is undefined)
+              local $dbh->{'PrintError'} = 0;
               eval { $object->load(speculative => 1) };
             }
 
@@ -2420,13 +2402,7 @@ sub objects_by_key
         }
       }
 
-      my $objects;
-
-      if(@_ == 1 && ref $_[0] eq 'ARRAY') 
-      {
-        $objects = $_[0];
-      }
-      else { $objects = [ @_ ] }
+      my $objects = __args_to_objects($self, $key, $ft_class, \$ft_pk, \@_);
 
       my($db, $started_new_tx);
 
@@ -2450,8 +2426,18 @@ sub objects_by_key
           # Map object to parent
           $object->init(%map, db => $db);
 
-          # Save the object
-          $object->save or die $object->error;
+          my $dbh = $object->dbh;
+
+          my $ret;
+
+          # Ignore any errors due to missing primary keys
+          local $dbh->{'PrintError'} = 0;
+          eval { $ret = $object->load(speculative => 1) };
+
+          unless($ret)
+          {
+            $object->save or die $object->error;
+          }
         }
 
         # Clear the existing list, forcing it to be reloaded next time
@@ -2495,13 +2481,7 @@ sub objects_by_key
       }
 
       # Add all the new objects
-      my $objects;
-
-      if(@_ == 1 && ref $_[0] eq 'ARRAY') 
-      {
-        $objects = [ @{$_[0]} ];
-      }
-      else { $objects = [ @_ ] }
+      my $objects = __args_to_objects($self, $key, $ft_class, \$ft_pk, \@_);
 
       # Add the objects to the list, if it's defined
       if(defined $self->{$key})
@@ -2564,8 +2544,18 @@ sub objects_by_key
           # Map object to parent
           $object->init(%map, db => $db);
 
-          # Save the object
-          $object->save or die $object->error;
+          my $dbh = $object->dbh;
+
+          my $ret;
+
+          # Ignore any errors due to missing primary keys
+          local $dbh->{'PrintError'} = 0;
+          eval { $ret = $object->load(speculative => 1) };
+
+          unless($ret)
+          {
+            $object->save or die $object->error;
+          }
         }
 
         # Blank the attribute, causing the objects to be fetched from
@@ -2604,6 +2594,12 @@ sub objects_by_map
   my $map_method   = $args->{'manager_method'} || 'get_objects';
   my $mgr_args     = $args->{'manager_args'} || {};
   my $query_args   = $args->{'query_args'} || [];
+
+  if($mgr_args->{'query'})
+  {
+    Carp::croak "Cannot use the key 'query' in the manager_args parameter ",
+                "hash.  Use the separate query_args parameter instead";
+  }
 
   my($map_to_class, $map_to_meta, $map_to_method);
 
@@ -2790,6 +2786,10 @@ sub objects_by_map
   $map_to   ||= $require_objects->[0];
   $map_from ||= $local_rel;
 
+  # This var will old the name of the primary key column in the foreign 
+  # class, provided that there is only one column in that key.
+  my $ft_pk;
+
   if($interface eq 'get_set' || $interface eq 'get_set_load')
   {
     $methods{$name} = sub
@@ -2799,7 +2799,8 @@ sub objects_by_map
       if(@_)
       {      
         return $self->{$key} = undef  if(@_ == 1 && !defined $_[0]);
-        return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [@_];
+        $self->{$key} = __args_to_objects($self, $key, $foreign_class, \$ft_pk, \@_);
+        return wantarray ? @{$self->{$key}} : $self->{$key};
       }
 
       if(defined $self->{$key})
@@ -2939,14 +2940,7 @@ sub objects_by_map
           die $map_manager->error  unless(defined $deleted);
 
           # Save all the new objects
-          my $objects;
-
-          if(@_ == 1)
-          {    
-            if(ref $_[0] eq 'ARRAY') { $objects = $_[0]  }
-            else                     { $objects = [ @_ ] }
-          }
-          else { $objects = [ @_ ] }
+          my $objects = __args_to_objects($self, $key, $foreign_class, \$ft_pk, \@_);
 
           foreach my $object (@$objects)
           {
@@ -2955,15 +2949,23 @@ sub objects_by_map
             # the current transaction
             $object->db($db); 
 
+            my $in_db = $object->{STATE_IN_DB()};
+
             # Try to load the object if doesn't appear to exist already
-            unless($object->{STATE_IN_DB()})
+            unless($in_db)
             {
+              my $dbh = $object->dbh;
+
               # It's okay if this fails (e.g., if the primary key is undefined)
-              eval { $object->load(speculative => 1) };
+              local $dbh->{'PrintError'} = 0;
+              eval { $in_db = $object->load(speculative => 1) };
             }
 
-            # Save the object
-            $object->save or die $object->error;
+            # Save the object, if necessary
+            unless($in_db)
+            {
+              $object->save or die $object->error;
+            }
 
             # Not sharing?  Aw.
             $object->db(undef)  unless($share_db);
@@ -3074,26 +3076,20 @@ sub objects_by_map
           return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [@_];
         }
 
-        my $objects;
-
-        if(@_ == 1)
+        # Set to undef resets the attr  
+        if(@_ == 1 && !defined $_[0])
         {
-          # Set to undef resets the attr  
-          unless(defined $_[0])
-          {
-            # Delete any pending set or add actions
-            delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'};
-            delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
+          # Delete any pending set or add actions
+          delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'};
+          delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
 
-            $self->{$key} = undef;
-            return;
-          }
-
-          if(ref $_[0] eq 'ARRAY') { $objects = $_[0]  }
-          else                     { $objects = [ @_ ] }
+          $self->{$key} = undef;
+          return;
         }
-        else { $objects = [ @_ ] }
 
+        # Get all the new objects
+        my $objects = __args_to_objects($self, $key, $foreign_class, \$ft_pk, \@_);
+          
         # Set the attribute
         $self->{$key} = $objects;
 
@@ -3138,15 +3134,23 @@ sub objects_by_map
             # the current transaction
             $object->db($db); 
 
+            my $in_db = $object->{STATE_IN_DB()};
+
             # Try to load the object if doesn't appear to exist already
-            unless($object->{STATE_IN_DB()})
+            unless($in_db)
             {
+              my $dbh = $object->dbh;
+
               # It's okay if this fails (e.g., if the primary key is undefined)
-              eval { $object->load(speculative => 1) };
+              local $dbh->{'PrintError'} = 0;
+              eval { $in_db = $object->load(speculative => 1) };
             }
 
-            # Save the object
-            $object->save or die $object->error;
+            # Save the object, if necessary
+            unless($in_db)
+            {
+              $object->save or die $object->error;
+            }
 
             # Not sharing?  Aw.
             $object->db(undef)  unless($share_db);
@@ -3283,13 +3287,7 @@ sub objects_by_map
         }
       }
 
-      my $objects;
-
-      if(@_ == 1 && ref $_[0] eq 'ARRAY') 
-      {
-        $objects = $_[0];
-      }
-      else { $objects = [ @_ ] }
+      my $objects = __args_to_objects($self, $key, $foreign_class, \$ft_pk, \@_);
 
       my($db, $started_new_tx);
 
@@ -3315,15 +3313,23 @@ sub objects_by_map
           # the current transaction
           $object->db($db); 
 
+          my $in_db = $object->{STATE_IN_DB()};
+
           # Try to load the object if doesn't appear to exist already
-          unless($object->{STATE_IN_DB()})
+          unless($in_db)
           {
+            my $dbh = $object->dbh;
+
             # It's okay if this fails (e.g., if the primary key is undefined)
-            eval { $object->load(speculative => 1) };
+            local $dbh->{'PrintError'} = 0;
+            eval { $in_db = $object->load(speculative => 1) };
           }
 
-          # Save the object
-          $object->save or die $object->error;
+          # Save the object, if necessary
+          unless($in_db)
+          {
+            $object->save or die $object->error;
+          }
 
           # Not sharing?  Aw.
           $object->db(undef)  unless($share_db);
@@ -3378,14 +3384,8 @@ sub objects_by_map
         return undef;
       }
 
-      my $objects;
-
-      # Add all the new objects
-      if(@_ == 1 && ref $_[0] eq 'ARRAY') 
-      {
-        $objects = [ @{$_[0]} ];
-      }
-      else { $objects = [ @_ ] }
+      # Get all the new objects
+      my $objects = __args_to_objects($self, $key, $foreign_class, \$ft_pk, \@_);
 
       # Add the objects to the list, if it's defined
       if(defined $self->{$key})
@@ -3426,15 +3426,23 @@ sub objects_by_map
           # the current transaction
           $object->db($db); 
 
+          my $in_db = $object->{STATE_IN_DB()};
+
           # Try to load the object if doesn't appear to exist already
-          unless($object->{STATE_IN_DB()})
+          unless($in_db)
           {
+            my $dbh = $object->dbh;
+
             # It's okay if this fails (e.g., if the primary key is undefined)
-            eval { $object->load(speculative => 1) };
+            local $dbh->{'PrintError'} = 0;
+            eval { $in_db = $object->load(speculative => 1) };
           }
 
-          # Save the object
-          $object->save or die $object->error;
+          # Save the object, if necessary
+          unless($in_db)
+          {
+            $object->save or die $object->error;
+          }
 
           # Not sharing?  Aw.
           $object->db(undef)  unless($share_db);
@@ -3466,6 +3474,108 @@ sub objects_by_map
   else { Carp::croak "Unknown interface: $interface" }
 
   return \%methods;
+}
+
+sub __args_to_objects
+{
+  my($self, $name, $object_class, $pk_name, $args) = @_;
+
+  if(@$args == 1 && ref $args->[0] eq 'ARRAY')
+  {
+    $args = $args->[0];
+  }
+
+  unless(defined $$pk_name)
+  {
+    my @cols = $object_class->meta->primary_key_column_names;
+  
+    if(@cols == 1)
+    {
+      $$pk_name = $cols[0];
+    }
+    else
+    {
+      $$pk_name = 0;
+    }
+  }
+
+  my @objects;
+
+  foreach my $arg (@$args)
+  {
+    # Already an object
+    if(UNIVERSAL::isa($arg, $object_class))
+    {
+      push(@objects, $arg);
+    }
+    else
+    {  
+      my $ref = ref $arg;
+      
+      if($ref eq 'HASH')
+      {
+        push(@objects, $object_class->new(%$arg));
+      }
+      elsif(!$ref && $pk_name)
+      {
+        push(@objects, $object_class->new($$pk_name => $arg));
+      }
+      else
+      {
+        Carp::croak "Invalid $name argument: $arg";
+      }
+    }
+  }
+
+  return \@objects;
+}
+
+sub __args_to_object
+{
+  my($self, $name, $object_class, $pk_name, $args) = @_;
+
+  unless(defined $$pk_name)
+  {
+    my @cols = $object_class->meta->primary_key_column_names;
+  
+    if(@cols == 1)
+    {
+      $$pk_name = $cols[0];
+    }
+    else
+    {
+      $$pk_name = 0;
+    }
+  }
+
+  if(@$args == 1)
+  {
+    my $arg = $args->[0];
+
+    # Already an object
+    if(UNIVERSAL::isa($arg, $object_class))
+    {
+      return $arg;
+    }
+    elsif(ref $arg eq 'HASH')
+    {
+      return $object_class->new(%$arg);
+    }
+    elsif($pk_name)
+    {
+      return $object_class->new($$pk_name => $arg);
+    }
+    else
+    {
+      Carp::croak "Invalid $name argument: $arg";
+    }
+  }
+  elsif(@$args % 2 == 0)
+  {
+    return $object_class->new(@$args);
+  }
+
+  Carp::croak "Invalid $name argument: @$args";
 }
 
 1;
@@ -3749,10 +3859,8 @@ Example:
       array => 
       [
         'nicknames',
-        'set_nicks' => { interface => 'set', hash_key => 'nicknames' },
-
-        'parts' => { default => [ qw(arms legs) ] },
-
+        set_nicks => { interface => 'set', hash_key => 'nicknames' },
+        parts     => { default => [ qw(arms legs) ] },
       ],
     );
     ...
@@ -3947,6 +4055,10 @@ Create get/set methods for fixed-length character string attributes.
 
 =over 4
 
+=item C<check_in>
+
+A reference to an array of valid values.  When setting the attribute, if the new value is not equal (string comparison) to one of the valid values, a fatal error will occur.
+
 =item C<default>
 
 Determines the default value of the attribute.
@@ -4068,7 +4180,21 @@ A reference to an array of arguments added to the value of the C<query> paramete
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object.
 
-If passed a single argument of undef, the list of objects is set to undef.  If passed a reference to an array, the list of objects is set to point to that same array.  (Note that these objects are B<not> added to the database.  Use the C<get_set_now> or C<get_set_on_save> interface to do that.)
+If passed a single argument of undef, the C<hash_key> used to store the objects is set to undef.  Otherwise, the argument(s) must be a list or reference to an array containing items in one or more of the following formats:
+
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The list of object is assigned to C<hash_key>.  Note that these objects are B<not> added to the database.  Use the C<get_set_now> or C<get_set_on_save> interface to do that.
 
 If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
@@ -4082,9 +4208,25 @@ Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects 
 
 If passed a single argument of undef, the list of objects is set to undef, causing it to be reloaded the next time the method is called with no arguments.  (Pass a reference to an empty array to cause all of the existing objects to be deleted from the database.)  Any pending C<set_on_save> or C<add_on_save> actions are discarded.
 
-If passed a list or reference to an array of the appropriate L<Rose::DB::Object>-derived objects, the list of objects is copied from (in the case of a list) or set to point to (in the case of a reference to an array) the argument(s), the old objects are deleted from the database, and the new ones are added to the database.  Any pending C<set_on_save> or C<add_on_save> actions are discarded.
+Otherwise, the argument(s) must be a list or reference to an array containing items in one or more of the following formats:
 
-The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed prior to setting the list of objects.  If this method is called with arguments before the object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed, a fatal error will occur.
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The list of object is assigned to C<hash_key>, the old objects are deleted from the database, and the new ones are added to the database.  Any pending C<set_on_save> or C<add_on_save> actions are discarded.
+
+When adding each object, if the object does not already exists in the database, it will be inserted.  If the object was previously L<load|Rose::DB::Object/load>ed from or L<save|Rose::DB::Object/save>d to the database, it will be updated.  Otherwise, it will be L<load|Rose::DB::Object/load>ed.
+
+The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d prior to setting the list of objects.  If this method is called with arguments before the object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d, a fatal error will occur.
 
 If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
@@ -4094,11 +4236,27 @@ If the fetch succeeds, a list (in list context) or a reference to the array of o
 
 =item C<get_set_on_save>
 
-Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object, and will also save the objects to the database when the "parent" object is L<save|Rose::DB::Object/save>ed.  The objects do not have to already exist in the database; they will be inserted if needed.
+Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object, and will also save the objects to the database when the "parent" object is L<save|Rose::DB::Object/save>d.  The objects do not have to already exist in the database; they will be inserted if needed.
 
-If passed a single argument of undef, the list of objects is set to undef, causing it to be reloaded the next time the method is called with no arguments.  (Pass a reference to an empty array to cause all of the existing objects to be deleted from the database when the parent is L<save|Rose::DB::Object/save>ed.)
+If passed a single argument of undef, the list of objects is set to undef, causing it to be reloaded the next time the method is called with no arguments.  (Pass a reference to an empty array to cause all of the existing objects to be deleted from the database when the parent is L<save|Rose::DB::Object/save>d.)
 
-If passed a list or reference to an array of the appropriate L<Rose::DB::Object>-derived objects, the list of objects is copied from (in the case of a list) or set to point to (in the case of a reference to an array) the argument(s).  The old objects are scheduled to be deleted from the database and the new ones are scheduled to be added to the database when the parent is L<save|Rose::DB::Object/save>ed.  Any previously pending C<set_on_save> or C<add_on_save> actions are discarded.
+Otherwise, the argument(s) must be a list or reference to an array containing items in one or more of the following formats:
+
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The list of object is assigned to C<hash_key>.  The old objects are scheduled to be deleted from the database and the new ones are scheduled to be added to the database when the parent is L<save|Rose::DB::Object/save>d.  Any pending C<set_on_save> or C<add_on_save> actions are discarded.
+
+When adding each object when the parent is L<save|Rose::DB::Object/save>d, if the object does not already exists in the database, it will be inserted.  If the object was previously L<load|Rose::DB::Object/load>ed from or L<save|Rose::DB::Object/save>d to the database, it will be updated.  Otherwise, it will be L<load|Rose::DB::Object/load>ed.
 
 If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
@@ -4112,17 +4270,51 @@ Creates a method that will add to a list of L<Rose::DB::Object>-derived objects 
 
 If passed an empty list, the method does nothing and the parent object's L<error|Rose::DB::Object/error> attribute is set.
 
-The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed prior to adding to the list of objects.  If this method is called with a non-empty list as an argument before the parent object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed, a fatal error will occur.
+If passed any arguments, the parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d prior to adding to the list of objects.  If this method is called with a non-empty list as an argument before the parent object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d, a fatal error will occur.
 
-If passed a list or reference to an array of the appropriate kind of L<Rose::DB::Object>-derived objects, these objects are linked to the parent object (by setting the appropriate key attributes) and then added to the database.  The parent object's list of related objects is then set to undef, causing the related objects to be reloaded from the database the next time they're needed.
+The argument(s) must be a list or reference to an array containing items in one or more of the following formats:
+
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+These objects are linked to the parent object (by setting the appropriate key attributes) and then added to the database.
+
+When adding each object, if the object does not already exists in the database, it will be inserted.  If the object was previously L<load|Rose::DB::Object/load>ed from or L<save|Rose::DB::Object/save>d to the database, it will be updated.  Otherwise, it will be L<load|Rose::DB::Object/load>ed.
+
+The parent object's list of related objects is then set to undef, causing the related objects to be reloaded from the database the next time they're needed.
 
 =item C<add_on_save>
 
-Creates a method that will add to a list of L<Rose::DB::Object>-derived objects that are related to the current object by a key formed from attributes of the current object.  The objects will be added to the database when the parent object is L<save|Rose::DB::Object/save>ed.  The objects do not have to already exist in the database; they will be inserted if needed.
+Creates a method that will add to a list of L<Rose::DB::Object>-derived objects that are related to the current object by a key formed from attributes of the current object.  The objects will be added to the database when the parent object is L<save|Rose::DB::Object/save>d.  The objects do not have to already exist in the database; they will be inserted if needed.
 
 If passed an empty list, the method does nothing and the parent object's L<error|Rose::DB::Object/error> attribute is set.
 
-If passed a list or reference to an array of the appropriate kind of L<Rose::DB::Object>-derived objects, these objects are linked to the parent object (by setting the appropriate key attributes, whether or not they're defined in the parent object) and are scheduled to be added to the database when the parent object is L<save|Rose::DB::Object/save>ed.  They are also added to the parent object's current list of related objects, if the list is defined at the time of the call.
+Otherwise, the argument(s) must be a list or reference to an array containing items in one or more of the following formats:
+
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+These objects are linked to the parent object (by setting the appropriate key attributes, whether or not they're defined in the parent object) and are scheduled to be added to the database when the parent object is L<save|Rose::DB::Object/save>d.  They are also added to the parent object's current list of related objects, if the list is defined at the time of the call.
+
+When adding each object when the parent is L<save|Rose::DB::Object/save>d, if the object does not already exists in the database, it will be inserted.  If the object was previously L<load|Rose::DB::Object/load>ed from or L<save|Rose::DB::Object/save>d to the database, it will be updated.  Otherwise, it will be L<load|Rose::DB::Object/load>ed.
 
 =back
 
@@ -4148,7 +4340,7 @@ Example setup:
       [
         bugs => 
         {
-          interface => '...', # get_set, get_set_now, or get_set_on_save
+          interface => '...', # get_set, get_set_now, get_set_on_save
           class     => 'Bug',
           key_columns =>
           {
@@ -4201,8 +4393,17 @@ Example - get_set interface:
     $prog->version($new_version); # Does not hit the db
     $prog->bugs(@new_bugs);       # Does not hit the db
 
+    # @new_bugs can contain any mix of these types:
+    #
+    # @new_bugs =
+    # (
+    #   123,                 # primary key value
+    #   { id => 456 },       # method name/value pairs
+    #   Bug->new(id => 789), # object
+    # );
+
     # Write to the programs table only.  The bugs table is not
-    # updates. See the get_set_now and get_set_on_save method
+    # updated. See the get_set_now and get_set_on_save method
     # types for ways to write to the bugs table.
     $prog->save;
 
@@ -4221,6 +4422,15 @@ Example - get_set_now interface:
     # of Bug objects, either existing or new)
     $prog->bugs(@new_bugs); 
 
+    # @new_bugs can contain any mix of these types:
+    #
+    # @new_bugs =
+    # (
+    #   123,                 # primary key value
+    #   { id => 456 },       # method name/value pairs
+    #   Bug->new(id => 789), # object
+    # );
+
     # Write to the programs table
     $prog->save;
 
@@ -4234,6 +4444,15 @@ Example - get_set_on_save interface:
 
     $prog->name($new_name); # Does not hit the db
     $prog->bugs(@new_bugs); # Does not hit the db
+
+    # @new_bugs can contain any mix of these types:
+    #
+    # @new_bugs =
+    # (
+    #   123,                 # primary key value
+    #   { id => 456 },       # method name/value pairs
+    #   Bug->new(id => 789), # object
+    # );
 
     # Write to the programs table and the bugs table, deleting any
     # existing bugs and replacing them with @new_bugs (which must be
@@ -4254,6 +4473,15 @@ Example - add_now interface:
     # list of bugs for this program
     $prog->add_bugs(@new_bugs);
 
+    # @new_bugs can contain any mix of these types:
+    #
+    # @new_bugs =
+    # (
+    #   123,                 # primary key value
+    #   { id => 456 },       # method name/value pairs
+    #   Bug->new(id => 789), # object
+    # );
+
     # Read from the bugs table, getting the full list of bugs, 
     # including the ones that were added above.
     $bugs = $prog->bugs;
@@ -4271,6 +4499,15 @@ Example - add_on_save interface:
 
     $prog->name($new_name);     # Does not hit the db
     $prog->add_bugs(@new_bugs); # Does not hit the db
+
+    # @new_bugs can contain any mix of these types:
+    #
+    # @new_bugs =
+    # (
+    #   123,                 # primary key value
+    #   { id => 456 },       # method name/value pairs
+    #   Bug->new(id => 789), # object
+    # );
 
     # Write to the programs table and the bugs table, adding
     # @new_bugs to the current list of bugs for this program
@@ -4340,9 +4577,23 @@ A reference to an array of arguments added to the value of the C<query> paramete
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>.
 
-If passed a single argument of undef, the list of objects is set to undef.  If passed a reference to an array of objects, then the list or related objects is set to point to that same array.  (Note that these objects are B<not> added to the database.  Use the C<get_set_now> or C<get_set_on_save> interface to do that.)
+If passed a single argument of undef, the C<hash_key> used to store the objects is set to undef.  Otherwise, the argument(s) must be a list or reference to an array containing items in one or more of the following formats:
 
-If the call to C<manager_class>'s C<manager_method> method returns false, that false value (in scalar context) or an empty list (in list context) is returned.
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The list of object is assigned to C<hash_key>.  Note that these objects are B<not> added to the database.  Use the C<get_set_now> or C<get_set_on_save> interface to do that.
+
+When fetching objects from the database, if the call to C<manager_class>'s C<manager_method> method returns false, that false value (in scalar context) or an empty list (in list context) is returned.
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
@@ -4352,9 +4603,25 @@ Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects 
 
 If passed a single argument of undef, the list of objects is set to undef, causing it to be reloaded the next time the method is called with no arguments.  (Pass a reference to an empty array to cause all of the existing objects to be "unmapped"--that is, to have their entries in the mapping table deleted from the database.)  Any pending C<set_on_save> or C<add_on_save> actions are discarded.
 
-If passed a list or reference to an array of the appropriate L<Rose::DB::Object>-derived objects, the list of objects is copied from (in the case of a list) or set to point to (in the case of a reference to an array) the argument(s), the old entries are deleted from the mapping table in the database, and the new objects are added to the database, along with their corresponding mapping entries.  Any pending C<set_on_save> or C<add_on_save> actions are discarded.
+Otherwise, the argument(s) must be a list or reference to an array containing items in one or more of the following formats:
 
-The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed prior to setting the list of objects.  If this method is called with arguments before the object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed, a fatal error will occur.
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The list of object is assigned to C<hash_key>, the old entries are deleted from the mapping table in the database, and the new objects are added to the database, along with their corresponding mapping entries.  Any pending C<set_on_save> or C<add_on_save> actions are discarded.
+
+When adding each object, if the object does not already exists in the database, it will be inserted.  If the object was previously L<load|Rose::DB::Object/load>ed from or L<save|Rose::DB::Object/save>d to the database, it will be updated.  Otherwise, it will be L<load|Rose::DB::Object/load>ed.
+
+The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d prior to setting the list of objects.  If this method is called with arguments before the object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d, a fatal error will occur.
 
 If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
@@ -4364,11 +4631,27 @@ If the fetch succeeds, a list (in list context) or a reference to the array of o
 
 =item C<get_set_on_save>
 
-Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, and will also save objects to the database and map them to the parent object when the "parent" object is L<save|Rose::DB::Object/save>ed.  The objects do not have to already exist in the database; they will be inserted if needed.
+Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, and will also save objects to the database and map them to the parent object when the "parent" object is L<save|Rose::DB::Object/save>d.  The objects do not have to already exist in the database; they will be inserted if needed.
 
 If passed a single argument of undef, the list of objects is set to undef, causing it to be reloaded the next time the method is called with no arguments.  (Pass a reference to an empty array to cause all of the existing objects to be "unmapped"--that is, to have their entries in the mapping table deleted from the database.)  Any pending C<set_on_save> or C<add_on_save> actions are discarded.
 
-If passed a list or reference to an array of the appropriate L<Rose::DB::Object>-derived objects, the list of objects is copied from (in the case of a list) or set to point to (in the case of a reference to an array) the argument(s).  The mapping table records that mapped the old objects to the parent object are scheduled to be deleted from the database and new ones are scheduled to be added to the database when the parent is L<save|Rose::DB::Object/save>ed.  Any previously pending C<set_on_save> or C<add_on_save> actions are discarded.
+Otherwise, the argument(s) must be a list or reference to an array containing items in one or more of the following formats:
+
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The list of object is assigned to C<hash_key>. The mapping table records that mapped the old objects to the parent object are scheduled to be deleted from the database and new ones are scheduled to be added to the database when the parent is L<save|Rose::DB::Object/save>d.  Any previously pending C<set_on_save> or C<add_on_save> actions are discarded.
+
+When adding each object when the parent is L<save|Rose::DB::Object/save>d, if the object does not already exists in the database, it will be inserted.  If the object was previously L<load|Rose::DB::Object/load>ed from or  L<save|Rose::DB::Object/save>d to the database, it will be updated.  Otherwise, it will be L<load|Rose::DB::Object/load>ed.
 
 If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
@@ -4382,17 +4665,45 @@ Creates a method that will add to a list of L<Rose::DB::Object>-derived objects 
 
 If passed an empty list, the method does nothing and the parent object's L<error|Rose::DB::Object/error> attribute is set.
 
-The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed prior to adding to the list of objects.  If this method is called with a non-empty list as an argument before the parent object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed, a fatal error will occur.
+If passed any arguments, the parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d prior to adding to the list of objects.  If this method is called with a non-empty list as an argument before the parent object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d, a fatal error will occur.
 
-If passed a list or reference to an array of the appropriate kind of L<Rose::DB::Object>-derived objects, these objects are linked to the parent object (by setting the appropriate key attributes) and then added to the database.  The parent object's list of related objects is then set to undef, causing the related objects to be reloaded from the database the next time they're needed.
+The argument(s) must be a list or reference to an array containing items in one or more of the following formats:
+
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The parent object's list of related objects is then set to undef, causing the related objects to be reloaded from the database the next time they're needed.
 
 =item C<add_on_save>
 
-Creates a method that will add to a list of L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, and will also save objects to the database and map them to the parent object when the "parent" object is L<save|Rose::DB::Object/save>ed.  The objects and map records will be added to the database when the parent object is L<save|Rose::DB::Object/save>ed.  The objects do not have to already exist in the database; they will be inserted if needed.
+Creates a method that will add to a list of L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, and will also save objects to the database and map them to the parent object when the "parent" object is L<save|Rose::DB::Object/save>d.  The objects and map records will be added to the database when the parent object is L<save|Rose::DB::Object/save>d.  The objects do not have to already exist in the database; they will be inserted if needed.
 
 If passed an empty list, the method does nothing and the parent object's L<error|Rose::DB::Object/error> attribute is set.
 
-If passed a list or reference to an array of the appropriate kind of L<Rose::DB::Object>-derived objects, these objects are scheduled to be added to the database and mapped to the parent object when the parent object is L<save|Rose::DB::Object/save>ed.  They are also added to the parent object's current list of related objects, if the list is defined at the time of the call.
+Otherwise, the argument(s) must be a list or reference to an array containing items in one or more of the following formats:
+
+=over 4
+
+=item * An object of type C<class>
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter two formats will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+These objects are scheduled to be added to the database and mapped to the parent object when the parent object is L<save|Rose::DB::Object/save>d.  They are also added to the parent object's current list of related objects, if the list is defined at the time of the call.
 
 =back
 
@@ -4452,7 +4763,7 @@ Returns true if the foreign object was deleted successfully or did not exist in 
 
 =item C<delete_on_save>
 
-Deletes a L<Rose::DB::Object>-derived object from the database when the "parent" object is L<save|Rose::DB::Object/save>ed, based on a primary key formed from attributes of the current object.  The "parent" object will have all of its attributes that refer to the "foreign" set to null immediately, but the actual delete will not be done until the parent is saved.
+Deletes a L<Rose::DB::Object>-derived object from the database when the "parent" object is L<save|Rose::DB::Object/save>d, based on a primary key formed from attributes of the current object.  The "parent" object will have all of its attributes that refer to the "foreign" set to null immediately, but the actual delete will not be done until the parent is saved.
 
 Any previously pending C<get_set_on_save> action is discarded.
 
@@ -4464,7 +4775,23 @@ Returns true if the foreign object was deleted successfully or did not exist in 
 
 Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object.
 
-If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument is assumed to be an object of type C<class> and is assigned to C<hash_key> after having its C<key_columns> set to their corresponding values in the current object.
+If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument must be one of the following:
+
+=over 4
+
+=item * An object of type C<class>
+
+=item * A list of method name/value pairs.
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter three argument types will be used to construct an object of type C<class>.  A single primary key value is only valid if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The object is assigned to C<hash_key> after having its C<key_columns> set to their corresponding values in the current object.
 
 If called with no arguments and the C<hash_key> used to store the object is defined, the object is returned.  Otherwise, the object is created and loaded.
 
@@ -4478,9 +4805,27 @@ If the load succeeds, the object is returned.
 
 Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object, and will also save the object to the database when called with an appropriate object as an argument.
 
-If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument is assumed to be an object of type C<class> and is assigned to C<hash_key> after having its C<key_columns> set to their corresponding values in the current object.  The object is then immediately L<save|Rose::DB::Object/save>ed to the database.
+If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument must be one of the following:
 
-The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed prior to setting the list of objects.  If this method is called with arguments before the object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>ed, a fatal error will occur.
+=over 4
+
+=item * An object of type C<class>
+
+=item * A list of method name/value pairs.
+
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter three argument types will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The object is assigned to C<hash_key> after having its C<key_columns> set to their corresponding values in the current object.  The object is then immediately L<save|Rose::DB::Object/save>d to the database.
+
+If the object does not already exists in the database, it will be inserted.  If the object was previously L<load|Rose::DB::Object/load>ed from or L<save|Rose::DB::Object/save>d to the database, it will be updated.  Otherwise, it will be L<load|Rose::DB::Object/load>ed.
+
+The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d prior to setting the list of objects.  If this method is called with arguments before the object has been  L<load|Rose::DB::Object/load>ed or L<save|Rose::DB::Object/save>d, a fatal error will occur.
 
 If called with no arguments and the C<hash_key> used to store the object is defined, the object is returned.  Otherwise, the object is created and loaded.
 
@@ -4492,17 +4837,27 @@ If the load succeeds, the object is returned.
 
 =item C<get_set_on_save>
 
-Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object, and save the object when the "parent" object is L<save|Rose::DB::Object/save>ed.
+Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object, and save the object when the "parent" object is L<save|Rose::DB::Object/save>d.
 
-If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.
+If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument must be one of the following:
 
-If passed a set of name/value pairs, an object of type C<class> is constructed, with those parameters being passed to the constructor.
+=over 4
 
-If passed a single value, and if C<class> has a single primary key column, then an object of type C<class> is constructed, with the primary key value passed to the constructor as the value of the primary key column's mutator method.
+=item * An object of type C<class>
 
-If passed an object of type C<class>, it is used as-is.
+=item * A list of method name/value pairs.
 
-The object is then assigned to C<hash_key> after having its C<key_columns> set to their corresponding values in the current object.  The object will be saved into the database when the "parent" object is L<save|Rose::DB::Object/save>ed.  Any previously pending C<get_set_on_save> action is discarded.
+=item * A reference to a hash containing method name/value pairs.
+
+=item * A single scalar primary key value
+
+=back
+
+The latter three argument types will be used to construct an object of type C<class>.  A single primary key value is only a valid argument format if the C<class> in question has a single-column primary key.  A hash reference argument must contain sufficient information for the object to be uniquely identified.
+
+The object is assigned to C<hash_key> after having its C<key_columns> set to their corresponding values in the current object.  The object will be saved into the database when the "parent" object is L<save|Rose::DB::Object/save>d.  Any previously pending C<get_set_on_save> action is discarded.
+
+If the object does not already exists in the database, it will be inserted.  If the object was previously L<load|Rose::DB::Object/load>ed from or L<save|Rose::DB::Object/save>d to the database, it will be updated.  Otherwise, it will be L<load|Rose::DB::Object/load>ed.
 
 If called with no arguments and the C<hash_key> used to store the object is defined, the object is returned.  Otherwise, the object is created and loaded from the database.
 
@@ -4551,7 +4906,6 @@ Example setup:
 
 Example - get_set interface:
 
-
     $product = Product->new(id => 5, category_id => 99);
 
     # Read from the categories table
@@ -4579,8 +4933,20 @@ Example - get_set_now interface:
     # Read from the categories table
     $category = $product->category;
 
-    # Write to the categories table
+    # Write to the categories table:
+    # (all possible argument formats show)
+
+    # Object argument
     $product->category(Category->new(...));
+
+    # Primary key value
+    $product->category(123); 
+
+    # Method name/value pairs in a hashref
+    $product->category(id => 123); 
+
+    # Method name/value pairs in a hashref
+    $product->category({ id => 123 }); 
 
     # Write to the products table
     $product->save; 
@@ -4593,8 +4959,19 @@ Example - get_set_on_save interface:
     # Read from the categories table
     $category = $product->category;
 
-    # Does not write to the db
-    $product->category(Category->new(...)); 
+    # These do not write to the db:
+
+    # Object argument
+    $product->category(Category->new(...));
+
+    # Primary key value
+    $product->category(123); 
+
+    # Method name/value pairs in a hashref
+    $product->category(id => 123); 
+
+    # Method name/value pairs in a hashref
+    $product->category({ id => 123 });
 
     # Write to both the products and categories tables
     $product->save; 

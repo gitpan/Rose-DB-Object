@@ -9,10 +9,16 @@ use Rose::DB::Object::Metadata::Util qw(:all);
 use Rose::DB::Object::Metadata::MethodMaker;
 our @ISA = qw(Rose::DB::Object::Metadata::MethodMaker);
 
+use Rose::DB::Object::Util 
+  qw(column_value_formatted_key column_value_is_inflated_key);
+
+use Rose::DB::Object::Constants 
+  qw(STATE_IN_DB STATE_LOADING STATE_SAVING);
+
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.04';
+our $VERSION = '0.10';
 
 use overload
 (
@@ -24,12 +30,33 @@ __PACKAGE__->add_default_auto_method_types('get_set');
 
 __PACKAGE__->add_common_method_maker_argument_names(qw(column default type hash_key));
 
+use Rose::Class::MakeMethods::Generic
+(
+  inheritable_hash =>
+  [
+    event_method_type  => { hash_key => 'event_method_types' },
+    event_method_types => { interface => 'get_set_all' },
+    delete_event_method_type => { interface => 'delete', hash_key => 'event_method_types' },
+  ],
+);
+
+__PACKAGE__->event_method_types
+(
+  inflate => [ qw(get_set get) ],
+  deflate => [ qw(get_set get) ],
+  on_load => [ qw(get_set set) ],
+  on_save => [ qw(get_set get) ],
+  on_set  => [ qw(get_set set) ],
+  on_get  => [ qw(get_set get) ],
+);
+
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
   scalar => 
   [
     'alias',
+    'ordinal_position',
     __PACKAGE__->common_method_maker_argument_names,
   ],
 
@@ -38,6 +65,7 @@ Rose::Object::MakeMethods::Generic->make_methods
     'manager_uses_method',
     'is_primary_key_member',
     'not_null',
+    'triggers_disabled',
   ],
 );
 
@@ -131,6 +159,15 @@ sub made_method_type
   {
     $self->{'mutator_method_name'} = $name;
   }
+  
+  $self->{'made_method_types'}{$type} = 1;
+}
+
+sub defined_method_types
+{
+  my($self) = shift;
+  my @types = sort keys %{$self->{'made_method_types'} ||= {}};
+  return wantarray ? @types : \@types;
 }
 
 sub method_maker_arguments
@@ -168,16 +205,9 @@ sub name_sql
 {
   my($self) = shift;
 
-  return $self->{'name_sql'} = shift  if(@_);
-
-  if(defined $self->{'name_sql'})
+  if(my $db = shift)
   {
-    return $self->{'name_sql'};
-  }
-
-  if(my $parent = $self->parent)
-  {
-    return $self->{'name_sql'} = $parent->db->quote_column_name($self->{'name'});
+    return $self->{'name_sql'}{$db->{'driver'}} ||= $db->quote_column_name($self->{'name'});
   }
   else
   {
@@ -225,6 +255,8 @@ sub init_with_dbi_column_info
     $self->not_null(0);
   }
 
+  $self->ordinal_position($col_info->{'ORDINAL_POSITION'} || 0);
+
   return;
 }
 
@@ -236,7 +268,10 @@ sub perl_column_defintion_attributes
 
   ATTR: foreach my $attr ('type', sort keys %$self)
   {
-    if($attr =~ /^(?:name(?:_sql)?|is_primary_key_member|primary_key_position|method_name)$/)
+    if($attr =~ /^(?:name(?:_sql)? | is_primary_key_member | 
+                  primary_key_position | method_name | method_code |
+                  made_method_types| ordinal_position | triggers | 
+                  trigger_index )$/x)
     {
       next ATTR;
     }
@@ -323,6 +358,650 @@ sub _sort_keys
   }
 
   return lc $_[0] cmp lc $_[1];
+}
+
+our %Trigger_Events =
+(
+  inflate => 1,
+  deflate => 1,
+  on_load => 1,
+  on_save => 1,
+  on_set  => 1,
+  on_get  => 1,
+);
+
+sub triggers
+{
+  my($self, $event) = (shift, shift);
+
+  Carp::croak "Invalid event: $event"  unless(exists $Trigger_Events{$event});
+
+  if(@_)
+  {
+    my $codes = (@_ > 1) ? [ @_ ] : $_[0];
+    
+    unless(ref $codes eq 'ARRAY')
+    {
+      Carp::croak "Expected code reference or a reference to an array ",
+                  "of code references, but got: $codes";
+    }
+
+    foreach my $code (@$codes)
+    {
+      unless((ref($code) || '') eq 'CODE')
+      {
+        Carp::croak "Not a code reference: $code";
+      }
+    }
+
+    $self->{'triggers'}{$event} = @$codes ? $codes : undef;
+    $self->reapply_triggers($event);
+    return;
+  }
+
+  return $self->{'triggers'}{$event};
+}
+
+sub delete_triggers
+{
+  my($self, $event) = @_;
+
+  my @events = $event ? $event : keys %Trigger_Events;
+
+  foreach my $event (@events)
+  {
+    Carp::croak "Invalid event: $event"  unless(exists $Trigger_Events{$event});
+    $self->{'triggers'}{$event} = undef;
+    $self->{'trigger_index'}{$event} = undef;
+  }
+
+  return;
+}
+
+sub disable_triggers { shift->triggers_disabled(1) }
+sub enable_triggers  { shift->triggers_disabled(0) }
+
+sub add_trigger
+{
+  my($self, %args) = @_;
+
+  my($event, $position, $code, $name);
+  
+  if(@_ == 3 && $Trigger_Events{$_[1]})
+  {
+    $event = $_[1];
+    $code  = $_[2];
+  }
+  else
+  {
+    $event = $args{'event'};
+    $code  = $args{'code'};
+  }
+
+  $name     = $args{'name'} || $self->generate_trigger_name;
+  $position = $args{'position'} || 'end';
+
+  Carp::croak "Invalid event: '$event'"  
+    unless(exists $Trigger_Events{$event});
+
+  unless((ref($code) || '') eq 'CODE')
+  {
+    Carp::croak "Not a code reference: $code";
+  }
+  
+  if($position =~ /^(?:end|last|push)$/)
+  {
+    push(@{$self->{'triggers'}{$event}}, $code);
+    $self->trigger_index($event, $name, $#{$self->{'triggers'}{$event}});
+  }
+  elsif($position =~ /^(?:start|first|unshift)$/)
+  {
+    unshift(@{$self->{'triggers'}{$event}}, $code);
+    
+    # Shift all the other trigger positions
+    my $indexes = $self->trigger_indexes($event);
+    
+    foreach my $name (keys(%$indexes))
+    {
+      $indexes->{$name}++;
+    }
+
+    # Set new position
+    $self->trigger_index($event, $name, 0);
+  }
+  else { Carp::croak "Invalid trigger position: '$position'" }
+
+  $self->reapply_triggers($event);
+  return;
+}
+
+my $Trigger_Num = 0;
+
+sub generate_trigger_name { "dyntrig_${$}_" . ++$Trigger_Num }
+
+sub trigger_indexes { $_[0]->{'trigger_index'}{$_[1]} || {} }
+
+sub trigger_index
+{
+  my($self, $event, $name) = (shift, shift, shift);
+  
+  if(@_)
+  {
+    return $self->{'trigger_index'}{$event}{$name} = shift;
+  }
+
+  return $self->{'trigger_index'}{$event}{$name};
+}
+
+sub delete_trigger
+{
+  my($self, %args) = @_;
+
+  my $name  = $args{'name'} or Carp::croak "Missing name parameter";
+  my $event = $args{'event'};
+
+  Carp::croak "Invalid event: '$event'"  
+    unless(exists $Trigger_Events{$event});
+
+  my $index = $self->trigger_index($event, $name);
+  
+  unless(defined $index)
+  {
+    Carp::croak "No trigger named '$name' for event '$event'";
+  }
+
+  my $triggers = $self->{'triggers'}{$event};
+  
+  # Remove the trigger
+  splice(@$triggers, $index, 1);
+
+  my $indexes = $self->trigger_indexes($event);
+
+  # Remove its index
+  delete $indexes->{$name};
+
+  # Shift all trigger indexes greater than $index
+  foreach my $name (keys(%$indexes))
+  {
+    $indexes->{$name}--  if($indexes->{$name} > $index);
+  }
+
+  $self->reapply_triggers($event);
+}
+
+sub apply_triggers
+{
+  my($self, $event) = @_;
+
+  my $method_types;
+
+  if(defined $event)
+  {
+    $method_types = $self->event_method_type($event) 
+      or Carp::croak "Invalid event: '$event'";
+
+    my %defined = map { $_ => 1 } $self->defined_method_types;
+
+    $method_types = [ grep { $defined{$_} } @$method_types ];
+  }
+  else
+  {
+    $method_types =  $self->defined_method_types;
+  }
+
+  foreach my $method_type (@$method_types)
+  {
+    $self->apply_method_triggers($method_type);
+  }
+  
+  return;
+}
+
+*reapply_triggers = \&apply_triggers;
+
+sub apply_method_triggers
+{
+  my($self, $type) = @_;
+
+  my $column = $self; # $self masked in a deeper context below
+
+  my $class = $self->parent->class;
+
+  my $method_name = $self->method_name($type) or
+    Carp::confess "No method name for method type '$type'";
+
+  my $method_code = $self->method_code($type);
+  
+  # Save the original method code
+  unless($method_code)
+  {
+    $method_code = $class->can($method_name);
+    $self->method_code($type, $method_code);
+  }
+
+  # Copying out into scalars to avoid method calls in the sub itself
+  my $inflate_code = $self->triggers('inflate') || 0;
+  my $deflate_code = $self->triggers('deflate') || 0;
+  my $on_load_code = $self->triggers('on_load') || 0;
+  my $on_save_code = $self->triggers('on_save') || 0;
+  my $on_set_code  = $self->triggers('on_set')  || 0;
+  my $on_get_code  = $self->triggers('on_get')  || 0;
+
+  my $key             = $self->hash_key;
+  my $formatted_key   = column_value_formatted_key($key);
+  my $is_inflated_key = column_value_is_inflated_key($key);
+
+  my $uses_formatted_key = $self->method_uses_formatted_key($type);
+
+  if($type eq 'get_set')
+  {
+    if($inflate_code || $deflate_code || 
+       $on_load_code || $on_save_code ||
+       $on_set_code  || $on_get_code)
+    {
+      my $method = sub
+      {
+        my($self) = $_[0];
+    
+        if($column->method_should_set('get_set', \@_))
+        {
+          # This is a duplication of the 'set' code below.  Yes, it's
+          # duplicated to save one measly function call.  So sue me.
+          if($self->{STATE_LOADING()})
+          {
+            $self->{$is_inflated_key} = 0  unless($uses_formatted_key);
+
+            &$method_code; # magic call using current @_
+  
+            unless($self->{'triggers_disabled'})
+            {
+              local $self->{'triggers_disabled'} = 1;
+  
+              if($on_load_code)
+              {
+                foreach my $code (@$on_load_code)
+                {
+                  $code->($self);
+                }
+              }
+            }
+          }
+          else
+          {
+            $self->{$is_inflated_key} = 0  unless($uses_formatted_key);
+
+            &$method_code; # magic call using current @_
+  
+            unless($self->{'triggers_disabled'})
+            {
+              local $self->{'triggers_disabled'} = 1;
+  
+              if($on_set_code)
+              {
+                foreach my $code (@$on_set_code)
+                {
+                  $code->($self);
+                }
+              }
+            }
+          }
+        }
+        else # getting
+        {
+          # This is a duplication of the 'get' code below.  Yes, it's
+          # duplicated to save one measly function call.  So sue me.
+          if($self->{STATE_SAVING()})
+          {
+            unless($self->{'triggers_disabled'})
+            {
+              local $self->{'triggers_disabled'} = 1;
+  
+              if($deflate_code)
+              {
+                if($uses_formatted_key)
+                {
+                  my $db = $self->db or die "Missing Rose::DB object attribute";
+                  my $driver = $db->driver || 'unknown';
+
+                  unless(defined $self->{$formatted_key,$driver})
+                  {      
+                    my $value = $self->{$key};
+      
+                    foreach my $code (@$deflate_code)
+                    {
+                      $value = $code->($self, $value);
+                    }
+    
+                    $self->{$formatted_key,$driver} = $value;
+                  }
+                }
+                else
+                {
+                  my $value = $self->{$key};
+  
+                  foreach my $code (@$deflate_code)
+                  {
+                    $value = $code->($self, $value);
+                  }
+  
+                  $self->{$key} = $value;
+                  $self->{$is_inflated_key} = 0;
+                }
+              }
+                
+              if($on_save_code)
+              {
+                foreach my $code (@$on_save_code)
+                {
+                  $code->($self);
+                }
+              }
+            }
+  
+            &$method_code; # magic call using current @_
+          }
+          else
+          {
+            unless($self->{'triggers_disabled'})
+            {
+              local $self->{'triggers_disabled'} = 1;
+  
+              if($inflate_code)
+              {
+                my $value;
+                my $key_was_defined;
+                
+                if(defined $self->{$key})
+                {
+                  $value = $self->{$key};
+                  $key_was_defined = 1;
+                }
+                else
+                {
+                  $key_was_defined = 0;
+                  # Invoke built-in default and inflation code
+                  # (The call must not be in void context)
+                  $value = $method_code->($self, @_[1 .. $#$_]);
+                }
+
+                unless($self->{$is_inflated_key} && $key_was_defined)
+                {
+                  if($uses_formatted_key)
+                  {
+                    foreach my $code (@$inflate_code)
+                    {
+                      $value = $code->($self, $value);
+                    }
+  
+                    my $db = $self->db or die "Missing Rose::DB object attribute";
+                    my $driver = $db->driver || 'unknown';
+      
+                    # Invalidate deflated value
+                    $self->{$formatted_key,$driver} = undef;
+  
+                    # Set new inflated value
+                    $self->{$key} = $value;
+                  }
+                  else
+                  {    
+                    foreach my $code (@$inflate_code)
+                    {
+                      $value = $code->($self, $value);
+                    }
+      
+                    $self->{$is_inflated_key} = 1;
+                    $self->{$key} = $value;
+                  }
+
+                  $self->{$is_inflated_key} = 1;
+                }
+              }
+                
+              if($on_get_code)
+              {
+                foreach my $code (@$on_get_code)
+                {
+                  $code->($self);
+                }
+              }
+            }
+  
+            &$method_code; # magic call using current @_
+          }
+        }
+      };
+
+      no warnings;
+      no strict 'refs';
+      *{"${class}::$method_name"} = $method;
+    }
+    else # no applicable triggers for 'get'
+    {
+      no warnings;
+      no strict 'refs';
+      *{"${class}::$method_name"} = $method_code;
+    }
+  }
+  elsif($type eq 'get')
+  {
+    if($inflate_code || $deflate_code || $on_save_code || $on_get_code)
+    {
+      my $method = sub
+      {
+        my($self) = $_[0];
+    
+        if($self->{STATE_SAVING()})
+        {
+          unless($self->{'triggers_disabled'})
+          {
+            local $self->{'triggers_disabled'} = 1;
+
+            if($deflate_code)
+            {
+              if($uses_formatted_key)
+              {
+                my $db = $self->db or die "Missing Rose::DB object attribute";
+                my $driver = $db->driver || 'unknown';
+
+                unless(defined $self->{$formatted_key,$driver})
+                {    
+                  my $value = $self->{$key};
+    
+                  foreach my $code (@$deflate_code)
+                  {
+                    $value = $code->($self, $value);
+                  }
+  
+                  $self->{$formatted_key,$driver} = $value;
+                }
+              }
+              else
+              {
+                my $value = $self->{$key};
+
+                foreach my $code (@$deflate_code)
+                {
+                  $value = $code->($self, $value);
+                }
+
+                $self->{$key} = $value;
+                $self->{$is_inflated_key} = 0;
+              }
+            }
+              
+            if($on_save_code)
+            {
+              foreach my $code (@$on_save_code)
+              {
+                $code->($self);
+              }
+            }
+          }
+
+          &$method_code; # magic call using current @_
+        }
+        else
+        {
+          unless($self->{'triggers_disabled'})
+          {
+            local $self->{'triggers_disabled'} = 1;
+
+            if($inflate_code)
+            {
+              my $value;
+              my $key_was_defined;
+              
+              if(defined $self->{$key})
+              {
+                $value = $self->{$key};
+                $key_was_defined = 1;
+              }
+              else
+              {
+                $key_was_defined = 0;
+                # Invoke built-in default and inflation code
+                # (The call must not be in void context)
+                $value = $method_code->($self, @_[1 .. $#$_]);
+              }
+
+              unless($self->{$is_inflated_key} && $key_was_defined)
+              {
+                if($uses_formatted_key)
+                {
+                  foreach my $code (@$inflate_code)
+                  {
+                    $value = $code->($self, $value);
+                  }
+
+                  my $db = $self->db or die "Missing Rose::DB object attribute";
+                  my $driver = $db->driver || 'unknown';
+    
+                  # Invalidate deflated value
+                  $self->{$formatted_key,$driver} = undef;
+
+                  # Set new inflated value
+                  $self->{$key} = $value;
+                }
+                else
+                {    
+                  foreach my $code (@$inflate_code)
+                  {
+                    $value = $code->($self, $value);
+                  }
+    
+                  $self->{$is_inflated_key} = 1;
+                  $self->{$key} = $value;
+                }
+
+                $self->{$is_inflated_key} = 1;
+              }
+            }
+
+            if($on_get_code)
+            {
+              foreach my $code (@$on_get_code)
+              {
+                $code->($self);
+              }
+            }
+          }
+
+          &$method_code; # magic call using current @_
+        }
+      };
+
+      no warnings;
+      no strict 'refs';
+      *{"${class}::$method_name"} = $method;
+    }
+    else # no applicable triggers for 'get'
+    {
+      no warnings;
+      no strict 'refs';
+      *{"${class}::$method_name"} = $method_code;
+    }
+  }
+  elsif($type eq 'set')
+  {
+    if($on_load_code || $on_set_code)
+    {
+      my $method = sub
+      {
+        my($self) = $_[0];
+
+        if($self->{STATE_LOADING()})
+        {
+          $self->{$is_inflated_key} = 0  unless($uses_formatted_key);
+
+          &$method_code; # magic call using current @_
+
+          unless($self->{'triggers_disabled'})
+          {
+            local $self->{'triggers_disabled'} = 1;
+
+            if($on_load_code)
+            {
+              foreach my $code (@$on_load_code)
+              {
+                $code->($self);
+              }
+            }
+          }
+        }
+        else
+        {
+          $self->{$is_inflated_key} = 0  unless($uses_formatted_key);
+
+          &$method_code; # magic call using current @_
+
+          unless($self->{'triggers_disabled'})
+          {
+            local $self->{'triggers_disabled'} = 1;
+
+            if($on_set_code)
+            {
+              foreach my $code (@$on_set_code)
+              {
+                $code->($self);
+              }
+            }
+          }
+        }
+      };
+
+      no warnings;
+      no strict 'refs';
+      *{"${class}::$method_name"} = $method;
+    }
+    else # no applicable triggers for 'set'
+    {
+      no warnings;
+      no strict 'refs';
+      *{"${class}::$method_name"} = $method_code;
+    }
+  }
+}
+
+sub method_code
+{
+  my($self, $type) = (shift, shift);
+
+  Carp::confess "Missing or undefined type argument"  unless(defined $type);
+
+  if(@_)
+  {
+    return $self->{'method_code'}{$type} = shift;
+  }
+
+  return $self->{'method_code'}{$type};
+}
+
+sub make_methods
+{
+  my($self) = shift;
+  
+  $self->SUPER::make_methods(@_);
+  $self->apply_triggers;
 }
 
 1;
@@ -417,6 +1096,58 @@ To this end, each L<Rose::DB::Object::Metadata::Column>-derived class in the L<R
 
 Remember, the existence and behavior of the method map is really implementation detail.  A column object is free to implement the public method-making interface however it wants, without regard to any conceptual or actual method map.  It must then, of course, document what kinds of methods it makes for each of its method types, but it does not have to use a method map to do so.
 
+=head2 TRIGGERS
+
+Triggers allow code to run in response to certain column-related events.  An event may trigger zero or more pieces of code.  The names and behaviors of the various kinds of events are as follows.
+
+=over 4
+
+=item B<on_get>
+
+Triggered when a column value is retrieved for some purpose I<other than> storage in the database.  For example, when end-user code retrieves a column value by calling an accessor method, this event is triggered.  This event is I<not> triggered when a column value is retrieved while the object is being L<save|Rose::DB::Object/save>d into the database.
+
+Each piece of code responding to an C<on_get> event will be passed a single argument: a reference to the object itself.  The return value is not used.
+
+=item B<on_set>
+
+Triggered when a column value is set to a value that came from somewhere I<other than>  the database.  For example, when end-user code sets a column value by calling a mutator method, this event is triggered.  This event is I<not> triggered when a column value is set while the object is being L<load|Rose::DB::Object/load>ed from the database.
+
+The C<on_set> event occurs I<after> the column value has been set.  Each piece of code responding to an C<on_set> event will be passed a single argument: a reference to the object itself.  The return value is not used.
+
+=item B<on_load>
+
+Triggered when a column value is set while an object is being L<load|Rose::DB::Object/load>ed from the database.
+
+The C<on_load> event occurs I<after> the column value has been loaded.  Each piece of code responding to an C<on_load> event will be passed a single argument: a reference to the object itself.  The return value is not used.
+
+=item B<on_save>
+
+Triggered when a column value is retrieved while an object is being L<save|Rose::DB::Object/save>d into the database.
+
+Each piece of code responding to an C<on_load> event will be passed a single argument: a reference to the object itself.  The return value is not used.
+
+=item B<inflate>
+
+Triggered when a column value that came directly from the database is retrieved for some purpose I<other than> storage in the database.  For example, when end-user code retrieves a column value by calling an accessor method, and that value came directly from the database, this event is triggered.
+
+Inflation will only happen "as needed."  That is, a value that has already been inflated will not be inflated again, and a value that comes from the database and goes back into it without ever being retrieved by end-user code will never be inflated at all.
+
+Each piece of code responding to an C<inflate> event will be passed two arguments: a reference to the object itself and the value to be inflated.  It should return an inflated version of that value.  Note that the value to be inflated may have come from the database, or from end-user code.  Be prepared to handle almost anything.
+
+=item B<deflate>
+
+Triggered when a column value that did not come directly from the database needs to be put into the database.  For example, when a column value set by end-user code needs to be saved into the database, this event is triggered.
+
+Deflation will only happen "as needed."  That is, a value that has already been deflated will not be deflated again, and a value that comes from the database and goes back into it without ever being retrieved by end-user code will never need to be deflated at all.
+
+Each piece of code responding to a C<deflate> event will be passed two arguments: a reference to the object itself and the value to be deflated.  It should return a deflated version of that value suitable for saving into the currently connected database.  Note that the value to be deflated may have come from the database, or from end-user code.  Be prepared to handle almost anything.
+
+=back
+
+All triggers are L<disabled|/disable_triggers> while inside code called in response to a trigger event.  Such code may call any other column methods, including methods that belong to its own column, without fear of infinite recursion into trigger service subroutines.  Alternately, triggers may be explicitly L<enabled|/enable_triggers> if desired.  Just watch out for infinite loops.
+
+For performance reasons, none of the column classes bundled with L<Rose::DB::Object> use triggers by default.  Some of them do inflate and deflate values, but they do so internally (inside the accessor and mutator methods created by the L<Rose::Object::MakeMethods>-derived classes that service those column types).  You can still add triggers to these column types, but the interaction between the internal inflate/deflate actions and the triggers for those same events can become a bit "non-obvious."
+
 =head1 CLASS METHODS
 
 =over 4
@@ -448,6 +1179,64 @@ Returns the name of the method used to get the column value.  This is a convenie
 
     $column->method_name('get') || $column->method_name('get_set');
 
+=item B<add_trigger [ EVENT, CODEREF | PARAMS ]>
+
+Add a trigger, as specified by either an event and a code reference, or a set of named parameters that include an event, a code reference, and an optional name and position for the trigger.
+
+If there are only two arguments, and the first is a valid event name, then the second must be a code reference.  Otherwise, the arguments are taken as named parameters.
+
+
+Valid parameters are:
+
+=over 4
+
+=item C<code CODEREF>
+
+A reference to a subroutine that will be called in response to a trigger event.  This parameter is required.  See the L<triggers|/TRIGGERS> section of this documentation for a description of the arguments to and return values expected from these routines for each type of event.
+
+=item C<event EVENT>
+
+The name of the event that activates this trigger.  This parameter is required.  Valid event names are C<on_get>, C<on_set>, C<on_load>, C<on_save>, C<inflate>, and C<deflate>.  See the L<triggers|/TRIGGERS> section of this documentation for more information on these event types.
+
+=item C<name NAME>
+
+An optional name mapped to the triggered subroutine.  If a name is not supplied, one will be generated.  A known name is necessary if you ever want to L<delete|/delete_trigger> a particular subroutine from the list of triggered subroutine for a given event.
+
+=item C<position POS>
+
+The position in the list of triggered subroutines to add this new code.  Triggered subroutines are kept in an ordered list.  By default, new triggers are added to the end of the list, which means they run last.  Valid position arguments are:
+
+=over
+
+=item C<end>, C<last>, or C<push>
+
+Add to the end of the list.
+
+=item C<start>, C<first>, or C<unshift>
+
+Add to the beginning of the list.
+
+=back
+
+If omitted, the position defaults to "end."
+
+=back
+
+Examples:
+
+    # Add trigger using an event name and a code reference
+    $column->add_trigger(on_set => sub { print "set!\n" });
+
+    # Same as above, but using named parameters
+    $column->add_trigger(event => 'on_set',
+                         code  => sub { print "set!\n" });
+
+    # Same as the above, but with a custom name and explicit position
+    $column->add_trigger(event    => 'on_set',
+                         code     => sub { print "set!\n" },
+                         name     => 'debugging',
+                         position => 'end');
+
 =item B<alias [NAME]>
 
 Get or set an alternate L<name|/name> for this column.
@@ -467,6 +1256,58 @@ Return a method name for the column method type TYPE.  The default implementatio
 =item B<default [VALUE]>
 
 Get or set the default value of the column.
+
+=item B<delete_trigger PARAMS>
+
+Delete a triggered subroutine from the list of triggered subroutines for a given event.  You must know the name applied to the triggered subroutine when it was L<added|/add_trigger> in order to delete it.  PARAMS are name/value pairs.
+
+=over 4
+
+=item C<name NAME>
+
+The name applied to the triggered subroutine when it was added via the L<added|/add_trigger> method.  This parameter is required.
+
+=item C<event EVENT>
+
+The name of the event that activates this trigger.  This parameter is required.  Valid event names are C<on_get>, C<on_set>, C<on_load>, C<on_save>, C<inflate>, and C<deflate>.  See the L<triggers|/TRIGGERS> section of this documentation for more information on these event types.
+
+=back
+
+A fatal error will occur if a matching trigger cannot be found.
+
+Examples:
+
+    # Add two named triggers
+    $column->add_trigger(event => 'on_set',
+                         code  => sub { print "set!\n" },
+                         name  => 'debugging');
+
+    $column->add_trigger(event => 'on_set',
+                         code  => sub { shift->do_something() },
+                         name  => 'side_effect');
+
+    # Delete the side_effect trigger
+    $column->delete_trigger(event => 'on_set',
+                            name  => 'side_effect');
+
+    # Fatal error: no trigger subroutine for this column
+    # named "nonesuch" for the event type "on_set"
+    $column->delete_trigger(event => 'on_set',
+                            name  => 'nonesuch');
+
+=item B<delete_triggers [EVENT]>
+
+Delete all triggers for EVENT.  If EVENT is omitted, delete all triggers for all events for this column.
+
+Valid event names are C<on_get>, C<on_set>, C<on_load>, C<on_save>, C<inflate>, and C<deflate>.  See the L<triggers|/TRIGGERS> section of this documentation for more information on these event types.
+
+=item B<disable_triggers>
+
+Disable all triggers for this column.
+
+=item B<enable_triggers>
+
+Enable all triggers for this column.
 
 =item B<format_value DB, VALUE>
 
@@ -569,6 +1410,18 @@ In order to make this work, the value "CURRENT" must be "inlined" rather than bo
 All of the information needed to make this decision is available to the call to L<should_inline_value|/should_inline_value>.  It gets passed a L<Rose::DB>-derived object, from which it can determine the database driver, and it gets passed the actual value, which it can check to see if it matches C</^current$/i>.
 
 This is just one example.  Each subclass of L<Rose::DB::Object::Metadata::Column> must determine for itself when a value needs to be inlined.
+
+=item B<triggers EVENT [, CODEREF | ARRAYREF ]>
+
+Get or set the list of trigger subroutines for EVENT.  Valid event names are C<on_get>, C<on_set>, C<on_load>, C<on_save>, C<inflate>, and C<deflate>.  See the L<triggers|/TRIGGERS> section of this documentation for more information on these event types.
+
+If passed a code ref or a reference to an array of code refs, then the list of trigger subroutines for EVENT is replaced with those code ref(s).
+
+Returns a reference to an array of trigger subroutines for the event type EVENT.  If there are no triggers for EVENT, undef will be returned.
+
+=item B<triggers_disabled>
+
+Returns true if L<triggers|/TRIGGERS> are disabled for this column, false otherwise.
 
 =item B<type>
 

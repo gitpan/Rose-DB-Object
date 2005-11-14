@@ -276,36 +276,37 @@ __PACKAGE__->meta->foreign_keys
 );
 EOF
 
+  my $chkpass = $PG_HAS_CHKPASS ? "    password      => { type => 'chkpass' },\n" : '';
+
   is(MyPgObject->meta->perl_class_definition,
-     <<'EOF', "perl_class_definition 1 - $db_type");
+     <<"EOF", "perl_class_definition 1 - $db_type");
 package MyPgObject;
 
 use strict;
 
 use Rose::DB::Object
-our @ISA = qw(Rose::DB::Object);
+our \@ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_test');
 
 __PACKAGE__->meta->columns(
+    id            => { type => 'integer', not_null => 1 },
+$chkpass    name          => { type => 'varchar', length => 32, not_null => 1 },
+    flag          => { type => 'boolean', default => 'true', not_null => 1 },
+    flag2         => { type => 'boolean' },
+    status        => { type => 'varchar', default => 'active', length => 32 },
     bits          => { type => 'bitfield', bits => 5, default => '00101', not_null => 1 },
-    date_created  => { type => 'timestamp' },
+    start         => { type => 'date', default => '1980-12-24' },
+    save          => { type => 'integer', alias => 'save_col' },
+    nums          => { type => 'array' },
     fk1           => { type => 'integer', alias => 'fkone' },
     fk2           => { type => 'integer' },
     fk3           => { type => 'integer' },
-    flag          => { type => 'boolean', default => 'true', not_null => 1 },
-    flag2         => { type => 'boolean' },
     fother_id2    => { type => 'integer' },
     fother_id3    => { type => 'integer' },
     fother_id4    => { type => 'integer' },
-    id            => { type => 'integer', not_null => 1 },
     last_modified => { type => 'timestamp' },
-    name          => { type => 'varchar', length => 32, not_null => 1 },
-    nums          => { type => 'array' },
-    password      => { type => 'chkpass' },
-    save          => { type => 'integer', alias => 'save_col' },
-    start         => { type => 'date', default => '1980-12-24' },
-    status        => { type => 'varchar', default => 'active', length => 32 },
+    date_created  => { type => 'timestamp' },
 );
 
 __PACKAGE__->meta->primary_key_columns([ 'id' ]);
@@ -347,37 +348,38 @@ __PACKAGE__->meta->initialize;
 1;
 EOF
 
+  $chkpass = $PG_HAS_CHKPASS ? "  password      => { type => 'chkpass' },\n" : '';
+  
   is(MyPgObject->meta->perl_class_definition(braces => 'bsd', indent => 2),
-     <<'EOF', "perl_class_definition 2 - $db_type");
+     <<"EOF", "perl_class_definition 2 - $db_type");
 package MyPgObject;
 
 use strict;
 
 use Rose::DB::Object
-our @ISA = qw(Rose::DB::Object);
+our \@ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_test');
 
 __PACKAGE__->meta->columns
 (
+  id            => { type => 'integer', not_null => 1 },
+$chkpass  name          => { type => 'varchar', length => 32, not_null => 1 },
+  flag          => { type => 'boolean', default => 'true', not_null => 1 },
+  flag2         => { type => 'boolean' },
+  status        => { type => 'varchar', default => 'active', length => 32 },
   bits          => { type => 'bitfield', bits => 5, default => '00101', not_null => 1 },
-  date_created  => { type => 'timestamp' },
+  start         => { type => 'date', default => '1980-12-24' },
+  save          => { type => 'integer', alias => 'save_col' },
+  nums          => { type => 'array' },
   fk1           => { type => 'integer', alias => 'fkone' },
   fk2           => { type => 'integer' },
   fk3           => { type => 'integer' },
-  flag          => { type => 'boolean', default => 'true', not_null => 1 },
-  flag2         => { type => 'boolean' },
   fother_id2    => { type => 'integer' },
   fother_id3    => { type => 'integer' },
   fother_id4    => { type => 'integer' },
-  id            => { type => 'integer', not_null => 1 },
   last_modified => { type => 'timestamp' },
-  name          => { type => 'varchar', length => 32, not_null => 1 },
-  nums          => { type => 'array' },
-  password      => { type => 'chkpass' },
-  save          => { type => 'integer', alias => 'save_col' },
-  start         => { type => 'date', default => '1980-12-24' },
-  status        => { type => 'varchar', default => 'active', length => 32 },
+  date_created  => { type => 'timestamp' },
 );
 
 __PACKAGE__->meta->primary_key_columns([ 'id' ]);
@@ -654,21 +656,21 @@ __PACKAGE__->meta->table('Rose_db_object_test');
 
 __PACKAGE__->meta->columns(
     bits          => { type => 'bitfield', bits => 5, default => 101 },
-    date_created  => { type => 'datetime' },
+    id            => { type => 'integer', not_null => 1 },
+    name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
+    status        => { type => 'varchar', default => 'active', length => 32 },
+    start         => { type => 'date', default => '1980-12-24' },
+    save          => { type => 'integer', alias => 'save_col' },
     fk1           => { type => 'integer', alias => 'fkone' },
     fk2           => { type => 'integer' },
     fk3           => { type => 'integer' },
+    fother_id3    => { type => 'integer' },
+    fother_id4    => { type => 'integer' },
+    last_modified => { type => 'datetime' },
+    date_created  => { type => 'datetime' },
     flag          => { type => 'boolean', default => 1 },
     flag2         => { type => 'boolean' },
     fother_id2    => { type => 'integer' },
-    fother_id3    => { type => 'integer' },
-    fother_id4    => { type => 'integer' },
-    id            => { type => 'integer', not_null => 1 },
-    last_modified => { type => 'timestamp'@{[ $mysql_41 ? ", default => 'now'" : '' ]} },
-    name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
-    save          => { type => 'integer', alias => 'save_col' },
-    start         => { type => 'date', default => '1980-12-24' },
-    status        => { type => 'varchar', default => 'active', length => 32 },
 );
 
 __PACKAGE__->meta->primary_key_columns([ 'id' ]);
@@ -724,21 +726,21 @@ __PACKAGE__->meta->table('Rose_db_object_test');
 __PACKAGE__->meta->columns
 (
   bits          => { type => 'bitfield', bits => 5, default => 101 },
-  date_created  => { type => 'datetime' },
+  id            => { type => 'integer', not_null => 1 },
+  name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
+  status        => { type => 'varchar', default => 'active', length => 32 },
+  start         => { type => 'date', default => '1980-12-24' },
+  save          => { type => 'integer', alias => 'save_col' },
   fk1           => { type => 'integer', alias => 'fkone' },
   fk2           => { type => 'integer' },
   fk3           => { type => 'integer' },
+  fother_id3    => { type => 'integer' },
+  fother_id4    => { type => 'integer' },
+  last_modified => { type => 'datetime' },
+  date_created  => { type => 'datetime' },
   flag          => { type => 'boolean', default => 1 },
   flag2         => { type => 'boolean' },
   fother_id2    => { type => 'integer' },
-  fother_id3    => { type => 'integer' },
-  fother_id4    => { type => 'integer' },
-  id            => { type => 'integer', not_null => 1 },
-  last_modified => { type => 'timestamp'@{[ $mysql_41 ? ", default => 'now'" : '' ]} },
-  name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
-  save          => { type => 'integer', alias => 'save_col' },
-  start         => { type => 'date', default => '1980-12-24' },
-  status        => { type => 'varchar', default => 'active', length => 32 },
 );
 
 __PACKAGE__->meta->primary_key_columns([ 'id' ]);
@@ -1488,7 +1490,7 @@ CREATE TABLE Rose_db_object_test
   fother_id2     INT UNSIGNED,
   fother_id3     INT UNSIGNED,
   fother_id4     INT UNSIGNED,
-  last_modified  TIMESTAMP,
+  last_modified  DATETIME,
   date_created   DATETIME,
 
   INDEX(fother_id2),
