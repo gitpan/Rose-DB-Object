@@ -17,7 +17,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 our $Debug = 0;
 
@@ -2252,14 +2252,14 @@ sub perl_manager_class
 
   if(@_ == 1)
   {
-    $args{'class'} = shift;
+    $args{'base_name'} = shift;
   }
   else
   {
     %args = @_;
   }
 
-  $args{'base_name'} ||= $self->convention_manager->class_to_table_singular;
+  $args{'base_name'} ||= $self->convention_manager->class_to_table_plural;
 
   $args{'class'} ||= $self->class . '::Manager';
 
@@ -2313,7 +2313,7 @@ $isa
 
 sub object_class { '$object_class' }
 
-__PACKAGE__->meta->make_manager_methods('$args{'base_name'}');
+__PACKAGE__->make_manager_methods('$args{'base_name'}');
 
 1;
 EOF
@@ -3732,15 +3732,15 @@ The integer number of spaces to use for each level of indenting in the generated
 
 See the larger example in the documentation for the L<perl_class_definition|/perl_class_definition> method to see what the generated Perl code looks like.
 
-=item B<perl_manager_class [PARAMS | CLASS]>
+=item B<perl_manager_class [ PARAMS | BASE_NAME ]>
 
-Returns a Perl class definition for a L<Rose::DB::Object::Manager>-derived class to manage objects of this L<class|/class>.  If a single string is passed, it is taken as the value of the C<class> parameter.  PARAMS are optional name/value pairs that may include the following:
+Returns a Perl class definition for a L<Rose::DB::Object::Manager>-derived class to manage objects of this L<class|/class>.  If a single string is passed, it is taken as the value of the C<base_name> parameter.  PARAMS are optional name/value pairs that may include the following:
 
 =over 4
 
 =item * base_name NAME
 
-The value of the L<base_name|Rose::DB::Object::Manager/base_name> parameter that will be passed to the call to L<Rose::DB::Object::Manager>'s L<make_manager_methods|Rose::DB::Object::Manager/make_manager_methods> method.  Defaults to the return value of the L<convention manager|/convention_manager>'s L<class_to_table_singular|Rose::DB::Object::ConventionManager/class_to_table_singular> method.
+The value of the L<base_name|Rose::DB::Object::Manager/base_name> parameter that will be passed to the call to L<Rose::DB::Object::Manager>'s L<make_manager_methods|Rose::DB::Object::Manager/make_manager_methods> method.  Defaults to the return value of the L<convention manager|/convention_manager>'s L<class_to_table_plural|Rose::DB::Object::ConventionManager/class_to_table_plural> method.
 
 =item * class CLASS
 
@@ -3773,7 +3773,7 @@ The following would be printed:
 
     sub object_class { 'Product' }
 
-    __PACKAGE__->meta->make_manager_methods('prod');
+    __PACKAGE__->make_manager_methods('prod');
 
     1;
 
