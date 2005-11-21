@@ -6,7 +6,8 @@ use My::DB::Unigene::Main;
 use base qw(My::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_g_ug');
-__PACKAGE__->meta->auto_initialize(no_warnings => 1);
+
+__PACKAGE__->meta->auto_initialize(with_relationships => 0);
 
 package My::DB::Gene2Unigene::Manager;
 

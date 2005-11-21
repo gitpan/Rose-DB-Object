@@ -284,7 +284,7 @@ package MyPgObject;
 
 use strict;
 
-use Rose::DB::Object
+use Rose::DB::Object;
 our \@ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_test');
@@ -356,7 +356,7 @@ package MyPgObject;
 
 use strict;
 
-use Rose::DB::Object
+use Rose::DB::Object;
 our \@ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_test');
@@ -649,7 +649,7 @@ package MyMySQLObject;
 
 use strict;
 
-use Rose::DB::Object
+use Rose::DB::Object;
 our \@ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_test');
@@ -718,7 +718,7 @@ package MyMySQLObject;
 
 use strict;
 
-use Rose::DB::Object
+use Rose::DB::Object;
 our \@ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_test');
@@ -1027,7 +1027,7 @@ package MyInformixObject;
 
 use strict;
 
-use Rose::DB::Object
+use Rose::DB::Object;
 our @ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_test');
@@ -1097,7 +1097,7 @@ package MyInformixObject;
 
 use strict;
 
-use Rose::DB::Object
+use Rose::DB::Object;
 our @ISA = qw(Rose::DB::Object);
 
 __PACKAGE__->meta->table('Rose_db_object_test');
@@ -1190,6 +1190,8 @@ BEGIN
   {
     our $HAVE_PG = 1;
 
+    Rose::DB::Object::Metadata->unregister_all_classes;
+  
     # Drop existing table and create schema, ignoring errors
     {
       local $dbh->{'RaiseError'} = 0;
@@ -1390,6 +1392,8 @@ EOF
   {
     our $HAVE_MYSQL_WITH_INNODB = 1;
 
+    Rose::DB::Object::Metadata->unregister_all_classes;
+
     # Drop existing table and create schema, ignoring errors
     {
       local $dbh->{'RaiseError'} = 0;
@@ -1565,6 +1569,8 @@ EOF
   if(!$@ && $dbh)
   {
     our $HAVE_INFORMIX = 1;
+
+    Rose::DB::Object::Metadata->unregister_all_classes;
 
     # Drop existing table and create schema, ignoring errors
     {

@@ -1,3 +1,7 @@
+=head1 NAME
+
+Rose::DB::Object::Tutorial - A guided tour of the basics of Rose::DB::Object
+
 =head1 INTRODUCTION
 
 This document provides a step-by-step introduction to the L<Rose::DB::Object> module distribution.  It demonstrates all of the important features using a semi-realistic example database.  This tutorial does not replace the actual documentation for each module, however.  The "reference" documentation found in each ".pm" file is still essential, and contains some good examples of its own.
@@ -555,6 +559,18 @@ There are even a few convenience functions triggered by passing a name/value pai
     $month_start = $p->release_date(truncate => 'month');
 
     print $month_start->strftime('%Y-%m-%d'); # 1980-12-01
+
+Conveniently, L<Rose::DB::Object::Manager> queries can also use any values that the corresponding column methods will accept.  For example, here's a query that filters on the C<release_date> column using a L<DateTime> object.
+
+    $last_week = DateTime->now->subtract(weeks => 1);
+
+    $products = 
+      Product::Manager->get_products(
+        query =>
+        [
+          release_date => { lt => $last_week },
+        ],
+        sort_by => 'release_date');
 
 The upshot is that you no longer have to be concerned about the details of the date/time format(s) understood by the underlying database.  You're also free to use L<DateTime> objects as a convenient interchange format in your code.
 
@@ -1161,9 +1177,8 @@ Setting a new list of prices will delete all the old prices.  As with foreign ke
 
     $p->save; # database is modified here
 
-    # US: 1.23
-    # UK: 4.56
-    print join("\n", map { $_->region . ': ' . $_->price } $p->prices);
+    # US: 1.23, UK: 4.56
+    print join(', ', map { $_->region . ': ' . $_->price } $p->prices);
 
 =head3 Cascading delete
 
@@ -1713,6 +1728,344 @@ Now the Perl classes.  Remember that these must each be in their own ".pm" files
   __PACKAGE__->meta->initialize;
 
    1;
+
+=head2 The loader
+
+If the code above still looks like too much work to you, try letting L<Rose::DB::Object::Loader> do it all for you.  Given the database schema L<shown above|/"Relationship code summary">, the suite of associated Perl classes could have been created automatically with a single method call.
+
+    $loader = 
+      Rose::DB::Object::Loader->new(db => Rose::DB->new,
+                                    class_prefix => 'My::');
+
+    $loader->make_classes;
+
+If you want to see what the loader did for you, catch the return value of the L<make_classes|Rose::DB::Object::Loader/make_classes> method (which will be a list of class names) and then ask each class to print its perl equivalent.
+
+    @classes = $loader->make_classes;
+
+    foreach my $class (@classes)
+    {
+      if($class->isa('Rose::DB::Object'))
+      {
+        print $class->meta->perl_class_definition(braces => 'bsd',
+                                                  indent => 2), "\n";
+      }
+      else # Rose::DB::Object::Manager subclasses
+      {
+        print $class->perl_class_definition, "\n";
+      }
+    }
+
+The output is shown below.  Compare it to the manually created Perl code L<shown above|/"Relationship code summary"> and you'll see that it's nearly identical.  Again, careful table name choices really help here.  Do what the L<convention manager|Rose::DB::Object::ConventionManager> expects (or write your own convention manager subclass that does what I<you> expect) and automation like this can work very well.
+
+  package My::Color;
+  
+  use strict;
+  
+  use My::DB::Object::Base1;
+  our @ISA = qw(My::DB::Object::Base1);
+  
+  __PACKAGE__->meta->table('colors');
+  
+  __PACKAGE__->meta->columns
+  (
+    id   => { type => 'integer', not_null => 1 },
+    name => { type => 'varchar', length => 255, not_null => 1 },
+  );
+  
+  __PACKAGE__->meta->primary_key_columns([ 'id' ]);
+  __PACKAGE__->meta->add_unique_keys([ 'name' ]);
+  
+  __PACKAGE__->meta->relationships
+  (
+    products => 
+    {
+      column_map    => { color_id => 'id' },
+      foreign_class => 'My::Product',
+      map_class     => 'My::ProductColorMap',
+      map_from      => 'color',
+      map_to        => 'product',
+      type          => 'many to many',
+    },
+  );
+  
+  __PACKAGE__->meta->initialize;
+  
+  1;
+  
+  package My::Color::Manager;
+  
+  use My::Color;
+  
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+  
+  sub object_class { 'My::Color' }
+  
+  __PACKAGE__->make_manager_methods('colors');
+  
+  1;
+  
+  package My::Price;
+  
+  use strict;
+  
+  use My::DB::Object::Base1;
+  our @ISA = qw(My::DB::Object::Base1);
+  
+  __PACKAGE__->meta->table('prices');
+  
+  __PACKAGE__->meta->columns
+  (
+    id         => { type => 'integer', not_null => 1 },
+    product_id => { type => 'integer', not_null => 1 },
+    region     => { type => 'character', default => 'US', length => 2, 
+                     not_null => 1 },
+    price      => { type => 'numeric', default => '0.00', not_null => 1,
+                    precision => 2, scale => 10 },
+  );
+  
+  __PACKAGE__->meta->primary_key_columns([ 'id' ]);
+  __PACKAGE__->meta->add_unique_keys([ 'product_id', 'region' ]);
+  
+  __PACKAGE__->meta->foreign_keys
+  (
+    product => 
+    {
+      class => 'My::Product',
+      key_columns => 
+      {
+        product_id => 'id',
+      },
+    },
+  );
+  
+  __PACKAGE__->meta->initialize;
+  
+  1;
+  
+  package My::Price::Manager;
+  
+  use My::Price;
+  
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+  
+  sub object_class { 'My::Price' }
+  
+  __PACKAGE__->make_manager_methods('prices');
+  
+  1;
+  
+  package My::ProductColorMap;
+  
+  use strict;
+  
+  use My::DB::Object::Base1;
+  our @ISA = qw(My::DB::Object::Base1);
+  
+  __PACKAGE__->meta->table('product_color_map');
+  
+  __PACKAGE__->meta->columns
+  (
+    product_id => { type => 'integer', not_null => 1 },
+    color_id   => { type => 'integer', not_null => 1 },
+  );
+  
+  __PACKAGE__->meta->primary_key_columns([ 'product_id', 'color_id' ]);
+  
+  __PACKAGE__->meta->foreign_keys
+  (
+    color => 
+    {
+      class => 'My::Color',
+      key_columns => 
+      {
+        color_id => 'id',
+      },
+    },
+  
+    product => 
+    {
+      class => 'My::Product',
+      key_columns => 
+      {
+        product_id => 'id',
+      },
+    },
+  );
+  
+  __PACKAGE__->meta->initialize;
+  
+  1;
+  
+  package My::ProductColorMap::Manager;
+  
+  use My::ProductColorMap;
+  
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+  
+  sub object_class { 'My::ProductColorMap' }
+  
+  __PACKAGE__->make_manager_methods('product_color_map');
+  
+  1;
+  
+  package My::ProductColor;
+  
+  use strict;
+  
+  use My::DB::Object::Base1;
+  our @ISA = qw(My::DB::Object::Base1);
+  
+  __PACKAGE__->meta->table('product_colors');
+  
+  __PACKAGE__->meta->columns
+  (
+    id         => { type => 'integer', not_null => 1 },
+    product_id => { type => 'integer', not_null => 1 },
+    color_code => { type => 'character', length => 3, not_null => 1 },
+  );
+  
+  __PACKAGE__->meta->primary_key_columns([ 'id' ]);
+  
+  __PACKAGE__->meta->initialize;
+  
+  1;
+  
+  package My::ProductColor::Manager;
+  
+  use My::ProductColor;
+  
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+  
+  sub object_class { 'My::ProductColor' }
+  
+  __PACKAGE__->make_manager_methods('product_colors');
+  
+  1;
+  
+  package My::Product;
+  
+  use strict;
+  
+  use My::DB::Object::Base1;
+  our @ISA = qw(My::DB::Object::Base1);
+  
+  __PACKAGE__->meta->table('products');
+  
+  __PACKAGE__->meta->columns
+  (
+    id           => { type => 'integer', not_null => 1 },
+    name         => { type => 'varchar', length => 255, not_null => 1 },
+    price        => { type => 'numeric', default => '0.00', not_null => 1, 
+                      precision => 2, scale => 10 },
+    vendor_id    => { type => 'integer' },
+    status       => { type => 'varchar', default => 'inactive', 
+                      length => 128, not_null => 1 },
+    date_created => { type => 'timestamp', default => 'now()', 
+                      not_null => 1 },
+    release_date => { type => 'timestamp' },
+  );
+  
+  __PACKAGE__->meta->primary_key_columns([ 'id' ]);
+  __PACKAGE__->meta->add_unique_keys([ 'name' ]);
+  
+  __PACKAGE__->meta->foreign_keys
+  (
+    vendor => 
+    {
+      class => 'My::Vendor',
+      key_columns => 
+      {
+        vendor_id => 'id',
+      },
+    },
+  );
+  
+  __PACKAGE__->meta->relationships
+  (
+    colors => 
+    {
+      column_map    => { product_id => 'id' },
+      foreign_class => 'My::Color',
+      map_class     => 'My::ProductColorMap',
+      map_from      => 'product',
+      map_to        => 'color',
+      type          => 'many to many',
+    },
+  
+    prices => 
+    {
+      class       => 'My::Price',
+      key_columns => { id => 'product_id' },
+      type        => 'one to many',
+    },
+  );
+  
+  __PACKAGE__->meta->initialize;
+  
+  1;
+  
+  package My::Product::Manager;
+  
+  use My::Product;
+  
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+  
+  sub object_class { 'My::Product' }
+  
+  __PACKAGE__->make_manager_methods('products');
+  
+  1;
+  
+  package My::Vendor;
+  
+  use strict;
+  
+  use My::DB::Object::Base1;
+  our @ISA = qw(My::DB::Object::Base1);
+  
+  __PACKAGE__->meta->table('vendors');
+  
+  __PACKAGE__->meta->columns
+  (
+    id   => { type => 'integer', not_null => 1 },
+    name => { type => 'varchar', length => 255, not_null => 1 },
+  );
+  
+  __PACKAGE__->meta->primary_key_columns([ 'id' ]);
+  __PACKAGE__->meta->add_unique_keys([ 'name' ]);
+  
+  __PACKAGE__->meta->relationships
+  (
+    products => 
+    {
+      class       => 'My::Product',
+      key_columns => { id => 'vendor_id' },
+      type        => 'one to many',
+    },
+  );
+  
+  __PACKAGE__->meta->initialize;
+  
+  1;
+  
+  package My::Vendor::Manager;
+  
+  use My::Vendor;
+  
+  use Rose::DB::Object::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+  
+  sub object_class { 'My::Vendor' }
+  
+  __PACKAGE__->make_manager_methods('vendors');
+  
+  1;
 
 =head2 Auto-joins and other Manager features
 

@@ -3,6 +3,7 @@ package Rose::DB::Object::Metadata;
 use strict;
 
 use Carp();
+use Clone::PP qw(clone);
 
 use Rose::Object;
 our @ISA = qw(Rose::Object);
@@ -40,6 +41,8 @@ use Rose::Object::MakeMethods::Generic
   [
     allow_inline_column_values => { default => 0 },
     is_initialized => { default => 0 },
+    allow_auto_initialization => { default => 0 },
+    was_auto_initialized => { default => 0 },
   ],
 
   array =>
@@ -159,7 +162,45 @@ sub new
 
 sub for_class
 {
-  return $Objects{$_[1]} ||= $_[0]->new(class => $_[1]);
+  my($meta_class, $class) = (shift, shift);
+  return $Objects{$class}  if($Objects{$class});
+  
+  # Clone an ancestor meta object
+  foreach my $parent_class (__get_parents($class))
+  {
+    if($Objects{$parent_class})
+    {
+      my $meta = clone($Objects{$parent_class});
+      $meta->class($class);
+      return $Objects{$class} = $meta;
+    }
+  }
+
+  return $Objects{$class} = $meta_class->new(class => $class);
+}
+
+sub __get_parents
+{
+  my($class) = shift;
+  my @parents;
+
+  no strict 'refs';
+  foreach my $sub_class (@{"${class}::ISA"})
+  {
+    push(@parents, __get_parents($sub_class))
+  }
+
+  return @parents;
+}
+
+sub clear_all_dbs
+{
+  my($class) = shift;
+
+  foreach my $obj_class ($class->registered_classes)
+  {
+    $obj_class->meta->db(undef);
+  }
 }
 
 sub error_mode
@@ -670,7 +711,7 @@ sub add_columns
       my $column_class = $class->column_type_class('scalar')
         or Carp::croak "No column class set for column type 'scalar'";
 
-      $Debug && warn $self->class, " - adding scalar column $name\n";
+      #$Debug && warn $self->class, " - adding scalar column $name\n";
       $self->{'columns'}{$name} = $column_class->new(name => $name, parent => $self);
       push(@columns, $self->{'columns'}{$name});
       next;
@@ -692,7 +733,7 @@ sub add_columns
 
       if($info->{'primary_key'})
       {
-        $Debug && warn $self->class, " - adding primary key column $name\n";
+        #$Debug && warn $self->class, " - adding primary key column $name\n";
         $self->add_primary_key_column($name);
       }
 
@@ -715,7 +756,7 @@ sub add_columns
         $self->load_column_class($column_class);
       }
 
-      $Debug && warn $self->class, " - adding $name $column_class\n";
+      #$Debug && warn $self->class, " - adding $name $column_class\n";
       my $column = $self->{'columns'}{$name} = 
         $column_class->new(%$info, name => $name, parent => $self);
 
@@ -1124,6 +1165,7 @@ sub foreign_keys
 sub initialize
 {
   my($self) = shift;
+  my(%args) = @_;
 
   $Debug && warn $self->class, " - initialize\n";
 
@@ -1168,7 +1210,10 @@ sub initialize
 
   $self->refresh_lazy_column_tracking;
 
-  $self->db(undef); # make sure to ditch any db we may have retained
+  unless($args{'stay_connected'})
+  {
+    $self->db(undef); # make sure to ditch any db we may have retained
+  }
 
   $self->is_initialized(1);
 
@@ -1199,8 +1244,8 @@ sub register_class
     or Carp::croak "Missing table for metadata object $self";
 
   $table = lc $table  if($db->likes_lowercase_table_names);
-
-  my $reg = $self->class_registry;
+  
+  my $reg = $self->registry_key->class_registry;
 
   # Combine keys using $;, which is "\034" (0x1C) by default. But just to
   # make sure, I'll localize it.  What I'm looking for is a value that
@@ -1220,6 +1265,24 @@ sub register_class
     $reg->{'lc-catalog-table',$catalog,lc $table} =
     $reg->{'lc-table',lc $table} = $class;
 
+  push(@{$reg->{'classes'}}, $class);
+
+  return;
+}
+
+sub registry_key { __PACKAGE__ }
+
+sub registered_classes
+{
+  my($self) = shift;
+  my $reg = $self->registry_key->class_registry;
+  return wantarray ? @{$reg->{'classes'} ||= []} : $reg->{'classes'};
+}
+
+sub unregister_all_classes
+{
+  my($self) = shift;
+  $self->registry_key->class_registry({});
   return;
 }
 
@@ -1243,7 +1306,7 @@ sub class_for
 
   $table = lc $table  if($db->likes_lowercase_table_names);
 
-  my $reg = $self->class_registry;
+  my $reg = $self->registry_key->class_registry;
 
   # Combine keys using $;, which is "\034" (0x1C) by default. But just to
   # make sure, we'll localize it.  What we're looking for is a value that
@@ -1317,7 +1380,7 @@ sub make_column_methods
       $column->method_name($type => $method);
     }
 
-    $Debug && warn $self->class, " - make methods for column $name\n";
+    #$Debug && warn $self->class, " - make methods for column $name\n";
 
     $column->make_methods(%args);
 
@@ -1373,7 +1436,7 @@ sub make_foreign_key_methods
   my($self) = shift;
   my(%args) = @_;
 
-  $self->retry_deferred_foreign_keys;
+  #$self->retry_deferred_foreign_keys;
 
   my $class = $self->class;
   my $meta_class = ref $self;
@@ -1403,8 +1466,11 @@ sub make_foreign_key_methods
     # all the required pieces are loaded.
     if($foreign_key->is_ready_to_make_methods)
     {
-      $Debug && warn $self->class, " - make methods for foreign key ", 
-                     $foreign_key->name, "\n";
+      if($Debug && !$args{'preserve_existing'})
+      {
+        warn $self->class, " - make methods for foreign key ", 
+             $foreign_key->name, "\n";
+      }
 
       $foreign_key->make_methods(%args);
     }
@@ -1465,6 +1531,25 @@ sub add_deferred_tasks
 
 *add_deferred_task = \&add_deferred_tasks;
 
+sub has_deferred_tasks
+{
+  my($self) = shift;
+
+  my $class = $self->class;
+  my $meta_class = ref $self;
+
+  # Search among the deferred tasks too (icky)
+  foreach my $task ($meta_class->deferred_tasks)
+  {
+    if($task->{'class'} eq $class)
+    {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 sub retry_deferred_tasks
 {
   my($self) = shift;
@@ -1497,6 +1582,51 @@ sub deferred_foreign_keys
   return wantarray ? @Deferred_Foreign_Keys : \@Deferred_Foreign_Keys;
 }
 
+sub has_deferred_foreign_keys
+{
+  my($self) = shift;
+  
+  my $class = $self->class;
+  my $meta_class = ref $self;
+  
+  foreach my $fk ($meta_class->deferred_foreign_keys)
+  {
+    return 1  if($fk->class eq $class);
+  }
+  
+  # Search among the deferred tasks too (icky)
+  foreach my $task ($meta_class->deferred_tasks)
+  {
+    if($task->{'class'} eq $class && $task->{'method'} eq 'auto_init_foreign_keys')
+    {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+sub has_outstanding_metadata_tasks
+{
+  my($self) = shift;
+  
+  return $self->{'has_outstanding_metadata_tasks'} = shift  if(@_);
+
+  if(defined $self->{'has_outstanding_metadata_tasks'})
+  {
+    return $self->{'has_outstanding_metadata_tasks'};
+  }
+
+  if($self->has_deferred_foreign_keys  || 
+     $self->has_deferred_relationships ||
+     $self->has_deferred_tasks)
+  {
+    return $self->{'has_outstanding_metadata_tasks'} = 1;
+  }
+  
+  return $self->{'has_outstanding_metadata_tasks'} = 0;
+}
+
 sub add_deferred_foreign_keys
 {
   my($class) = shift;  
@@ -1508,6 +1638,7 @@ sub add_deferred_foreign_keys
       next ARG  if($fk->id eq $arg->id);
     }
 
+    $arg->parent->has_outstanding_metadata_tasks(1);
     push(@Deferred_Foreign_Keys, $arg);
   }
 }
@@ -1552,6 +1683,14 @@ sub retry_deferred_foreign_keys
   {
     @Deferred_Foreign_Keys = @foreign_keys;
   }
+
+  # Retry relationship auto-init for all other classes
+  foreach my $class ($self->registered_classes)
+  {
+    my $meta = $class->meta;
+    next  unless($meta->allow_auto_initialization && $meta->has_outstanding_metadata_tasks);
+    $self->auto_init_relationships(restore_types => 1);
+  }
 }
 
 sub make_relationship_methods
@@ -1559,7 +1698,7 @@ sub make_relationship_methods
   my($self) = shift;
   my(%args) = @_;
 
-  $self->retry_deferred_relationships;
+  #$self->retry_deferred_relationships;
 
   my $meta_class = ref $self;
   my $class = $self->class;
@@ -1570,6 +1709,8 @@ sub make_relationship_methods
 
   REL: foreach my $relationship ($self->relationships)
   {
+    next  if($args{'name'} && $relationship->name ne $args{'name'});
+
     foreach my $type ($relationship->auto_method_types)
     {
       my $method = 
@@ -1587,7 +1728,7 @@ sub make_relationship_methods
       $relationship->method_name($type => $method);
 
       # Initialize/reset preserve_existing flag
-      $args{'preserve_existing'} = $preserve_existing_arg;
+      $args{'preserve_existing'} = $preserve_existing_arg || $self->allow_auto_initialization;
 
       # If a corresponding foreign key exists, the preserve any existing
       # methods with the same names.  This is a crude way to ensure that we
@@ -1612,8 +1753,11 @@ sub make_relationship_methods
     # all the required pieces are loaded.
     if($relationship->is_ready_to_make_methods)
     {
-      $Debug && warn $self->class, " - make methods for relationship ", 
-                     $relationship->name, "\n";
+      if($Debug && !$args{'preserve_existing'})
+      {
+        warn $self->class, " - make methods for relationship ", 
+             $relationship->name, "\n";
+      }
 
       $relationship->make_methods(%args);
     }
@@ -1630,7 +1774,7 @@ sub make_relationship_methods
     }
   }
 
-  $self->retry_deferred_relationships;
+  #$self->retry_deferred_relationships;
 
   return;
 }
@@ -1640,6 +1784,34 @@ our @Deferred_Relationships;
 sub deferred_relationships
 {
   return wantarray ? @Deferred_Relationships : \@Deferred_Relationships;
+}
+
+sub has_deferred_relationships
+{
+  my($self) = shift;
+  
+  my $class = $self->class;
+  my $meta_class = ref $self;
+
+  foreach my $rel ($meta_class->deferred_relationships)
+  {
+    if(($rel->can('class') && $rel->class eq $class) ||
+       ($rel->can('map_class') && $rel->map_class eq $class))
+    {
+      return 1;
+    }
+  }
+
+  # Search among the deferred tasks too (icky)
+  foreach my $task ($meta_class->deferred_tasks)
+  {
+    if($task->{'class'} eq $class && $task->{'method'} eq 'auto_init_relationships')
+    {
+      return 1;
+    }
+  }
+
+  return 0;
 }
 
 sub add_deferred_relationships
@@ -1707,6 +1879,13 @@ sub retry_deferred_relationships
   {
     @Deferred_Relationships = @relationships;
   }
+
+  # Retry relationship auto-init for all other classes
+  #foreach my $class ($self->registered_classes)
+  #{
+  #  next  unless($class->meta->allow_auto_initialization && $meta->has_outstanding_metadata_tasks);
+  #  $self->auto_init_relationships(restore_types => 1);
+  #}
 }
 
 sub make_methods
@@ -2801,6 +2980,10 @@ This hybrid approach to metadata population strikes a good balance between upfro
 
 =over 4
 
+=item B<clear_all_dbs>
+
+Clears the L<db|/db> attribute of the metadata object for each L<registered class|registered_classes>.
+
 =item B<column_type_class TYPE [, CLASS]>
 
 Given the column type string TYPE, return the name of the L<Rose::DB::Object::Metadata::Column>-derived class used to store metadata and create the accessor method(s) for columns of that type.
@@ -2929,6 +3112,14 @@ The default mapping of type names to class names is:
   'one to many'  => Rose::DB::Object::Metadata::Relationship::OneToMany
   'many to one'  => Rose::DB::Object::Metadata::Relationship::ManyToOne
   'many to many' => Rose::DB::Object::Metadata::Relationship::ManyToMany
+
+=item B<registered_classes>
+
+Return a list (in list context) or reference to an array (in scalar context) of the names of all L<Rose::DB::Object>-derived classes registered under this metadata class's L<registry_key|/registry_key>.
+
+=item B<registry_key>
+
+Returns the string used to group L<Rose::DB::Object>-derived class names in the class registry.  The default is "Rose::DB::Object::Metadata".
 
 =back
 
@@ -3702,9 +3893,14 @@ Auto-initialize the entire metadata object.  This is a wrapper for the individua
   $meta->auto_init_primary_key_columns;
   $meta->auto_init_unique_keys(...);
   $meta->auto_init_foreign_keys(...);
+  $meta->auto_init_relationships(...);
   $meta->initialize;
 
-PARAMS are optional name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated columns, unique keys, and foreign keys entirely replace any existing columns, unique keys, and foreign keys, respectively.
+PARAMS are optional name/value pairs.  When applicable, these parameters are passed on to each of the "auto_init_*" methods.
+
+If a C<replace_existing> parameter is passed with a true value, then the auto-generated columns, unique keys, foreign keys, and relationships entirely replace any existing columns, unique keys, foreign keys, and relationships, respectively.
+
+If a C<stay_connected> parameter is passed with a true value, then any database connections retained by the metadata objects belonging to the various L<Rose::DB::Object>-derived classes participating in the auto-initialization process will remain connected until an explicit call to the L<clear_all_dbs|/clear_all_dbs> class method.
 
 During initialization, if one of the columns has a method name that clashes with a L<reserved method name|Rose::DB::Object/"RESERVED METHODS">, then the L<column_alias_generator|/column_alias_generator> will be called to remedy the situation by aliasing the column.  If the name still conflicts, then a fatal error will occur.
 
@@ -3718,13 +3914,35 @@ Auto-generate L<Rose::DB::Object::Metadata::Column> objects for this table, then
 
 Auto-generate L<Rose::DB::Object::Metadata::ForeignKey> objects for this table, then populate the list of L<foreign_keys|/foreign_keys>.  PARAMS are optional name/value pairs.  If a C<replace_existing> parameter is passed with a true value, then the auto-generated foreign keys replace any existing foreign keys.  Otherwise, any existing foreign keys are left as-is.
 
-B<PLEASE NOTE:> In order for this method to work correctly, the L<Rose::DB::Object>-derived classes for all referenced tables must be loaded I<before> this method is called on behalf of the referring class.
-
 B<Note:> This method works with MySQL only when using the InnoDB storage type.
 
 =item B<auto_init_primary_key_columns>
 
 Auto-retrieve the names of the columns that make up the primary key for this table, then populate the list of L<primary_key_column_names|/primary_key_column_names>.  A fatal error will occur unless at least one primary key column name could be retrieved.
+
+=item B<auto_init_relationships [PARAMS]>
+
+Auto-populate the list of L<relationships|/relationships> for this L<class|/class>.  PARAMS are optional name/value pairs.
+
+=over 4
+
+=item C<replace_existing BOOL> 
+
+If true, then the auto-generated relationships replace any existing relationships.  Otherwise, any existing relationships are left as-is.
+
+=item C<relationship_types ARRAYREF>
+
+A reference to an array of relationship L<type|Rose::DB::Object::Metadata::Relationship/type> names.  Only relationships of these types will be created.  If omitted, relationships of L<all types|/relationship_type_classes> will be created.  If passed a reference to an emoty array, no relationships will be created.
+
+=item C<types ARRAYREF>
+
+This is an alias for the C<relationship_types> parameter.
+
+=item C<with_relationships [ BOOL | ARRAYREF ]>
+
+This is the same as the C<relationship_types> parameter except that it also accepts a boolean value.  If true, then relationships of L<all types|/relationship_type_classes> will be created.  If false, then none will be created.
+
+=back
 
 =item B<auto_init_unique_keys [PARAMS]>
 
@@ -3790,11 +4008,11 @@ The list of base classes to use in the generated class definition.  CLASSES shou
 
 =back
 
-This method is simply a wrapper (with some glue) for the following methods: L<perl_columns_definition|/perl_columns_definition>, L<perl_primary_key_columns_definition|/perl_primary_key_columns_definition>, L<perl_unique_keys_definition|/perl_unique_keys_definition>, and L<perl_foreign_keys_definition|/perl_foreign_keys_definition>.  The "braces" and "indent" parameters are passed on to these other methods.
+This method is simply a wrapper (with some glue) for the following methods: L<perl_columns_definition|/perl_columns_definition>, L<perl_primary_key_columns_definition|/perl_primary_key_columns_definition>, L<perl_unique_keys_definition|/perl_unique_keys_definition>,  L<perl_foreign_keys_definition|/perl_foreign_keys_definition>, and L<perl_relationships_definition|/perl_relationships_definition>.  The "braces" and "indent" parameters are passed on to these other methods.
 
 Here's a complete example, which also serves as an example of the individual "perl_*" methods that this method wraps.  First, the table definitions.
 
-    CREATE TABLE categories
+    CREATE TABLE topics
     (
       id    SERIAL PRIMARY KEY,
       name  VARCHAR(32)
@@ -3809,14 +4027,14 @@ Here's a complete example, which also serves as an example of the individual "pe
 
       PRIMARY KEY(k1, k2, k3)
     );
-
+    
     CREATE TABLE products
     (
       id             SERIAL PRIMARY KEY,
       name           VARCHAR(32) NOT NULL,
       flag           BOOLEAN NOT NULL DEFAULT 't',
       status         VARCHAR(32) DEFAULT 'active',
-      category_id    INT REFERENCES categories (id),
+      topic_id       INT REFERENCES topics (id),
       fk1            INT,
       fk2            INT,
       fk3            INT,
@@ -3826,11 +4044,19 @@ Here's a complete example, which also serves as an example of the individual "pe
       FOREIGN KEY (fk1, fk2, fk3) REFERENCES codes (k1, k2, k3)
     );
 
-We'll auto-initialize the first two classes so that we can skip right to generating the Perl code for the third class, which references them.
+    CREATE TABLE prices
+    (
+      id          SERIAL PRIMARY KEY,
+      product_id  INT REFERENCES products (id),
+      price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      region      CHAR(2) NOT NULL DEFAULT 'US' 
+    );
+
+First we'll auto-initialize the classes.
 
     package Category;
     our @ISA = qw(Rose::DB::Object);
-    Category->meta->table('categories');
+    Category->meta->table('topics');
     Category->meta->auto_initialize;
 
     package Code;
@@ -3838,53 +4064,51 @@ We'll auto-initialize the first two classes so that we can skip right to generat
     Code->meta->table('codes');
     Code->meta->auto_initialize;
 
-Finally, setup the last class and generate the Perl code.
-
     package Product;
     our @ISA = qw(Rose::DB::Object);
     my $meta = Product->meta;
     $meta->table('products');
+    Product->meta->auto_initialize;
 
-    print $meta->perl_class_definition(braces => 'bsd', indent => 2);
+    package Price;
+    our @ISA = qw(Rose::DB::Object);
+    Price->meta->table('prices');
+    Price->meta->auto_initialize;
+
+Then we'll print the C<Product> class definition;
+
+    print Product->meta->perl_class_definition(braces => 'bsd', 
+                                               indent => 2);
 
 The output looks like this:
 
  package Product;
-
+ 
  use strict;
-
+ 
  use Rose::DB::Object
  our @ISA = qw(Rose::DB::Object);
-
+ 
  __PACKAGE__->meta->table('products');
-
+ 
  __PACKAGE__->meta->columns
  (
-   category_id   => { type => 'integer' },
-   date_created  => { type => 'timestamp' },
+   id            => { type => 'integer', not_null => 1 },
+   name          => { type => 'varchar', length => 32, not_null => 1 },
+   flag          => { type => 'boolean', default => 'true', not_null => 1 },
+   status        => { type => 'varchar', default => 'active', length => 32 },
+   topic_id      => { type => 'integer' },
    fk1           => { type => 'integer' },
    fk2           => { type => 'integer' },
    fk3           => { type => 'integer' },
-   flag          => { type => 'boolean', default => 'true', not_null => 1 },
-   id            => { type => 'integer', not_null => 1 },
    last_modified => { type => 'timestamp' },
-   name          => { type => 'varchar', length => 32, not_null => 1 },
-   status        => { type => 'varchar', default => 'active', length => 32 },
+   date_created  => { type => 'timestamp' },
  );
-
+ 
  __PACKAGE__->meta->primary_key_columns([ 'id' ]);
-
+ 
  __PACKAGE__->meta->foreign_keys
  (
-   category => 
-   {
-     class => 'Category',
-     key_columns => 
-     {
-       category_id => 'id',
-     },
-   },
-
    code => 
    {
      class => 'Code',
@@ -3895,17 +4119,36 @@ The output looks like this:
        fk3 => 'k3',
      },
    },
+ 
+   topic => 
+   {
+     class => 'Category',
+     key_columns => 
+     {
+       topic_id => 'id',
+     },
+   },
  );
-
+ 
+ __PACKAGE__->meta->relationships
+ (
+   prices => 
+   {
+     class       => 'Price',
+     key_columns => { id => 'product_id' },
+     type        => 'one to many',
+   },
+ );
+ 
  __PACKAGE__->meta->initialize;
-
+ 
  1;
 
 See the L<auto-initialization|AUTO-INITIALIZATION> section for more discussion of Perl code generation.
 
 =item B<perl_columns_definition [PARAMS]>
 
-Auto-initialize the columns, then return the Perl source code that is equivalent to the auto-initialization.  PARAMS are optional name/value pairs that may include the following:
+Auto-initialize the columns (if necessary), then return the Perl source code that is equivalent to the auto-initialization.  PARAMS are optional name/value pairs that may include the following:
 
 =over 4
 
@@ -3923,7 +4166,7 @@ See the larger example in the documentation for the L<perl_class_definition|/per
 
 =item B<perl_foreign_keys_definition [PARAMS]>
 
-Auto-initialize the foreign keys, then return the Perl source code that is equivalent to the auto-initialization.  PARAMS are optional name/value pairs that may include the following:
+Auto-initialize the foreign keys (if necessary), then return the Perl source code that is equivalent to the auto-initialization.  PARAMS are optional name/value pairs that may include the following:
 
 =over 4
 
@@ -3986,7 +4229,25 @@ The following would be printed:
 
 =item B<perl_primary_key_columns_definition>
 
-Auto-initialize the primary key column names, then return the Perl source code that is equivalent to the auto-initialization.
+Auto-initialize the primary key column names (if necessary), then return the Perl source code that is equivalent to the auto-initialization.
+
+See the larger example in the documentation for the L<perl_class_definition|/perl_class_definition> method to see what the generated Perl code looks like.
+
+=item B<perl_relationships_definition [PARAMS]>
+
+Auto-initialize the relationships (if necessary), then return the Perl source code that is equivalent to the auto-initialization.  PARAMS are optional name/value pairs that may include the following:
+
+=over 4
+
+=item * braces STYLE
+
+The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
+
+=item * indent INT
+
+The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
+
+=back
 
 See the larger example in the documentation for the L<perl_class_definition|/perl_class_definition> method to see what the generated Perl code looks like.
 

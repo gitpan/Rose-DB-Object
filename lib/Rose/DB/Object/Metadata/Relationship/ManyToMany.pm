@@ -10,7 +10,7 @@ our @ISA = qw(Rose::DB::Object::Metadata::Relationship);
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.023';
+our $VERSION = '0.51';
 
 __PACKAGE__->default_auto_method_types(qw(get_set_on_save add_on_save));
 
@@ -116,11 +116,19 @@ sub sanity_check
 
   return 1;
 }
+my $i;
+my %C;
 
 sub is_ready_to_make_methods
 {
   my($self) = shift;
-
+# print "M2M $i\n";
+# my $caller = (caller(1))[3];
+# $C{$caller}++;
+# print "$caller\n"; 
+# use Data::Dumper;
+# print Dumper(\%C);
+# $i++;
   # This code is (ug) duplicated from the method-maker itself, and
   # slightly modified to run here.  If the method-maker can't get all
   # the info it needs, then we're not yet ready to make these methods.
@@ -161,7 +169,7 @@ sub is_ready_to_make_methods
         next  if($seen_fk{$item->id});
       }
 
-      if($item->class eq $target_class)
+      if($item->can('class') && $item->class eq $target_class)
       {
         # Skip if there was an explicit local relationship name and
         # this is not that name.

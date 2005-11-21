@@ -10,7 +10,7 @@ use lib "$Bin/../../lib";
 use lib "$Bin/lib";
 
 use Rose::DB;
-
+use Rose::DB::Object;
 use Rose::DB::Object::Util qw(:all);
 
 use Benchmark qw(timethese cmpthese); # :hireswallclock
@@ -55,6 +55,7 @@ GetOptions(\%Opt, 'help',
                   'compare-to|cmp-to=s',
                   'time',
                   'compare',
+                  'no-versions',
                   'time-and-compare',
                   'simple',
                   'complex',
@@ -100,6 +101,28 @@ MAIN:
 ##
 
 EOF
+
+    unless($Opt{'no-versions'})
+    {
+      my $len = 0;
+
+      foreach my $class ('Rose::DB::Object', @Cmp_To)
+      {
+        $len = length($class)  if(length($class) > $len);
+      }
+
+      printf("%-*s  Version\n", $len, 'Class');
+      printf("%-*s  -------\n", $len, '-' x $len);
+
+      foreach my $class (sort(('Rose::DB::Object', @Cmp_To)))
+      {
+        no strict 'refs';
+        printf("%-*s  " . ${"${class}::VERSION"} . "\n", $len, $class);
+      }
+
+      print "\n";
+    }
+
     Rose::DB->default_type($db_type);
 
     require MyTest::RDBO::Simple::Code;
@@ -1575,6 +1598,7 @@ EOF
       my $c = 
         MyTest::RDBO::Simple::Category::Manager->get_categories(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             name => { like => 'xCat %2%' },
@@ -1684,6 +1708,7 @@ EOF
       my $p =
         MyTest::RDBO::Simple::Product::Manager->get_products(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             name => { like => 'Product %2%' },
@@ -1814,6 +1839,7 @@ EOF
       my $ps =
         MyTest::RDBO::Simple::Product::Manager->get_products(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             't1.name' => { like => 'Product %2%' },
@@ -2000,6 +2026,7 @@ EOF
       my $ps =
         MyTest::RDBO::Simple::Product::Manager->get_products(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             't1.name' => { like => 'Product 200%' },
@@ -2161,6 +2188,7 @@ EOF
       my $p =
         MyTest::RDBO::Simple::Product::Manager->get_products(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             name => { like => 'Product %2%' },
@@ -2270,6 +2298,7 @@ EOF
       my $iter = 
         MyTest::RDBO::Simple::Category::Manager->get_categories_iterator(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             name => { like => 'xCat %2%' },
@@ -2410,6 +2439,7 @@ EOF
       my $iter =
         MyTest::RDBO::Simple::Product::Manager->get_products_iterator(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             'name' => { like => 'Product %2%' },
@@ -2558,6 +2588,7 @@ EOF
       my $iter =
         MyTest::RDBO::Simple::Product::Manager->get_products_iterator(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             't1.name' => { like => 'Product %2%' },
@@ -2857,7 +2888,7 @@ EOF
         name        => "Product $i",
         category_id => 2,
         status      => 'temp',
-        published   => '2005-01-02 12:34:56' });
+        published   => \'2005-01-02 12:34:56' });
       $i++;
     }
   }
@@ -3292,7 +3323,7 @@ EOF
     {
       my $p = MyTest::DBIC::Complex::Product->find($i + 3_300_000);
       $p->name($p->name . ' updated');
-      $p->published('2004-01-02 12:34:55');
+      $p->published(\'2004-01-02 12:34:55');
       $p->update;
       $i++;
     }
@@ -3311,6 +3342,7 @@ EOF
       my $c = 
         MyTest::RDBO::Complex::Category::Manager->get_categories(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             name => { like => 'xCat %2%' },
@@ -3385,6 +3417,7 @@ EOF
       my $p =
         MyTest::RDBO::Complex::Product::Manager->get_products(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             name => { like => 'Product %2%' },
@@ -3459,6 +3492,7 @@ EOF
       my $ps =
         MyTest::RDBO::Complex::Product::Manager->get_products(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             't1.name' => { like => 'Product %2%' },
@@ -3645,6 +3679,7 @@ EOF
       my $ps =
         MyTest::RDBO::Complex::Product::Manager->get_products(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             't1.name' => { like => 'Product 200%' },
@@ -3769,6 +3804,7 @@ EOF
       my $p =
         MyTest::RDBO::Complex::Product::Manager->get_products(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             name => { like => 'Product %2%' },
@@ -3852,6 +3888,7 @@ EOF
       my $iter = 
         MyTest::RDBO::Complex::Category::Manager->get_categories_iterator(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             name => { like => 'xCat %2%' },
@@ -3950,6 +3987,7 @@ EOF
       my $iter =
         MyTest::RDBO::Complex::Product::Manager->get_products_iterator(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             'name' => { like => 'Product %2%' },
@@ -4048,6 +4086,7 @@ EOF
       my $iter =
         MyTest::RDBO::Complex::Product::Manager->get_products_iterator(
           db => $DB,
+          query_is_sql => 1,
           query =>
           [
             't1.name' => { like => 'Product %2%' },
@@ -4261,6 +4300,8 @@ sub Bench
 
 sub Run_Tests
 {
+  $Params::Validate::NO_VALIDATION = 1;
+
   #
   # Insert
   #

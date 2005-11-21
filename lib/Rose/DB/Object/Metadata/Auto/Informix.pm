@@ -418,6 +418,8 @@ EOF
 
     foreach my $col_info (values %col_info)
     {
+      $db->refine_dbi_column_info($col_info);
+
       $columns{$col_info->{'COLUMN_NAME'}} = 
         $self->auto_generate_column($col_info->{'COLUMN_NAME'}, $col_info);
     }
@@ -784,7 +786,7 @@ sub auto_generate_foreign_keys
 
   my $no_warnings = $args{'no_warnings'};
 
-  my($class, @foreign_keys);
+  my($class, @foreign_keys, $total_fks);
 
   eval
   {
@@ -878,19 +880,19 @@ EOF
 
           check  => sub
           {
-            my $num = scalar @foreign_keys;
             my $fks = $self->foreign_keys;
-            return @$fks > $num ? 1 : 0;
+            return @$fks == $total_fks ? 1 : 0;
           }
         });
 
-        unless($no_warnings)
+        unless($no_warnings || $self->allow_auto_initialization)
         {
           no warnings; # Allow undef coercion to empty string
           warn "No Rose::DB::Object-derived class found for table ",
                "'$foreign_table'";
         }
 
+        $total_fks++;
         next FK;
       }
 
@@ -914,6 +916,7 @@ EOF
           key_columns => \%key_columns);
 
       push(@foreign_keys, $fk);
+      $total_fks++;
     }
 
     # This step is important!  It ensures that foreign keys will be created

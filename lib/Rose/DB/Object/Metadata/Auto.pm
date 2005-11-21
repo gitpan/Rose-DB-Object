@@ -10,7 +10,11 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata;
 our @ISA = qw(Rose::DB::Object::Metadata);
 
-our $VERSION = '0.04';
+our $Debug;
+
+*Debug = \$Rose::DB::Object::Metadata::Debug;
+
+our $VERSION = '0.50';
 
 use Rose::Class::MakeMethods::Generic
 (
@@ -19,6 +23,13 @@ use Rose::Class::MakeMethods::Generic
     'default_perl_indent',
     'default_perl_braces',
     'default_perl_unique_key_style',
+  ],
+
+  inheritable_hash =>
+  [
+    relationship_type_ranks => { interface => 'get_set_all' },
+    relationship_type_rank   => { interface => 'get_set', hash_key => 'relationship_type_ranks' },
+    delete_relationship_type_rank => { interface => 'delete', hash_key => 'relationship_type_ranks' },
   ],
 );
 
@@ -31,9 +42,18 @@ use Rose::Object::MakeMethods::Generic
   ],
 );
 
+__PACKAGE__->relationship_type_ranks
+(
+  'one to one'   => 1,
+  'many to one'  => 2,
+  'one to many'  => 3,
+  'many to many' => 4,
+);
+
 __PACKAGE__->default_perl_indent(4);
 __PACKAGE__->default_perl_braces('k&r');
 __PACKAGE__->default_perl_unique_key_style('array');
+
 
 sub auto_generate_columns
 {
@@ -328,7 +348,7 @@ sub auto_generate_foreign_keys
 
   my $no_warnings = $args{'no_warnings'};
 
-  my($class, @foreign_keys);
+  my($class, @foreign_keys, $total_fks);
 
   eval
   {
@@ -388,6 +408,8 @@ sub auto_generate_foreign_keys
 
         unless(UNIVERSAL::isa($foreign_class, 'Rose::DB::Object'))
         {
+          # Null convention manager may return undef
+          no warnings 'uninitialized'; 
           eval "require $foreign_class";
           $foreign_class = undef  if($@);
         }
@@ -411,15 +433,14 @@ sub auto_generate_foreign_keys
             $self->make_foreign_key_methods(%args, preserve_existing => 1);
           },
 
-          check  => sub
+          check => sub
           {
-            my $num = scalar @foreign_keys;
             my $fks = $self->foreign_keys;
-            return @$fks > $num ? 1 : 0;
-          }
+            return @$fks == $total_fks ? 1 : 0;
+          },
         });
 
-        unless($no_warnings || $Warned{$key}++)
+        unless($no_warnings || $Warned{$key}++ || $self->allow_auto_initialization)
         {
           no warnings; # Allow undef coercion to empty string
           Carp::carp
@@ -429,6 +450,7 @@ sub auto_generate_foreign_keys
             $fk_info->{'UK_TABLE_NAME'}, "'";
         }
 
+        $total_fks++;
         next FK_INFO;
       }
 
@@ -445,6 +467,8 @@ sub auto_generate_foreign_keys
 
       $fk{$fk_info->{'UK_NAME'}}{'class'} = $foreign_class;
       $fk{$fk_info->{'UK_NAME'}}{'key_columns'}{$local_column} = $foreign_column;
+
+      $total_fks++;
     }
 
     my(%seen, %seen_name);
@@ -508,7 +532,7 @@ sub perl_columns_definition
 {
   my($self, %args) = @_;
 
-  $self->auto_init_columns;
+  $self->auto_init_columns  unless($self->was_auto_initialized);
 
   my $indent = defined $args{'indent'} ? $args{'indent'} : $self->default_perl_indent;
   my $braces = defined $args{'braces'} ? $args{'braces'} : $self->default_perl_braces;
@@ -575,7 +599,7 @@ sub perl_foreign_keys_definition
 {
   my($self, %args) = @_;
 
-  $self->auto_init_foreign_keys;
+  $self->auto_init_foreign_keys  unless($self->was_auto_initialized);
 
   my $indent = defined $args{'indent'} ? $args{'indent'} : $self->default_perl_indent;
   my $braces = defined $args{'braces'} ? $args{'braces'} : $self->default_perl_braces;
@@ -622,11 +646,63 @@ sub perl_foreign_keys_definition
   return $def . ");\n";
 }
 
+sub perl_relationships_definition
+{
+  my($self, %args) = @_;
+
+  $self->auto_init_relationships  unless($self->was_auto_initialized);
+
+  my $indent = defined $args{'indent'} ? $args{'indent'} : $self->default_perl_indent;
+  my $braces = defined $args{'braces'} ? $args{'braces'} : $self->default_perl_braces;
+
+  unless($indent =~ /^\d+$/)
+  {
+    Carp::croak 'Invalid ', (defined $args{'indent'} ? '' : 'default '),
+                "indent size: '$braces'";
+  }
+
+  my $indent_txt = ' ' x $indent;
+
+  my $def = "__PACKAGE__->meta->relationships";
+
+  if($braces eq 'bsd')
+  {
+    $def .= "\n(\n";
+  }
+  elsif($braces eq 'k&r')
+  {
+    $def .= "(\n";
+  }
+  else
+  {
+    Carp::croak 'Invalid ', (defined $args{'braces'} ? '' : 'default '),
+                "brace style: '$braces'";
+  }
+
+  my @rel_defs;
+
+  foreach my $rel ($self->relationships)
+  {
+    next  if($rel->can('foreign_key') && $rel->foreign_key);
+    push(@rel_defs, $rel->perl_hash_definition(indent => $indent, braces => $braces));
+  }
+
+  return ''  unless(@rel_defs);
+
+  foreach my $rel_def (@rel_defs)
+  {
+    $rel_def =~ s/^/$indent_txt/mg;
+    $def .= "$rel_def,\n" . ($rel_def eq $rel_defs[-1] ? '' : "\n");
+  }
+
+  return $def . ");\n";
+}
+
 sub perl_unique_keys_definition
 {
   my($self, %args) = @_;
 
-  $self->auto_init_unique_keys;
+  $self->auto_init_unique_keys  unless($self->was_auto_initialized);
 
   my $style  = defined $args{'style'}  ? $args{'style'}  : $self->default_perl_unique_key_style;
   my $indent = defined $args{'indent'} ? $args{'indent'} : $self->default_perl_indent;
@@ -699,7 +775,7 @@ sub perl_primary_key_columns_definition
 {
   my($self, %args) = @_;
 
-  $self->auto_init_primary_key_columns;
+  $self->auto_init_primary_key_columns  unless($self->was_auto_initialized);
 
   my @pk_cols = $self->primary_key->column_names;
 
@@ -726,7 +802,7 @@ package $class;
 
 use strict;
 
-@{[join(";\n", map { "use $_" } @$isa)]}
+@{[join(";\n", map { "use $_" } @$isa)]};
 our \@ISA = qw(@$isa);
 
 __PACKAGE__->meta->table('@{[ $self->table ]}');
@@ -734,7 +810,8 @@ __PACKAGE__->meta->table('@{[ $self->table ]}');
 @{[join("\n", grep { /\S/ } $self->perl_columns_definition(%args),
                             $self->perl_primary_key_columns_definition(%args),
                             $self->perl_unique_keys_definition(%args),
-                            $self->perl_foreign_keys_definition(%args))]}
+                            $self->perl_foreign_keys_definition(%args),
+                            $self->perl_relationships_definition(%args))]}
 __PACKAGE__->meta->initialize;
 
 1;
@@ -837,14 +914,240 @@ sub auto_init_primary_key_columns
   return;
 }
 
+my %Auto_Rel_Types;
+
+sub auto_init_relationships
+{
+  my($self) = shift;
+  my(%args) = @_;
+
+
+  my $type_map  = $self->relationship_type_classes;
+  my @all_types = keys %$type_map;
+
+  my %types;
+
+  if(delete $args{'restore_types'})
+  {
+    if(my $types = $Auto_Rel_Types{$self->class})
+    {
+      $args{'types'} = $types;
+    }
+  }
+
+  if(exists $args{'relationship_types'} || 
+     exists $args{'types'} || 
+     exists $args{'with_relationships'})
+  {
+    my $types = exists $args{'relationship_types'} ? 
+                delete $args{'relationship_types'} :
+                exists $args{'types'} ?
+                delete $args{'types'} :
+                exists $args{'with_relationships'} ?
+                delete $args{'with_relationships'} : 1;
+
+    if(ref $types)
+    {
+      %types = map { $_ => 1 } @$types;
+      $Auto_Rel_Types{$self->class} = $types;
+    }
+    elsif($types)
+    {
+      %types = map { $_ => 1 } @all_types;
+    }
+    else
+    {
+      $Auto_Rel_Types{$self->class} = [];
+    }
+  }
+  else
+  {
+    %types = map { $_ => 1 } @all_types;
+  }
+
+  if(delete $args{'replace_existing'})
+  {
+    foreach my $rel ($self->relationships)
+    {
+      next  unless($types{$rel->type});
+      $self->delete_relationship($rel->name);
+    }
+  }
+
+  foreach my $type (sort { $self->sort_relationship_types($a, $b) } keys %types)
+  {
+    my $type_name = $type;
+
+    for($type_name)
+    {
+      s/ /_/g;
+      s/\W+//g;
+    }
+
+    my $method = 'auto_init_' . $type_name . '_relationships';
+
+    if($self->can($method))
+    {
+      $self->$method(@_);
+    }
+  }
+
+  return;
+}
+
+sub sort_relationship_types
+{
+  my($self, $a, $b) = @_;
+  return $self->relationship_type_rank($a) <=> $self->relationship_type_rank($b);
+}
+
+sub auto_init_one_to_one_relationships { }
+sub auto_init_many_to_one_relationships { }
+
+sub auto_init_one_to_many_relationships 
+{
+  my($self, %args) = @_;
+
+  my $class = $self->class;
+
+  # For each foreign key in this class, try to make a "one to many"
+  # relationship in the table that the foreign key points to.  But
+  # don't do so if there's already a one to one relationship in that 
+  # class that references all of the foreign key's columns.
+  FK: foreach my $fk ($self->foreign_keys)
+  {
+    my $f_class = $fk->class;
+    
+    next  unless($f_class && UNIVERSAL::isa($f_class, 'Rose::DB::Object'));
+
+    my $f_meta  = $f_class->meta;
+    my $key_cols = $fk->key_columns;
+
+    # Check for any one to one relationships that reference the foreign
+    # key's columns.  If found, don't try to make the one to many rel.
+    REL: foreach my $rel ($f_meta->relationships)
+    {
+      if($rel->type eq 'one to one' && !$rel->foreign_key)
+      {
+        my $skip = 1;
+        
+        my $col_map = $rel->column_map or next REL;
+        
+        foreach my $remote_col (values %$col_map)
+        {
+          $skip = 0  unless($key_cols->{$remote_col});
+        }
+
+        next FK  if($skip);
+      }
+    }
+
+    my $cm = $self->convention_manager;
+
+    # Also don't add add one to many relationships between a class
+    # and one of its map classes
+    if($cm->is_map_class($class))
+    {
+      $Debug && warn "$f_class - Refusing to make one to many relationship ",
+                     "to map class to $class\n";
+      next FK;
+    }
+
+    # XXX: skip of there's already a relationship with the same id
+
+    # Add the one to many relationship to the foreign class
+    my $name = $cm->auto_table_to_relationship_name_plural($self->table);
+
+    unless($f_meta->relationship($name))
+    {
+      $Debug && warn "$f_class - Adding one to many relationship ",
+                     "'$name' to $class\n";
+      $f_meta->add_relationship($name =>
+                                {
+                                  type       => 'one to many',
+                                  class      => $class,
+                                  column_map => { reverse %$key_cols },
+                                });
+    }
+
+    # Create the methods, preserving existing methods
+    $f_meta->make_relationship_methods(name => $name, preserve_existing => 1);
+  }
+
+  return;
+}
+
+sub auto_init_many_to_many_relationships
+{
+  my($self, %args) = @_;
+
+  my $class = $self->class;
+
+  my $cm = $self->convention_manager;
+
+  # Nevermind if this isn't a map class
+  return  unless($cm->is_map_class($class));
+
+  my @fks = $self->foreign_keys;
+  
+  # It's got to have just two foreign keys
+  return  unless(@fks == 2);
+  
+  my $key_cols1 = $fks[0]->key_columns;
+  my $key_cols2 = $fks[1]->key_columns;
+  
+  # Each foreign key must have key columns
+  return  unless($key_cols1 && keys %$key_cols1 &&
+                 $key_cols2 && keys %$key_cols2);
+
+  my $map_class = $class;
+
+  # Make many to many relationships in both foreign classes that go
+  # through this map table
+  PAIR: foreach my $pair ([ @fks ], [ reverse @fks ])
+  {
+    my($fk1, $fk2) = @$pair;
+    
+    my $class1 = $fk1->class;
+    my $class2 = $fk2->class;
+
+    # XXX: skip of there's already a relationship with the same id
+
+    my $meta = $class1->meta;
+    my $name = $cm->auto_foreign_key_to_relationship_name_plural($fk2);
+
+    unless($meta->relationship($name))
+    {
+      $Debug && warn "$class1 - Adding many to many relationship '$name' ",
+                     "through $map_class to $class2\n";
+      $meta->add_relationship($name =>
+                              {
+                                type      => 'many to many',
+                                map_class => $map_class,
+                                map_from  => $fk1->name,
+                                map_to    => $fk2->name,
+                              });
+    }
+
+    # Create the methods, preserving existing methods
+    $meta->make_relationship_methods(name => $name, preserve_existing => 1);
+  }
+
+  return;
+}
+
 sub auto_initialize
 {
   my($self) = shift;
+  my(%args) = @_;
+
+  $self->allow_auto_initialization(1);
 
   $self->auto_init_columns(@_);
   $self->auto_init_primary_key_columns;
   $self->auto_init_unique_keys(@_);
   $self->auto_init_foreign_keys(@_);
+  $self->auto_init_relationships(@_);
   $self->initialize;
 
   for(1 .. 2) # two passes are required to catch everything
@@ -853,6 +1156,14 @@ sub auto_initialize
     $self->retry_deferred_relationships;
     $self->retry_deferred_tasks;
   }
+
+  unless($args{'stay_connected'})
+  {
+    my $meta_class = ref $self;
+    $meta_class->clear_all_dbs;
+  }
+
+  $self->was_auto_initialized(1);
 
   return;
 }

@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util qw(row_id lazy_column_values_loaded_key);
 
-our $VERSION = '0.50';
+our $VERSION = '0.51';
 
 our $Debug = 0;
 
@@ -43,12 +43,16 @@ sub meta_class { 'Rose::DB::Object::Metadata' }
 
 sub meta
 {  
-  if(ref $_[0])
+  my($self) = shift;
+
+  if(ref $self)
   {
-    return $_[0]->{META_ATTR_NAME()} ||= $_[0]->meta_class->for_class(ref $_[0]);
+    return $self->{META_ATTR_NAME()} ||= $self->meta_class->for_class(ref $self);
   }
 
-  return $_[0]->meta_class->for_class($_[0]);
+  return $Rose::DB::Object::Metadata::Objects{$self} || 
+         $self->meta_class->for_class($self);
+  return $self->meta_class->for_class($self);
 }
 
 #
@@ -69,7 +73,8 @@ sub db
     return $self->{'db'};
   }
 
-  return $self->{'db'} ||= $self->meta->init_with_db($self->_init_db);
+  # return $self->{'db'} ||= $self->meta->init_with_db($self->_init_db);
+  return $self->{'db'} ||= $self->_init_db;
 }
 
 sub init_db { Rose::DB->new() }
@@ -289,7 +294,7 @@ sub load
     }
 
     # Was prepare_cached() but that can't be used across transactions
-    $sth = $dbh->prepare($sql, $meta->prepare_select_options);
+    $sth = $dbh->prepare($sql); #, $meta->prepare_select_options);
       
     $Debug && warn "$sql - bind params: ", join(', ', grep { defined } @key_values), "\n";
     $sth->execute(grep { defined } @key_values);
@@ -590,7 +595,7 @@ sub update
         warn "$sql - bind params: ", join(', ', @$bind, @key_values), "\n";
       }
 
-      $sth = $dbh->prepare($sql, $meta->prepare_update_options);
+      $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
       $sth->execute(@$bind, @key_values);
     }
     else
@@ -601,13 +606,13 @@ sub update
       #if($null_key)
       #{
       #  $sql = $meta->update_sql_with_null_key(\@key_columns, \@key_values, $db);
-      #  $sth = $dbh->prepare($sql, $meta->prepare_update_options);
+      #  $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
       #}
       #else
       #{
       #  $sql = $meta->update_sql($self, \@key_columns, $db);
       #  # Was prepare_cached() but that can't be used across transactions
-      #  $sth = $dbh->prepare($sql, $meta->prepare_update_options);
+      #  $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
       #}
       
       if($meta->has_lazy_columns)
@@ -615,7 +620,7 @@ sub update
         my $sql = $meta->update_sql($self, \@key_columns, $db);
 
         # Was prepare_cached() but that can't be used across transactions
-        my $sth = $dbh->prepare($sql, $meta->prepare_update_options);
+        my $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
   
         my %key = map { ($_ => 1) } @key_methods;
 
@@ -645,7 +650,7 @@ sub update
         my $sql = $meta->update_all_sql(\@key_columns, $db);
 
         # Was prepare_cached() but that can't be used across transactions
-        my $sth = $dbh->prepare($sql, $meta->prepare_update_options);
+        my $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
   
         my %key = map { ($_ => 1) } @key_methods;
 
@@ -739,7 +744,7 @@ sub insert
     local $self->{STATE_SAVING()} = 1;
     local $dbh->{'RaiseError'} = 1;
 
-    my $options = $meta->prepare_insert_options;
+    #my $options = $meta->prepare_insert_options;
 
     my $sth;
 
@@ -753,7 +758,7 @@ sub insert
         warn "$sql - bind params: ", join(', ', @$bind), "\n";
       }
 
-      $sth = $dbh->prepare($sql, $options);
+      $sth = $dbh->prepare($sql); #, $options);
       $sth->execute(@$bind);
     }
     else
@@ -761,7 +766,7 @@ sub insert
       my $column_names = $meta->column_names;
 
       # Was prepare_cached() but that can't be used across transactions
-      $sth = $dbh->prepare($meta->insert_sql($db), $options);
+      $sth = $dbh->prepare($meta->insert_sql($db)); #, $options);
 
       if($Debug)
       {
@@ -973,7 +978,7 @@ sub delete
       local $dbh->{'RaiseError'} = 1;
 
       # Was prepare_cached() but that can't be used across transactions
-      my $sth = $dbh->prepare($meta->delete_sql($db), $meta->prepare_delete_options);
+      my $sth = $dbh->prepare($meta->delete_sql($db)); #, $meta->prepare_delete_options);
 
       $Debug && warn $meta->delete_sql($db), " - bind params: ", join(', ', @pk_values), "\n";
       $sth->execute(@pk_values);
@@ -1053,7 +1058,7 @@ sub delete
       local $dbh->{'RaiseError'} = 1;
 
       # Was prepare_cached() but that can't be used across transactions
-      my $sth = $dbh->prepare($meta->delete_sql($db), $meta->prepare_delete_options);
+      my $sth = $dbh->prepare($meta->delete_sql($db)); #, $meta->prepare_delete_options);
 
       $Debug && warn $meta->delete_sql($db), " - bind params: ", join(', ', @pk_values), "\n";
       $sth->execute(@pk_values);
@@ -1111,9 +1116,14 @@ TYPE            NAME
 ----            ----
 EOF
 
+      my $found = 0;
+
       foreach my $thing (@fks, @rels)
       {
         next  unless($thing->parent->class eq $class);
+
+        $found++;
+
         my $type = 
           $thing->isa('Rose::DB::Object::Metadata::Relationship') ? 'Relationship' :
           $thing->isa('Rose::DB::Object::Metadata::ForeignKey') ? 'Foreign Key' :
@@ -1122,7 +1132,7 @@ EOF
         $tmp_msg .= sprintf("%-15s %s\n", $type, $thing->name);
       }
 
-      $msg = "\n\n$tmp_msg\n"  if($tmp_msg);
+      $msg = "\n\n$tmp_msg\n"  if($tmp_msg && $found);
     }
   };
 
@@ -1415,6 +1425,8 @@ In addition, its sibling class, L<Rose::DB::Object::Manager>, can do the followi
 L<Rose::DB::Object::Manager> can be subclassed and used separately (the recommended approach), or it can create object manager methods within a L<Rose::DB::Object> subclass.  See the L<Rose::DB::Object::Manager> documentation for more information.
 
 L<Rose::DB::Object> can parse, coerce, inflate, and deflate column values on your behalf, providing the most convenient possible data representations on the Perl side of the fence, while allowing the programmer to completely forget about the ugly details of the data formats required by the database.  Default implementations are included for most common column types, and the framework is completely extensible.
+
+Finally, the L<Rose::DB::Object::Loader> can be used to automatically create a suite of L<Rose::DB::Object> and L<Rose::DB::Object::Manager> subclasses based on the contents of the database.
 
 =head2 Configuration
 
