@@ -11,7 +11,7 @@ use Rose::DB::Object::Constants qw(STATE_LOADING STATE_IN_DB);
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.51';
+our $VERSION = '0.54';
 
 our $Debug = 0;
 
@@ -384,7 +384,8 @@ sub get_objects
   my $nonlazy = $args{'nonlazy'};
   my %nonlazy = (ref $nonlazy ? map { $_ => 1 } @$nonlazy : ());
 
-  my @tables  = ($meta->fq_table_sql);
+  my @tables     = ($meta->fq_table);
+  my @tables_sql = ($meta->fq_table_sql($db));
 
   my $use_lazy_columns = (!ref $nonlazy || $nonlazy{'self'}) ? 0 : $meta->has_lazy_columns;
 
@@ -476,10 +477,12 @@ sub get_objects
       {
         $i++; # Table aliases are 1-based
         
+        my $table_unquoted = $db->unquote_table_name($table);
+
         foreach my $sort (@$sort_by)
         {
           unless($sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t1.$sort/ ||
-                 $sort =~ s/\b$table\./t$i./g)
+                 $sort =~ s/\b$table_unquoted\./t$i./g)
           {
             if(my $rel_name = $rel_name{"t$i"})
             {
@@ -591,7 +594,8 @@ sub get_objects
 
         $meta{$ft_class} = $ft_meta;
 
-        push(@tables, $ft_meta->fq_table_sql);
+        push(@tables, $ft_meta->fq_table);
+        push(@tables_sql, $ft_meta->fq_table_sql($db));
         push(@table_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
         push(@classes, $ft_class);
 
@@ -719,7 +723,8 @@ sub get_objects
 
         $meta{$map_class} = $map_meta;
 
-        push(@tables, $map_meta->fq_table_sql);
+        push(@tables, $map_meta->fq_table);
+        push(@tables_sql, $map_meta->fq_table_sql($db));
         push(@table_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
         push(@classes, $map_class);
 
@@ -781,7 +786,8 @@ sub get_objects
         my $ft_columns = $foreign_rel->key_columns 
           or Carp::confess "$ft_class - Missing key columns for '$map_to'";
 
-        push(@tables, $ft_meta->fq_table_sql);
+        push(@tables, $ft_meta->fq_table);
+        push(@tables_sql, $ft_meta->fq_table_sql($db));
         push(@table_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
         push(@classes, $ft_class);
 
@@ -929,14 +935,15 @@ sub get_objects
       local $Carp::CarpLevel = $Carp::CarpLevel + 1;
 
       ($sql, $bind) =
-        build_select(dbh     => $dbh,
-                     select  => $select,
-                     tables  => \@tables,
-                     columns => \%columns,
-                     classes => \%classes,
-                     meta    => \%meta,
-                     db      => $db,
-                     pretty  => $Debug,
+        build_select(dbh        => $dbh,
+                     select     => $select,
+                     tables     => \@tables,
+                     tables_sql => \@tables_sql,
+                     columns    => \%columns,
+                     classes    => \%classes,
+                     meta       => \%meta,
+                     db         => $db,
+                     pretty     => $Debug,
                      %args);
     }
 
@@ -952,7 +959,8 @@ sub get_objects
     {
       local $dbh->{'RaiseError'} = 1;
       $Debug && warn "$sql\n";
-      my $sth = $dbh->prepare($sql, $meta->prepare_select_options) or die $dbh->errstr;
+      #my $sth = $dbh->prepare($sql, $meta->prepare_select_options) or die $dbh->errstr;
+      my $sth = $dbh->prepare($sql) or die $dbh->errstr;
       $sth->execute(@$bind);
       $count = $sth->fetchrow_array;
       $sth->finish;
@@ -983,11 +991,13 @@ sub get_objects
       foreach my $table (@tables)
       {
         $i++; # Table aliases are 1-based
-        
+
+        my $table_unquoted = $db->unquote_table_name($table);
+
         foreach my $sort (@$sort_by)
         {
           unless($sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t1.$sort/ ||
-                 $sort =~ s/\b$table\./t$i./g)
+                 $sort =~ s/\b$table_unquoted\./t$i./g)
           {
             if(my $rel_name = $rel_name{"t$i"})
             {
@@ -1044,14 +1054,15 @@ sub get_objects
     local $Carp::CarpLevel = $Carp::CarpLevel + 1;
 
     ($sql, $bind) =
-      build_select(dbh     => $dbh,
-                   tables  => \@tables,
-                   columns => \%columns,
-                   classes => \%classes,
-                   joins   => \@joins,
-                   meta    => \%meta,
-                   db      => $db,
-                   pretty  => $Debug,
+      build_select(dbh        => $dbh,
+                   tables     => \@tables,
+                   tables_sql => \@tables_sql,
+                   columns    => \%columns,
+                   classes    => \%classes,
+                   joins      => \@joins,
+                   meta       => \%meta,
+                   db         => $db,
+                   pretty     => $Debug,
                    %args);
   }
 
@@ -1066,7 +1077,8 @@ sub get_objects
     local $dbh->{'RaiseError'} = 1;
 
     $Debug && warn "$sql (", join(', ', @$bind), ")\n";
-    my $sth = $dbh->prepare($sql, $meta->prepare_select_options) or die $dbh->errstr;
+    #my $sth = $dbh->prepare($sql, $meta->prepare_select_options) or die
+    my $sth = $dbh->prepare($sql) or die $dbh->errstr;
 
     $sth->{'RaiseError'} = 1;
 
@@ -1652,21 +1664,7 @@ sub delete_objects
 
   $class->error(undef);
 
-  $args{'query'} = delete $args{'where'};
-
   my $object_class = $args{'object_class'} or Carp::croak "Missing object class argument";
-
-  unless(($args{'query'} && @{$args{'query'}}) || delete $args{'all'})
-  {
-    Carp::croak "$class - Refusing to delete all rows from the table '",
-                $object_class->meta->fq_table_sql, "' without an explict ",
-                "'all => 1' parameter";
-  }
-
-  if($args{'query'} && @{$args{'query'}} && $args{'all'})
-  {
-    Carp::croak "Illegal use of the 'where' and 'all' parameters in the same call";
-  }
 
   my $db  = $args{'db'} || $object_class->init_db;
   my $dbh = $args{'dbh'};
@@ -1685,6 +1683,20 @@ sub delete_objects
     $dbh_retained = 1;
   }
 
+  $args{'query'} = delete $args{'where'};
+
+  unless(($args{'query'} && @{$args{'query'}}) || delete $args{'all'})
+  {
+    Carp::croak "$class - Refusing to delete all rows from the table '",
+                $object_class->meta->fq_table, "' without an explict ",
+                "'all => 1' parameter";
+  }
+
+  if($args{'query'} && @{$args{'query'}} && $args{'all'})
+  {
+    Carp::croak "Illegal use of the 'where' and 'all' parameters in the same call";
+  }
+
   my $meta = $object_class->meta;
 
   # Yes, I'm re-using get_objects() code like crazy, and often
@@ -1693,7 +1705,7 @@ sub delete_objects
   my($where, $bind) = 
     $class->get_objects(%args, return_sql => 1, where_only => 1);
 
-  my $sql = 'DELETE FROM ' . $meta->fq_table_sql .
+  my $sql = 'DELETE FROM ' . $meta->fq_table_sql($db) .
             ($where ? " WHERE\n$where" : '');
 
   my $count;
@@ -1703,8 +1715,8 @@ sub delete_objects
     local $dbh->{'RaiseError'} = 1;  
     $Debug && warn "$sql - bind params: ", join(', ', @$bind), "\n";
 
-    my $sth = $dbh->prepare($sql, $meta->prepare_bulk_delete_options) 
-      or die $dbh->errstr;
+    #my $sth = $dbh->prepare($sql, $meta->prepare_bulk_delete_options)
+    my $sth = $dbh->prepare($sql) or die $dbh->errstr;
 
     $sth->execute(@$bind);
     $count = $sth->rows || 0;
@@ -1729,24 +1741,6 @@ sub update_objects
   my $object_class = $args{'object_class'} 
     or Carp::croak "Missing object class argument";
 
-  unless(($args{'where'} && @{$args{'where'}}) || delete $args{'all'})
-  {
-    Carp::croak "$class - Refusing to update all rows in the table '",
-                $object_class->meta->fq_table_sql, "' without an explict ",
-                "'all => 1' parameter";
-  }
-
-  if($args{'where'} && @{$args{'where'}} && $args{'all'})
-  {
-    Carp::croak "Illegal use of the 'where' and 'all' parameters in the same call";
-  }
-
-  my $where = delete $args{'where'};
-  my $set   = delete $args{'set'} 
-    or Carp::croak "Missing requires 'set' parameter";
-
-  $set = [ %$set ]  if(ref $set eq 'HASH');
-
   my $db  = $args{'db'} || $object_class->init_db;
   my $dbh = $args{'dbh'};
   my $dbh_retained = 0;
@@ -1763,6 +1757,24 @@ sub update_objects
     $args{'dbh'} = $dbh;
     $dbh_retained = 1;
   }
+
+  unless(($args{'where'} && @{$args{'where'}}) || delete $args{'all'})
+  {
+    Carp::croak "$class - Refusing to update all rows in the table '",
+                $object_class->meta->fq_table_sql($db), "' without an explict ",
+                "'all => 1' parameter";
+  }
+
+  if($args{'where'} && @{$args{'where'}} && $args{'all'})
+  {
+    Carp::croak "Illegal use of the 'where' and 'all' parameters in the same call";
+  }
+
+  my $where = delete $args{'where'};
+  my $set   = delete $args{'set'} 
+    or Carp::croak "Missing requires 'set' parameter";
+
+  $set = [ %$set ]  if(ref $set eq 'HASH');
 
   my $meta = $object_class->meta;
 
@@ -1785,12 +1797,12 @@ sub update_objects
     ($where_sql, $where_bind) = 
       $class->get_objects(%args, return_sql => 1, where_only => 1);
 
-    $sql = 'UPDATE ' . $meta->fq_table_sql . 
+    $sql = 'UPDATE ' . $meta->fq_table_sql($db) . 
            "\nSET\n$set_sql\nWHERE\n$where_sql";
   }
   else
   {
-    $sql = 'UPDATE ' . $meta->fq_table_sql . "\nSET\n$set_sql";
+    $sql = 'UPDATE ' . $meta->fq_table_sql($db) . "\nSET\n$set_sql";
   }
 
   my $count;
@@ -1800,8 +1812,8 @@ sub update_objects
     local $dbh->{'RaiseError'} = 1;  
     $Debug && warn "$sql\n";
 
-    my $sth = $dbh->prepare($sql, $meta->prepare_bulk_update_options) 
-      or die $dbh->errstr;
+    #my $sth = $dbh->prepare($sql, $meta->prepare_bulk_update_options)
+    my $sth = $dbh->prepare($sql) or die $dbh->errstr;
 
     $sth->execute(@$set_bind, @$where_bind);
     $count = $sth->rows || 0;
@@ -1816,6 +1828,111 @@ sub update_objects
 
   return $count;
 }
+
+# sub get_objects_from_sql
+# {
+#   my($class) = shift;
+# 
+#   my(%args, $sql);
+#   
+#   if(@_ == 1) { $sql = shift }
+#   else
+#   {
+#     %args = @_;
+#     $sql = $args{'sql'};
+#   }
+#   
+#   Carp::croak "Missing SQL"  unless($sql);
+# 
+#   my $object_class = $args{'object_class'} || $class->object_class ||
+#     Carp::croak "Missing object class";
+# 
+#   my $meta = $object_class->meta 
+#     or Carp::croak "Could not get meta for $object_class";
+# 
+#   my $methods  = $args{'_methods'};
+#   my $args     = $args{'args'} || [];
+# 
+#   my $have_methods = $args{'_methods'} ? 1 : 0;
+# 
+#   my $db  = delete $args{'db'} || $object_class->init_db;
+#   my $dbh = delete $args{'dbh'};
+#   my $dbh_retained = 0;
+# 
+#   unless($dbh)
+#   {
+#     unless($dbh = $db->retain_dbh)
+#     {
+#       $class->error($db->error);
+#       $class->handle_error($class);
+#       return undef;
+#     }
+# 
+#     $dbh_retained = 1;
+#   }
+# 
+#   my %object_args =
+#   (
+#     (exists $args{'share_db'} ? $args{'share_db'} : 1) ? (db => $db) : ()
+#   );
+# 
+#   my @objects;
+# 
+#   eval
+#   {
+#     local $dbh->{'RaiseError'} = 1;
+# 
+#     $Debug && warn "$sql\n";
+#     my $sth = $dbh->prepare($sql) or die $dbh->errstr;
+# 
+#     $sth->execute(@$args);
+# 
+#     while(my $row = $sth->fetchrow_hashref)
+#     {
+#       unless($have_methods)
+#       {
+#         foreach my $col (keys %$row)
+#         {
+#           if(my $method = $meta->column_mutator_method_name($col))
+#           {
+#             $methods->{$col} = $method;
+#           }
+#           elsif($object_class->can($col))
+#           {
+#             $methods->{$col} = $col;
+#           }
+#         }
+# 
+#         $have_methods = 1;
+#       }
+#       
+#       my $object = $object_class->new(%object_args);
+# 
+#       local $object->{STATE_LOADING()} = 1;
+#       $object->{STATE_IN_DB()} = 1;
+# 
+#       while(my($col, $val) = each(%$row))
+#       {
+#         my $method = $methods->{$col};
+#         $object->$method($val);
+#       }
+# 
+#       push(@objects, $object);
+#     }
+#   };
+# 
+#   $db->release_dbh  if($dbh_retained);
+# 
+#   if($@)
+#   {
+#     $class->total(undef);
+#     $class->error("get_objects_from_sql() - $@");
+#     $class->handle_error($class);
+#     return undef;
+#   }
+# 
+#   return \@objects;
+# }
 
 sub perl_class_definition
 {
