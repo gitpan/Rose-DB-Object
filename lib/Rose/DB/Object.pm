@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util qw(row_id lazy_column_values_loaded_key);
 
-our $VERSION = '0.53';
+our $VERSION = '0.54';
 
 our $Debug = 0;
 
@@ -68,7 +68,6 @@ sub db
     $self->{FLAG_DB_IS_PRIVATE()} = 0;
     $self->{'db'}  = shift;
     $self->{'dbh'} = undef;
-    $self->meta->init_with_db($self->{'db'});
 
     return $self->{'db'};
   }
@@ -87,7 +86,6 @@ sub _init_db
   if($db->init_db_info)
   {
     $self->{FLAG_DB_IS_PRIVATE()} = 1;
-    $self->meta->init_with_db($db);
     return $db;
   }
 
@@ -129,6 +127,8 @@ sub load
   my $dbh = $self->dbh or return 0;
 
   my $meta = $self->meta;
+
+  local $self->{STATE_SAVING()} = 1;
 
   my @key_columns = $meta->primary_key_column_names;
   my @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
@@ -292,9 +292,8 @@ sub load
       }
     }
 
-    # Was prepare_cached() but that can't be used across transactions
     $sth = $dbh->prepare($sql); #, $meta->prepare_select_options);
-      
+
     $Debug && warn "$sql - bind params: ", join(', ', grep { defined } @key_values), "\n";
     $sth->execute(grep { defined } @key_values);
 
@@ -513,6 +512,8 @@ sub update
 
   my $meta = $self->meta;
 
+  local $self->{STATE_SAVING()} = 1;
+
   my @key_columns = $meta->primary_key_column_names;
   my @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
   my @key_values  = grep { defined } map { $self->$_() } @key_methods;
@@ -573,7 +574,7 @@ sub update
 
   eval
   {
-    local $self->{STATE_SAVING()} = 1;
+    #local $self->{STATE_SAVING()} = 1;
     local $dbh->{'RaiseError'} = 1;
 
     my $sth;
@@ -610,16 +611,14 @@ sub update
       #else
       #{
       #  $sql = $meta->update_sql($self, \@key_columns, $db);
-      #  # Was prepare_cached() but that can't be used across transactions
-      #  $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
+      #  $sth = $dbh->prepare_cached($sql, undef, 3); #, $meta->prepare_update_options);
       #}
       
       if($meta->has_lazy_columns)
       {
         my $sql = $meta->update_sql($self, \@key_columns, $db);
 
-        # Was prepare_cached() but that can't be used across transactions
-        my $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
+        my $sth = $dbh->prepare_cached($sql, undef, 3); #, $meta->prepare_update_options);
   
         my %key = map { ($_ => 1) } @key_methods;
 
@@ -648,8 +647,7 @@ sub update
       {
         my $sql = $meta->update_all_sql(\@key_columns, $db);
 
-        # Was prepare_cached() but that can't be used across transactions
-        my $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
+        my $sth = $dbh->prepare_cached($sql, undef, 3); #, $meta->prepare_update_options);
   
         my %key = map { ($_ => 1) } @key_methods;
 
@@ -693,6 +691,8 @@ sub insert
   my $dbh = $self->dbh or return 0;
 
   my $meta = $self->meta;
+
+  local $self->{STATE_SAVING()} = 1;
 
   my @pk_methods = map { $meta->column_accessor_method_name($_) } 
                    $meta->primary_key_column_names;
@@ -740,7 +740,7 @@ sub insert
 
   eval
   {
-    local $self->{STATE_SAVING()} = 1;
+    #local $self->{STATE_SAVING()} = 1;
     local $dbh->{'RaiseError'} = 1;
 
     #my $options = $meta->prepare_insert_options;
@@ -764,8 +764,7 @@ sub insert
     {
       my $column_names = $meta->column_names;
 
-      # Was prepare_cached() but that can't be used across transactions
-      $sth = $dbh->prepare($meta->insert_sql($db)); #, $options);
+      $sth = $dbh->prepare_cached($meta->insert_sql($db), undef, 3); #, $options);
 
       if($Debug)
       {
@@ -784,6 +783,7 @@ sub insert
 
       if($using_pk_placeholders || !defined $self->$get_pk())
       {
+        local $self->{STATE_LOADING()} = 1;
         my $set_pk = $meta->column_mutator_method_name($meta->primary_key_column_names);
         #$self->$set_pk($db->last_insertid_from_sth($sth, $self));
         $self->$set_pk($db->last_insertid_from_sth($sth));
@@ -834,6 +834,8 @@ sub delete
   my($self, %args) = @_;
 
   my $meta = $self->meta;
+
+  local $self->{STATE_SAVING()} = 1;
 
   my @pk_methods = map { $meta->column_accessor_method_name($_) } $meta->primary_key_column_names;
   my @pk_values  = grep { defined } map { $self->$_() } @pk_methods;
@@ -973,11 +975,10 @@ sub delete
 
       # Delete the object itself
       my $dbh = $db->dbh or die "Could not get dbh: ", $self->error;
-      local $self->{STATE_SAVING()} = 1;
+      #local $self->{STATE_SAVING()} = 1;
       local $dbh->{'RaiseError'} = 1;
 
-      # Was prepare_cached() but that can't be used across transactions
-      my $sth = $dbh->prepare($meta->delete_sql($db)); #, $meta->prepare_delete_options);
+      my $sth = $dbh->prepare_cached($meta->delete_sql($db), undef, 3); #, $meta->prepare_delete_options);
 
       $Debug && warn $meta->delete_sql($db), " - bind params: ", join(', ', @pk_values), "\n";
       $sth->execute(@pk_values);
@@ -1053,11 +1054,10 @@ sub delete
 
     eval
     {
-      local $self->{STATE_SAVING()} = 1;
+      #local $self->{STATE_SAVING()} = 1;
       local $dbh->{'RaiseError'} = 1;
 
-      # Was prepare_cached() but that can't be used across transactions
-      my $sth = $dbh->prepare($meta->delete_sql($db)); #, $meta->prepare_delete_options);
+      my $sth = $dbh->prepare_cached($meta->delete_sql($db), undef, 3); #, $meta->prepare_delete_options);
 
       $Debug && warn $meta->delete_sql($db), " - bind params: ", join(', ', @pk_values), "\n";
       $sth->execute(@pk_values);
@@ -1618,6 +1618,14 @@ Here are examples of primary key column definitions that provide auto-generated 
     CREATE TABLE mytable
     (
       id   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      ...
+    );
+
+=item * SQLite
+
+    CREATE TABLE mytable
+    (
+      id   INTEGER PRIMARY KEY AUTOINCREMENT,
       ...
     );
 

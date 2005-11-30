@@ -65,6 +65,12 @@ sub table_to_class
   return ($prefix || '') . ucfirst $table;
 }
 
+sub auto_manager_base_name
+{
+  my($self, $table, $object_class) = @_;
+  return $table;
+}
+
 sub class_prefix
 {
   my($self, $class) = @_;
@@ -644,6 +650,10 @@ Consider column maps in this order:
 Given the name of a foreign class and an optional pre-existing foreign key name, return a L<name|Rose::DB::Object::Metadata::ForeignKey/name>  for the foreign key.
 
 Calls L<plural_to_singular|/plural_to_singular>, passing the L<table|Rose::DB::Object::Metadata/table> name of the foreign class.  Returns the current name if the call to L<plural_to_singular|/plural_to_singular> does not return a true value.
+
+=item B<auto_manager_base_name TABLE, CLASS>
+
+Given a table name and the name of the L<Rose::DB::Object>-derived class that fronts it, return a base name suitable for use as the value of the C<base_name> parameter to L<Rose::DB::Object::Manager>'s L<make_manager_methods|Rose::DB::Object::Manager/make_manager_methods> method.  The default implementation simply returns the table name.
 
 =item B<auto_primary_key_column_names>
 

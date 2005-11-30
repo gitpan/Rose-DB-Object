@@ -133,7 +133,8 @@ sub auto_generate_foreign_keys
       # The comment looks like this (s/\n/ /g):
       #
       # InnoDB free: 4096 kB;
-      # (`fother_id2`) REFER `test/rose_db_object_other2`(`id2`);
+      # (`fother_id2`) REFER `test/rose_db_object_other2`(`id2`) 
+      # ON DELETE NO ACTION ON UPDATE SET NULL;
       # (`fother_id3`) REFER `test/rose_db_object_other3`(`id3`);
       # (`fother_id4`) REFER `test/rose_db_object_other4`(`id4`);
       # (`fk1` `fk2` `fk3`) REFER `test/rose_db_object_other`(`k1` `k2` `k3`)
@@ -142,7 +143,12 @@ sub auto_generate_foreign_keys
       {
         s/^InnoDB free:.+?; *//i;
 
-        FK: while(s{\(((?:`[^`]+` *)+)\) REFER `([^`]+)/([^`]+)`\(((?:`[^`]+` *)+)\)(?:; *| *$)}{})
+        FK: while(s{\( ((?:`(?:[^`]|``)+` \s*)+) \) \s+ REFER \s* 
+                    `((?:[^`]|``)+) / ((?:[^`]|``)+) ` 
+                    \( ((?:`(?:[^`]|``)+` \s*)+) \) 
+                    (?: \s+ ON \s+ (?: DELETE | UPDATE) \s+
+                      (?: RESTRICT | CASCADE | SET \s+ NULL | NO \s+ ACTION)
+                    )* (?:; \s* | \s* $)}{}six)
         {
           my $local_columns   = $1;
           my $foreign_db      = $2;

@@ -19,7 +19,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.10';
+our $VERSION = '0.54';
 
 our $Debug = 0;
 
@@ -28,13 +28,16 @@ use Rose::Object::MakeMethods::Generic
   scalar => 
   [
     'class',
+    'error',
   ],
 
   'scalar --get_set_init' =>
   [
     'db',
+    'db_id',
     'primary_key',
     'column_name_to_method_name_mapper',
+    'original_class',
   ],
 
   boolean => 
@@ -56,7 +59,7 @@ use Rose::Class::MakeMethods::Generic
   inheritable_hash =>
   [
     column_type_classes => { interface => 'get_set_all' },
-    column_type_class   => { interface => 'get_set', hash_key => 'column_type_classes' },
+    _column_type_class   => { interface => 'get_set', hash_key => 'column_type_classes' },
     delete_column_type_class => { interface => 'delete', hash_key => 'column_type_classes' },
 
     auto_helper_classes      => { interface => 'get_set_all' },
@@ -81,6 +84,7 @@ __PACKAGE__->auto_helper_classes
   'informix' => 'Rose::DB::Object::Metadata::Auto::Informix',
   'pg'       => 'Rose::DB::Object::Metadata::Auto::Pg',
   'mysql'    => 'Rose::DB::Object::Metadata::Auto::MySQL',
+  'sqlite'   => 'Rose::DB::Object::Metadata::Auto::SQLite',
   'generic'  => 'Rose::DB::Object::Metadata::Auto::Generic',
 );
 
@@ -110,6 +114,9 @@ __PACKAGE__->column_type_classes
 
   'int'       => 'Rose::DB::Object::Metadata::Column::Integer',
   'integer'   => 'Rose::DB::Object::Metadata::Column::Integer',
+
+  'tinyint'   => 'Rose::DB::Object::Metadata::Column::Integer',
+  'smallint'  => 'Rose::DB::Object::Metadata::Column::Integer',
 
   'serial'    => 'Rose::DB::Object::Metadata::Column::Serial',
 
@@ -159,6 +166,8 @@ sub new
   my $class = $args{'class'} or Carp::croak "Missing required 'class' parameter";
   return $Objects{$class} ||= shift->SUPER::new(@_);
 }
+
+sub init_original_class { ref shift }
 
 sub for_class
 {
@@ -261,45 +270,20 @@ sub init_db
 
   my $class = $self->class or die "Missing class!";
 
-  return $self->class->init_db or 
+  my $db = $self->class->init_db or 
     Carp::croak "Could not init_db() for class $class - are you sure that ",         
                 "Rose::DB's data sources are set up?";
-}
 
-sub init_with_db
-{
-  my($self, $db) = @_;
-
-  # XXX: I'm cheating like crazy in this method for performance reasons,
-  # XXX: directly accessing hash keys.  I'll "fix" it if/when I have to...
-
-  my $catalog = $db->{'catalog'};
-  my $schema  = $db->{'schema'};
-  my $changed = 0;
-
-  UNDEF_IS_OK: # Avoid undef string comparison warnings
-  {
-    no warnings 'uninitialized';
-    if($catalog ne $self->{'catalog'})
-    {
-      $self->{'catalog'} = $catalog;
-      $changed++;
-    }
-
-    if($schema ne $self->{'schema'})
-    {
-      $self->{'schema'} = $schema;
-      $changed++;
-    }
-  }
-
-  if($changed)
-  {
-    $self->_clear_table_generated_values;
-    $self->{'db'} = $db;
-  }
+  $self->{'db_id'} = $db->{'id'};
 
   return $db;
+}
+
+sub init_db_id 
+{
+  my($self) = shift;
+  $self->init_db;
+  return $self->{'db_id'};
 }
 
 sub init_convention_manager { shift->convention_manager_class('default')->new }
@@ -469,19 +453,19 @@ sub table
   return $_[0]->{'table'} = $_[1];
 }
 
-sub catalog
-{
-  return $_[0]->{'catalog'}  unless(@_ > 1);
-  $_[0]->_clear_table_generated_values;
-  return $_[0]->{'catalog'} = $_[1];
-}
-
-sub schema
-{
-  return $_[0]->{'schema'}  unless(@_ > 1);
-  $_[0]->_clear_table_generated_values;
-  return $_[0]->{'schema'} = $_[1];
-}
+# sub catalog
+# {
+#   return $_[0]->{'catalog'}  unless(@_ > 1);
+#   $_[0]->_clear_table_generated_values;
+#   return $_[0]->{'catalog'} = $_[1];
+# }
+# 
+# sub schema
+# {
+#   return $_[0]->{'schema'}  unless(@_ > 1);
+#   $_[0]->_clear_table_generated_values;
+#   return $_[0]->{'schema'} = $_[1];
+# }
 
 sub init_primary_key
 {
@@ -708,7 +692,7 @@ sub add_columns
 
     unless(ref $_[0])
     {
-      my $column_class = $class->column_type_class('scalar')
+      my $column_class = $self->original_class->column_type_class('scalar')
         or Carp::croak "No column class set for column type 'scalar'";
 
       #$Debug && warn $self->class, " - adding scalar column $name\n";
@@ -748,7 +732,7 @@ sub add_columns
 
       my $type = $info->{'type'} ||= 'scalar';
 
-      my $column_class = $class->column_type_class($type)
+      my $column_class = $self->original_class->column_type_class($type)
         or Carp::croak "No column class set for column type '$type'";
 
       unless($self->column_class_is_loaded($column_class))
@@ -986,6 +970,12 @@ sub load_column_class
 }
 
 sub column_class_is_loaded { $Class_Loaded{$_[1]} }
+
+sub column_type_class 
+{
+  my($class, $type) = (shift, shift);
+  return $class->_column_type_class(lc $type, @_) 
+}
 
 sub load_relationship_class
 {
@@ -1234,8 +1224,8 @@ sub register_class
 
   my $db = $self->db;
 
-  my $catalog = $self->catalog;
-  my $schema  = $self->schema;
+  my $catalog = $db->catalog;
+  my $schema  = $db->schema;
 
   $catalog  = NULL_CATALOG  unless(defined $catalog);
   $schema   = NULL_SCHEMA   unless(defined $schema);
@@ -1937,24 +1927,27 @@ sub generate_primary_key_placeholders
 
 sub fq_primary_key_sequence_name
 {
-  my($self) = shift;
+  my($self, %args) = @_;
 
-  if(defined $self->{'fq_primary_key_sequence_name'})
+  my $db_id = $args{'db'}{'id'} || ($self->{'db_id'} ||= $self->init_db_id);
+
+  if(defined $self->{'fq_primary_key_sequence_name'}{$db_id})
   {
-    return $self->{'fq_primary_key_sequence_name'};
+    return $self->{'fq_primary_key_sequence_name'}{$db_id};
   }
 
-  if(my $seq = $self->primary_key_sequence_name(@_))
+  if(my $seq = $self->primary_key_sequence_name(%args))
   {
     $self->primary_key->sequence_name($seq);
-
-    my %args = @_;
 
     my $db = $args{'db'} or
       die "Cannot generate fully-qualified primary key sequence name without db argument";
 
-    return $self->{'fq_primary_key_sequence_name'} = 
-      $db->quote_identifier($self->catalog, $self->schema, $seq);
+    # Add schema and catalog information only if it isn't present
+    # XXX: crappy check - just looking for a '.'
+    return $self->{'fq_primary_key_sequence_name'}{$db->{'id'}} = 
+       (index($seq, '.') > 0) ? $seq : 
+       $db->quote_identifier($db->catalog, $db->schema, $seq);
   }
 
   return undef;
@@ -1964,20 +1957,22 @@ sub primary_key_sequence_name
 {
   my($self) = shift;
 
+  my $db_id = $self->{'db_id'} ||= $self->init_db_id;
+
   if(@_ == 1)
   {
-    $self->{'fq_primary_key_sequence_name'} = undef;
-    return $self->{'primary_key_sequence_name'} = shift;
+    $self->{'fq_primary_key_sequence_name'}{$db_id} = undef;
+    return $self->{'primary_key_sequence_name'}{$db_id} = shift;
   }
 
-  if($self->{'primary_key_sequence_name'})
+  if($self->{'primary_key_sequence_name'}{$db_id})
   {
-    return $self->{'primary_key_sequence_name'};
+    return $self->{'primary_key_sequence_name'}{$db_id};
   }
 
   if(my $seq = $self->primary_key->sequence_name)
   {
-    return $self->{'primary_key_sequence_name'} = $seq;
+    return $self->{'primary_key_sequence_name'}{$db_id} = $seq;
   }
 
   my @pk_columns = $self->primary_key_column_names;
@@ -1992,8 +1987,8 @@ sub primary_key_sequence_name
   my $table = $self->table or 
     Carp::croak "Cannot generate primary key sequence name without table name";
 
-  return $self->{'primary_key_sequence_name'} = 
-    $db->auto_sequence_name(table => $table, schema => $db->schema, column => $pk_columns[0]);    
+  return $self->{'primary_key_sequence_name'}{$db->{'id'}} = 
+    $db->auto_sequence_name(table => $table, column => $pk_columns[0]);    
 }
 
 sub column_names
@@ -2021,7 +2016,7 @@ sub nonlazy_column_names_string_sql
 {
   my($self, $db) = @_;
 
-  return $self->{'nonlazy_column_names_string_sql'}{$db->{'driver'}} ||= 
+  return $self->{'nonlazy_column_names_string_sql'}{$db->{'id'}} ||= 
     join(', ', map { $_->name_sql($db) } $self->nonlazy_columns);
 }
 
@@ -2029,7 +2024,7 @@ sub column_names_string_sql
 {
   my($self, $db) = @_;
 
-  return $self->{'column_names_string_sql'}{$db->{'driver'}} ||= 
+  return $self->{'column_names_string_sql'}{$db->{'id'}} ||= 
     join(', ', map { $_->name_sql($db) } sort { $a->name cmp $b->name } $self->columns);
 }
 
@@ -2037,7 +2032,7 @@ sub column_names_sql
 {
   my($self, $db) = @_;
 
-  my $list = $self->{'column_names_sql'}{$db->{'driver'}} ||= 
+  my $list = $self->{'column_names_sql'}{$db->{'id'}} ||= 
     [ map { $_->name_sql($db) } sort { $a->name cmp $b->name } $self->columns ];
 
   return wantarray ? @$list : $list;
@@ -2185,14 +2180,15 @@ sub column_rw_method_names_hash { shift->{'column_rw_method'} }
 sub fq_table_sql
 {
   my($self, $db) = @_;
-  return $self->{'fq_table_sql'}{$db->{'driver'}} ||= 
-    join('.', grep { defined } ($self->catalog, $self->schema, $db->quote_table_name($self->table)));    
+  return $self->{'fq_table_sql'}{$db->{'id'}} ||= 
+    join('.', grep { defined } ($db->catalog, $db->schema, $db->quote_table_name($self->table)));
 }
 
 sub fq_table
 {
-  my $self = shift;
-  join('.', grep { defined } ($self->catalog, $self->schema, $self->table));
+  my($self, $db) = @_;
+  return $self->{'fq_table'}{$db->{'id'}} ||=
+    join('.', grep { defined } ($db->catalog, $db->schema, $self->table));
 }
 
 sub load_all_sql
@@ -2202,7 +2198,7 @@ sub load_all_sql
   $key_columns ||= $self->primary_key_column_names;
 
   no warnings;
-  return $self->{'load_all_sql'}{$db->{'driver'}}{join("\0", @$key_columns)} ||= 
+  return $self->{'load_all_sql'}{$db->{'id'}}{join("\0", @$key_columns)} ||= 
     'SELECT ' . $self->column_names_string_sql($db) . ' FROM ' .
     $self->fq_table_sql($db) . ' WHERE ' .
     join(' AND ',  map { "$_ = ?" } @$key_columns);
@@ -2215,7 +2211,7 @@ sub load_sql
   $key_columns ||= $self->primary_key_column_names;
 
   no warnings;
-  return $self->{'load_sql'}{$db->{'driver'}}{join("\0", @$key_columns)} ||= 
+  return $self->{'load_sql'}{$db->{'id'}}{join("\0", @$key_columns)} ||= 
     'SELECT ' . $self->nonlazy_column_names_string_sql($db) . ' FROM ' .
     $self->fq_table_sql($db) . ' WHERE ' .
     join(' AND ',  map { "$_ = ?" } @$key_columns);
@@ -2255,7 +2251,7 @@ sub update_all_sql
 
   $key_columns ||= $self->primary_key_column_names;
 
-  my $cache_key = "$db->{'driver'}:" . join("\0", @$key_columns);
+  my $cache_key = "$db->{'id'}:" . join("\0", @$key_columns);
 
   return $self->{'update_all_sql'}{$cache_key}
     if($self->{'update_all_sql'}{$cache_key});
@@ -2282,7 +2278,7 @@ sub update_sql
   my %key = map { ($_ => 1) } @$key_columns;
 
   no warnings;
-  return ($self->{'update_sql_prefix'} ||=
+  return ($self->{'update_sql_prefix'}{$db->{'id'}} ||=
     'UPDATE ' . $self->fq_table_sql($db) . " SET \n") .
     join(",\n", map { '    ' . $self->column($_)->name_sql($db) . ' = ?' } 
                 grep { !$key{$_->{'name'}} && (!$_->{'lazy'} || 
@@ -2393,7 +2389,7 @@ sub update_sql_with_inlining
   no warnings;
   return 
   (
-    ($self->{'update_sql_with_inlining_start'} ||= 
+    ($self->{'update_sql_with_inlining_start'}{$db->{'id'}} ||= 
      'UPDATE ' . $self->fq_table_sql($db) . " SET \n") .
     join(",\n", @updates) . "\nWHERE " . 
     join(' AND ', map { $self->column($_)->name_sql($db) . ' = ?' } @$key_columns),
@@ -2406,7 +2402,7 @@ sub insert_sql
   my($self, $db) = @_;
 
   no warnings;
-  return $self->{'insert_sql'}{$db->{'driver'}} ||= 
+  return $self->{'insert_sql'}{$db->{'id'}} ||= 
     'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n" .
     join(",\n", map { "  $_" } $self->column_names_sql($db)) .
     "\n)\nVALUES\n(\n" . join(",\n", map { "  ?" } $self->column_names) .
@@ -2446,7 +2442,7 @@ sub insert_sql_with_inlining
 
   return 
   (
-    ($self->{'insert_sql_with_inlining_start'} ||=
+    ($self->{'insert_sql_with_inlining_start'}{$db->{'id'}} ||=
     'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n" .
     join(",\n", map { "  $_" } $self->column_names_sql($db)) .
     "\n)\nVALUES\n(\n") . join(",\n", @places) . "\n)",
@@ -2457,7 +2453,7 @@ sub insert_sql_with_inlining
 sub delete_sql
 {
   my($self, $db) = @_;
-  return $self->{'delete_sql'}{$db->{'driver'}} ||= 
+  return $self->{'delete_sql'}{$db->{'id'}} ||= 
     'DELETE FROM ' . $self->fq_table_sql($db) . ' WHERE ' .
     join(' AND ', map {  $self->column($_)->name_sql($db) . ' = ?' } 
                   $self->primary_key_column_names);
@@ -2477,7 +2473,7 @@ sub get_column_value
     my $key_columns = $self->primary_key_column_names;
     my %key = map { ($_ => 1) } @$key_columns;  
 
-    $sql = $column->{'get_column_sql_tmpl'}{$db->{'driver'}} = 
+    $sql = $column->{'get_column_sql_tmpl'}{$db->{'id'}} = 
       'SELECT __COLUMN__ FROM ' . $self->fq_table_sql($db) . ' WHERE ' .
       join(' AND ', map { $self->column($_)->name_sql($db) . ' = ?' } @$key_columns);
   }
@@ -2539,27 +2535,27 @@ sub _clear_table_generated_values
   $self->{'get_column_sql_tmpl'} = undef;
   $self->{'load_sql'}          = undef;
   $self->{'load_all_sql'}      = undef;
-  $self->{'update_all_sql'}    = undef;
-  $self->{'update_sql_prefix'} = undef;
-  $self->{'insert_sql'}        = undef;
-  $self->{'insert_sql_with_inlining_start'} = undef;
-  $self->{'update_sql_with_inlining_start'} = undef;
   $self->{'delete_sql'}        = undef;
   $self->{'fq_primary_key_sequence_name'} = undef;
   $self->{'primary_key_sequence_name'} = undef;
+  $self->{'insert_sql'}        = undef;
+  $self->{'insert_sql_with_inlining_start'} = undef;
+  $self->{'update_sql_prefix'} = undef;
+  $self->{'update_sql_with_inlining_start'} = undef;
+  $self->{'update_all_sql'}    = undef;
 }
 
 sub _clear_column_generated_values
 {
   my($self) = shift;
 
-  $self->{'fq_table'}            = undef;
-  $self->{'fq_table_sql'}        = undef;
-  $self->{'column_names'}        = undef;
-  $self->{'nonlazy_column_names'} = undef;
-  $self->{'lazy_column_names'} = undef;
-  $self->{'get_column_sql_tmpl'} = undef;
-  $self->{'columns_names_sql'}   = undef;
+  $self->{'fq_table'}               = undef;
+  $self->{'fq_table_sql'}           = undef;
+  $self->{'column_names'}           = undef;
+  $self->{'nonlazy_column_names'}   = undef;
+  $self->{'lazy_column_names'}      = undef;
+  $self->{'get_column_sql_tmpl'}    = undef;
+  $self->{'columns_names_sql'}      = undef;
   $self->{'column_names_string_sql'} = undef;
   $self->{'nonlazy_column_names_string_sql'} = undef;
   $self->{'column_rw_method_names'} = undef;
@@ -2567,18 +2563,18 @@ sub _clear_column_generated_values
   $self->{'nonlazy_column_accessor_method_names'} = undef;
   $self->{'column_mutator_method_names'} = undef;
   $self->{'nonlazy_column_mutator_method_names'} = undef;
-  $self->{'method_columns'}      = undef;
+  $self->{'method_columns'}         = undef;
   $self->{'column_accessor_method'} = undef;
-  $self->{'column_mutator_method'} = undef;
-  $self->{'column_rw_method'} = undef;
-  $self->{'load_sql'}   = undef;
-  $self->{'load_all_sql'}   = undef;
-  $self->{'update_all_sql'} = undef;
-  $self->{'update_sql_prefix'} = undef;
-  $self->{'insert_sql'} = undef;
+  $self->{'column_mutator_method'}  = undef;
+  $self->{'column_rw_method'}       = undef;
+  $self->{'load_sql'}               = undef;
+  $self->{'load_all_sql'}           = undef;
+  $self->{'update_all_sql'}         = undef;
+  $self->{'update_sql_prefix'}      = undef;
+  $self->{'insert_sql'}             = undef;
   $self->{'insert_sql_with_inlining_start'} = undef;
   $self->{'update_sql_with_inlining_start'} = undef;
-  $self->{'delete_sql'} = undef;
+  $self->{'delete_sql'}             = undef;
 }
 
 sub method_name_is_reserved
@@ -2767,6 +2763,8 @@ sub auto_helper_class
   }
 }
 
+my %Rebless;
+
 sub init_auto_helper
 {
   my($self) = shift;
@@ -2779,7 +2777,48 @@ sub init_auto_helper
 
     Carp::croak "Could not load ", $self->auto_helper_class, " - $@"  if($@);
 
-    bless $self, $self->auto_helper_class;
+    $self->original_class($class);
+
+    my $auto_helper_class = $self->auto_helper_class;
+
+    REBLESS: # Do slightly evil re-blessing magic
+    {
+      # Check cache
+      if(my $new_class = $Rebless{$class,$auto_helper_class})
+      {
+        bless $self, $new_class;
+      }
+      else
+      {
+        # Special, simple case for Rose::DB::Object::Metadata
+        if($class eq __PACKAGE__)
+        {
+          bless $self, $auto_helper_class;
+        }
+        else # Handle Rose::DB::Object::Metadata subclasses
+        {
+          # If this is a default Rose::DB driver class
+          if(index($auto_helper_class, 'Rose::DB::') == 0)
+          {
+            # Make a new metadata class based on the current class
+            my $new_class = $class . '::__RoseDBObjectMetadataPrivate__::' . $auto_helper_class;
+
+            no strict 'refs';        
+            @{"${new_class}::ISA"} = ($auto_helper_class, $class);
+    
+            bless $self, $new_class;
+          }
+          else
+          {
+            # Otherwise use the (apparently custom) metadata class
+            bless $self, $auto_helper_class;
+          }
+        }
+        
+        # Cache value
+        $Rebless{$class,$auto_helper_class} = ref $self;
+      }
+    }
   }
 
   return 1;
@@ -3001,9 +3040,7 @@ Clears the L<db|/db> attribute of the metadata object for each L<registered clas
 
 =item B<column_type_class TYPE [, CLASS]>
 
-Given the column type string TYPE, return the name of the L<Rose::DB::Object::Metadata::Column>-derived class used to store metadata and create the accessor method(s) for columns of that type.
-
-If a CLASS is passed, the column type TYPE is mapped to CLASS.
+Given the column type string TYPE, return the name of the L<Rose::DB::Object::Metadata::Column>-derived class used to store metadata and create the accessor method(s) for columns of that type.  If a CLASS is passed, the column type TYPE is mapped to CLASS.  In both cases, the TYPE argument is automatically converted to lowercase.
 
 =item B<column_type_classes [MAP]>
 
@@ -3034,6 +3071,9 @@ The default mapping of type names to class names is:
   int       => Rose::DB::Object::Metadata::Column::Integer
   integer   => Rose::DB::Object::Metadata::Column::Integer
 
+  tinyint   => Rose::DB::Object::Metadata::Column::Integer
+  smallint  => Rose::DB::Object::Metadata::Column::Integer
+  
   serial    => Rose::DB::Object::Metadata::Column::Serial
 
   num       => Rose::DB::Object::Metadata::Column::Numeric
@@ -3436,10 +3476,6 @@ If an object was read from the database the specified number of seconds ago or e
 
 A L<cached_objects_expire_in|/cached_objects_expire_in> value of undef or zero means that nothing will ever expire from the object cache for the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.  This is the default.
 
-=item B<catalog [CATALOG]>
-
-Get or set the database catalog name.  This attribute is not applicable to any of the supported databases, as far as I know.
-
 =item B<class [CLASS]>
 
 Get or set the L<Rose::DB::Object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by L<make_methods|/make_methods>).
@@ -3788,13 +3824,9 @@ Get or set the full list of relationships.  If ARGS are passed, the relationship
 
 Returns a list of relationship objects in list context, or a reference to an array of relationship objects in scalar context.
 
-=item B<schema [SCHEMA]>
-
-Get or set the database schema name.  This attribute is only applicable to PostgreSQL databases.
-
 =item B<table [TABLE]>
 
-Get or set the name of the database table.  The table name should not include any sort of prefix to indicate the L<schema|/schema> or L<catalog|/catalog>; there are separate attributes for those values.
+Get or set the name of the database table.  The table name should not include any sort of prefix to indicate the L<schema|Rose::DB/schema> or L<catalog|Rose::DB/catalog>.
 
 =item B<unique_key KEY>
 

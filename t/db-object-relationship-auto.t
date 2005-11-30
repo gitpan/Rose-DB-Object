@@ -5,7 +5,7 @@ use strict;
 my $Iterations;
 
 BEGIN { $Iterations = 2 }
-use Test::More tests => 2 + (4 * 9 * $Iterations);
+use Test::More tests => 2 + (5 * 9 * $Iterations);
 
 BEGIN 
 {
@@ -47,7 +47,16 @@ my %Setup_Class;
 
 foreach my $i (1 .. $Iterations)
 {
-  foreach my $db_type (qw(mysql pg pg_with_schema informix))
+  my @dbs = qw(mysql pg pg_with_schema informix sqlite);
+  eval { require List::Util };
+  @dbs = List::Util::shuffle(@dbs)  unless($@);
+
+  # Good test orders:
+  #@dbs = qw(sqlite pg_with_schema pg mysql informix);
+
+  print "# db type order: @dbs\n";
+
+  foreach my $db_type (@dbs)
   {
     SKIP:
     {
@@ -91,7 +100,7 @@ foreach my $i (1 .. $Iterations)
     ##
   
     my $p = $product_class->new(name => "Sled $i");
-  
+
     $p->vendor(name => "Acme $i");
   
     $p->prices({ price => 1.23, region => 'US' },
@@ -99,9 +108,10 @@ foreach my $i (1 .. $Iterations)
   
     $p->colors({ name => 'red'   }, 
                { name => 'green' });
+
   
     $p->save;
-    
+
     $p = $product_class->new(id => $p->id)->load;
     is($p->vendor->name, "Acme $i", "vendor $i.1 - $db_type");
   
@@ -292,7 +302,7 @@ CREATE TABLE Rose_db_object_private.products
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
-  vendor_id  INT REFERENCES vendors (id),
+  vendor_id  INT REFERENCES Rose_db_object_private.vendors (id),
 
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
             CHECK(status IN ('inactive', 'active', 'defunct')),
@@ -308,7 +318,7 @@ EOF
 CREATE TABLE Rose_db_object_private.prices
 (
   id          SERIAL NOT NULL PRIMARY KEY,
-  product_id  INT NOT NULL REFERENCES products (id),
+  product_id  INT NOT NULL REFERENCES Rose_db_object_private.products (id),
   region      CHAR(2) NOT NULL DEFAULT 'US',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
@@ -329,8 +339,8 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE Rose_db_object_private.products_colors
 (
-  product_id  INT NOT NULL REFERENCES products (id),
-  color_id    INT NOT NULL REFERENCES colors (id),
+  product_id  INT NOT NULL REFERENCES Rose_db_object_private.products (id),
+  color_id    INT NOT NULL REFERENCES Rose_db_object_private.colors (id),
 
   PRIMARY KEY(product_id, color_id)
 )
@@ -554,6 +564,96 @@ EOF
     $dbh->commit;
     $dbh->disconnect;
   }
+
+  #
+  # SQLite
+  #
+
+  eval
+  {
+    $dbh = Rose::DB->new('sqlite_admin')->retain_dbh()
+      or die Rose::DB->error;
+  };
+
+  if(!$@ && $dbh)
+  {
+    $Have{'sqlite'} = 1;
+
+    # Drop existing tables, ignoring errors
+    {
+      local $dbh->{'RaiseError'} = 0;
+      local $dbh->{'PrintError'} = 0;
+
+      $dbh->do('DROP TABLE products_colors');
+      $dbh->do('DROP TABLE colors');
+      $dbh->do('DROP TABLE prices');
+      $dbh->do('DROP TABLE products');
+      $dbh->do('DROP TABLE vendors');
+    }
+
+    $dbh->do(<<"EOF");
+CREATE TABLE vendors
+(
+  id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  name  VARCHAR(255) NOT NULL,
+
+  UNIQUE(name)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE products
+(
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  name    VARCHAR(255) NOT NULL,
+  price   DECIMAL(10,2) DEFAULT 0.00 NOT NULL,
+
+  vendor_id  INT REFERENCES vendors (id),
+
+  status  VARCHAR(128) DEFAULT 'inactive' NOT NULL
+            CHECK(status IN ('inactive', 'active', 'defunct')),
+
+  date_created  DATETIME,
+  release_date  DATETIME,
+  
+  UNIQUE(name)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE prices
+(
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id  INT NOT NULL REFERENCES products (id),
+  region      CHAR(2) DEFAULT 'US' NOT NULL,
+  price       DECIMAL(10,2) DEFAULT 0.00 NOT NULL,
+
+  UNIQUE(product_id, region)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE colors
+(
+  id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  name  VARCHAR(255) NOT NULL,
+
+  UNIQUE(name)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE products_colors
+(
+  product_id  INT NOT NULL REFERENCES products (id),
+  color_id    INT NOT NULL REFERENCES colors (id),
+
+  PRIMARY KEY(product_id, color_id)
+)
+EOF
+
+    $dbh->disconnect;
+  }
 }
 
 END
@@ -610,6 +710,21 @@ END
     $dbh->do('DROP TABLE products CASCADE');
     $dbh->do('DROP TABLE vendors CASCADE');
 
+
+    $dbh->disconnect;
+  }
+
+  if($Have{'sqlite'})
+  {
+    # SQLite
+    my $dbh = Rose::DB->new('sqlite_admin')->retain_dbh()
+      or die Rose::DB->error;
+
+    $dbh->do('DROP TABLE products_colors');
+    $dbh->do('DROP TABLE colors');
+    $dbh->do('DROP TABLE prices');
+    $dbh->do('DROP TABLE products');
+    $dbh->do('DROP TABLE vendors');
 
     $dbh->disconnect;
   }
