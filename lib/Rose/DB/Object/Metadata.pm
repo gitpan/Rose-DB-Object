@@ -19,7 +19,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.55';
+our $VERSION = '0.58';
 
 our $Debug = 0;
 
@@ -322,10 +322,17 @@ sub convention_manager
     }
     elsif(!ref $mgr)
     {
-      my $class = $self->convention_manager_class($mgr) or
-        Carp::croak "No convention manager class registered under the name '$mgr'";
+      if(UNIVERSAL::isa($mgr, 'Rose::DB::Object::ConventionManager'))
+      {
+        $mgr = $mgr->new;
+      }
+      else
+      {
+        my $class = $self->convention_manager_class($mgr) or
+          Carp::croak "No convention manager class registered under the name '$mgr'";
 
-      $mgr = $class->new;
+        $mgr = $class->new;
+      }
     }
     elsif(!UNIVERSAL::isa($mgr, 'Rose::DB::Object::ConventionManager'))
     {
@@ -471,19 +478,33 @@ sub table
   return $_[0]->{'table'} = $_[1];
 }
 
-# sub catalog
-# {
-#   return $_[0]->{'catalog'}  unless(@_ > 1);
-#   $_[0]->_clear_table_generated_values;
-#   return $_[0]->{'catalog'} = $_[1];
-# }
-# 
-# sub schema
-# {
-#   return $_[0]->{'schema'}  unless(@_ > 1);
-#   $_[0]->_clear_table_generated_values;
-#   return $_[0]->{'schema'} = $_[1];
-# }
+sub catalog
+{
+  return $_[0]->{'catalog'}  unless(@_ > 1);
+  $_[0]->_clear_table_generated_values;
+  return $_[0]->{'catalog'} = $_[1];
+}
+
+sub select_catalog
+{
+  my($self, $db) = @_;
+  return undef  if($db && !$db->supports_catalog);
+  return $self->{'catalog'} || ($db ? $db->catalog : undef);
+}
+
+sub schema
+{
+  return $_[0]->{'schema'}  unless(@_ > 1);
+  $_[0]->_clear_table_generated_values;
+  return $_[0]->{'schema'} = $_[1];
+}
+
+sub select_schema
+{
+  my($self, $db) = @_;  
+  return undef  if($db && !$db->supports_schema);
+  return $self->{'schema'} || ($db ? $db->schema : undef);
+}
 
 sub init_primary_key
 {
@@ -507,6 +528,12 @@ sub init_primary_key_column_info
     $column->is_primary_key_member(1);
     $column->primary_key_position($pk_position);
   }
+
+  $self->_clear_primary_key_column_generated_values;
+
+  # Init these by asking for them
+  $self->primary_key_column_accessor_names;
+  $self->primary_key_column_mutator_names;
 
   return;
 }
@@ -1242,8 +1269,8 @@ sub register_class
 
   my $db = $self->db;
 
-  my $catalog = $db->catalog;
-  my $schema  = $db->schema;
+  my $catalog = $self->select_catalog($db);
+  my $schema  = $self->select_schema($db);
 
   $catalog  = NULL_CATALOG  unless(defined $catalog);
   $schema   = NULL_SCHEMA   unless(defined $schema);
@@ -1914,20 +1941,39 @@ sub generate_primary_key_values
     return $code->($self, $db);
   }
 
-  my $id;
+  my @ids;
 
-  if(my $seq = $self->fq_primary_key_sequence_name(db => $db))
+  my $seqs = $self->fq_primary_key_sequence_names(db => $db);
+
+  if($seqs && @$seqs)
   {
-    $id = $db->next_value_in_sequence($seq);
+    my $i = 0;
 
-    unless($id)
+    foreach my $seq (@$seqs)
     {
-      $self->error("Could not generate primary key for ", $self->class, 
-                   " by selecting the next value in the sequence '$seq' - $@");
-      return undef;
+      $i++;
+
+      unless(defined $seq)
+      {
+        push(@ids, undef);
+        next;
+      }
+
+      my $id = $db->next_value_in_sequence($seq);
+
+      unless($id)
+      {
+        $self->error("Could not generate primary key for ", $self->class, 
+                     " column '", ($self->primary_key_column_names)[$i],
+                     "' by selecting the next value in the sequence ",
+                     "'$seq' - $@");
+        return undef;
+      }
+
+      push(@ids, $id);
     }
 
-    return $id;
+    return @ids;
   }
   else
   {
@@ -1935,7 +1981,11 @@ sub generate_primary_key_values
   }
 }
 
-*generate_primary_key_value = \&generate_primary_key_values;
+sub generate_primary_key_value 
+{
+  my @ids = shift->generate_primary_key_values(@_);
+  return $ids[0];
+}
 
 sub generate_primary_key_placeholders
 {
@@ -1943,70 +1993,231 @@ sub generate_primary_key_placeholders
   return $db->generate_primary_key_placeholders(scalar @{$self->primary_key_column_names});
 }
 
-sub fq_primary_key_sequence_name
+sub primary_key_column_accessor_names
+{
+  my($self) = shift;
+
+  if($self->{'primary_key_column_accessor_names'})
+  {
+    return @{$self->{'primary_key_column_accessor_names'}};
+  }
+
+  my @column_names = $self->primary_key_column_names;
+  my @columns      = grep { defined } map { $self->column($_) } @column_names;
+
+  return  unless(@column_names == @columns); # not ready yet
+
+  my @methods = grep { defined } map { $self->column_accessor_method_name($_) } 
+                @column_names;
+
+  return  unless(@methods);
+
+  $self->{'primary_key_column_accessor_names'} = \@methods;
+  return @methods;
+}
+
+sub primary_key_column_mutator_names
+{
+  my($self) = shift;
+
+  if($self->{'primary_key_column_mutator_names'})
+  {
+    return @{$self->{'primary_key_column_mutator_names'}};
+  }
+
+  my @column_names = $self->primary_key_column_names;
+  my @columns      = grep { defined } map { $self->column($_) } @column_names;
+
+  return  unless(@column_names == @columns); # not ready yet
+
+  my @methods = grep { defined } map { $self->column_mutator_method_name($_) } 
+                @column_names;
+
+  return  unless(@methods);
+
+  $self->{'primary_key_column_mutator_names'} = \@methods;
+  return @methods;
+}
+
+sub fq_primary_key_sequence_names
 {
   my($self, %args) = @_;
 
   my $db_id = $args{'db'}{'id'} || ($self->{'db_id'} ||= $self->init_db_id);
 
-  if(defined $self->{'fq_primary_key_sequence_name'}{$db_id})
+  if(defined $self->{'fq_primary_key_sequence_names'}{$db_id})
   {
-    return $self->{'fq_primary_key_sequence_name'}{$db_id};
+    my $seqs = $self->{'fq_primary_key_sequence_names'}{$db_id} or return;
+    return wantarray ? @$seqs : $seqs;
   }
 
-  if(my $seq = $self->primary_key_sequence_name(%args))
-  {
-    $self->primary_key->sequence_name($seq);
+  my $db = $args{'db'} or
+    die "Cannot generate fully-qualified primary key sequence name without db argument";
 
-    my $db = $args{'db'} or
-      die "Cannot generate fully-qualified primary key sequence name without db argument";
+  my @seqs = $self->primary_key_sequence_names($db);
+
+  if(@seqs)
+  {
+    $self->primary_key->sequence_names(@seqs);
 
     # Add schema and catalog information only if it isn't present
     # XXX: crappy check - just looking for a '.'
-    return $self->{'fq_primary_key_sequence_name'}{$db->{'id'}} = 
-       (index($seq, '.') > 0) ? $seq : 
-       $db->quote_identifier($db->catalog, $db->schema, $seq);
+    foreach my $seq (@seqs)
+    {
+      if(defined $seq && index($seq, '.') < 0)
+      {
+        $seq = $db->quote_identifier($self->select_catalog($db),
+                                     $self->select_schema($db), $seq);
+      }
+    }
+
+    $self->{'fq_primary_key_sequence_names'}{$db->{'id'}} = \@seqs;
+    return wantarray ? @seqs : \@seqs;
   }
 
-  return undef;
+  return;
 }
 
-sub primary_key_sequence_name
+sub refresh_primary_key_sequence_names
+{
+  my($self, $db) = @_;
+  my $db_id = UNIVERSAL::isa($db, 'Rose::DB') ? $db->id : $db;
+  $self->{'fq_primary_key_sequence_names'}{$db_id} = undef;
+  $self->{'primary_key_sequence_names'}{$db_id} = undef;
+  return;
+}
+
+sub primary_key_sequence_names
 {
   my($self) = shift;
 
-  my $db_id = $self->{'db_id'} ||= $self->init_db_id;
+  my($db, $db_id);
 
-  if(@_ == 1)
+  $db = shift  if(UNIVERSAL::isa($_[0], 'Rose::DB'));
+  $db_id = $db ? $db->{'id'} : (@_ == 2) ? shift : $self->init_db_id;
+
+  # Set pk sequence names
+  if(@_) 
   {
-    $self->{'fq_primary_key_sequence_name'}{$db_id} = undef;
-    return $self->{'primary_key_sequence_name'}{$db_id} = shift;
+    # Clear fully-qualified pk values
+    $self->{'fq_primary_key_sequence_names'}{$db_id} = undef;
+
+    my $ret = $self->{'primary_key_sequence_names'}{$db_id} = 
+      (@_ == 1 && ref $_[0]) ? $_[0] : [ @_ ];
+
+    # Push down into pk metadata object too
+    $self->primary_key->sequence_names($db, @$ret);
+
+    return wantarray ? @$ret : $ret;
   }
 
-  if($self->{'primary_key_sequence_name'}{$db_id})
+  if($self->{'primary_key_sequence_names'}{$db_id})
   {
-    return $self->{'primary_key_sequence_name'}{$db_id};
+    my $ret = $self->{'primary_key_sequence_names'}{$db_id};
+    return wantarray ? @$ret : $ret;
   }
 
-  if(my $seq = $self->primary_key->sequence_name)
+  # Init pk sequence names
+
+  # Start by considering the list of sequence names stored in the 
+  # primary key metadata object
+  my @pks  = $self->primary_key_column_names;
+  my $seqs = $self->primary_key->sequence_names($db);
+  my @seqs;
+
+  if($seqs)
   {
-    return $self->{'primary_key_sequence_name'}{$db_id} = $seq;
+    # If each pk column has a defined sequence name, accept them as-is
+    if(@pks == grep { defined } @$seqs)
+    {
+      $self->{'primary_key_sequence_names'}{$db_id} = $seqs;
+      return wantarray ? @$seqs : $seqs;
+    }
+    else # otherwise, use them as a starting point
+    {
+      @seqs = @$seqs;
+    }
   }
 
-  my @pk_columns = $self->primary_key_column_names;
-
-  return undef  if(@pk_columns > 1);
-
-  my %args = @_;
-
-  my $db = $args{'db'} or
+  unless($db)
+  {
     die "Cannot generate primary key sequence name without db argument";
+  }
 
   my $table = $self->table or 
     Carp::croak "Cannot generate primary key sequence name without table name";
 
-  return $self->{'primary_key_sequence_name'}{$db->{'id'}} = 
-    $db->auto_sequence_name(table => $table, column => $pk_columns[0]);    
+  my $i = 0;
+
+  foreach my $column ($self->primary_key_columns)
+  {
+    my $seq;
+
+    # Go the extra mile and look up the sequence name (if any) for scalar
+    # pk columns.  These pk columns were probably set using the columns()
+    # shortcut $meta->columns(qw(foo bar baz)) rather than the "long way"
+    # with type information.
+    if($column->type eq 'scalar')
+    {
+      $seq = _sequence_name($db, 
+                            $self->select_catalog($db), 
+                            $self->select_schema($db), 
+                            $table, 
+                            $column);
+    }
+    # Set auto-created serial column sequence names for Pg only
+    elsif($column->type eq 'serial' && $db->driver eq 'pg')
+    {
+      $seq = $db->auto_sequence_name(table => $table, column => $column);
+    }
+
+    unless(exists $seqs[$i] && defined $seqs[$i])
+    {
+      $seqs[$i] = $seq  if(defined $seq);
+    }
+    
+    $i++;
+  }
+
+  # Only save if it looks like the class setup is finished
+  if($self->is_initialized)
+  {
+    $self->{'primary_key_sequence_names'}{$db->{'id'}} = \@seqs;
+  }
+
+  return wantarray ? @seqs : \@seqs;
+}
+
+sub _sequence_name
+{
+  my($db, $catalog, $schema, $table, $column) = @_;
+
+  # XXX: This is only beneficial in Postgres right now
+  return  unless($db->driver eq 'pg');
+
+  $table = lc $table  if($db->likes_lowercase_table_names);
+
+  my $col_info;
+
+  eval # Ignore failure
+  {
+    my $dbh = $db->dbh;
+
+    local $dbh->{'RaiseError'} = 0;
+    local $dbh->{'PrintError'} = 0;
+
+    my $sth = $dbh->column_info($catalog, $schema, $table, $column) or return;
+
+    $sth->execute;
+    $col_info = $sth->fetchrow_hashref;
+    $sth->finish;
+  };
+
+  return  if($@ || !$col_info);
+
+  $db->refine_dbi_column_info($col_info);
+
+  return $col_info->{'rdbo_default_value_sequence_name'};
 }
 
 sub column_names
@@ -2199,14 +2410,18 @@ sub fq_table_sql
 {
   my($self, $db) = @_;
   return $self->{'fq_table_sql'}{$db->{'id'}} ||= 
-    join('.', grep { defined } ($db->catalog, $db->schema, $db->quote_table_name($self->table)));
+    join('.', grep { defined } ($self->select_catalog($db), 
+                                $self->select_schema($db), 
+                                $db->quote_table_name($self->table)));
 }
 
 sub fq_table
 {
   my($self, $db) = @_;
   return $self->{'fq_table'}{$db->{'id'}} ||=
-    join('.', grep { defined } ($db->catalog, $db->schema, $self->table));
+    join('.', grep { defined } ($self->select_catalog($db), 
+                                $self->select_schema($db), 
+                                $self->table));
 }
 
 sub load_all_sql
@@ -2554,8 +2769,8 @@ sub _clear_table_generated_values
   $self->{'load_sql'}          = undef;
   $self->{'load_all_sql'}      = undef;
   $self->{'delete_sql'}        = undef;
-  $self->{'fq_primary_key_sequence_name'} = undef;
-  $self->{'primary_key_sequence_name'} = undef;
+  $self->{'fq_primary_key_sequence_names'} = undef;
+  $self->{'primary_key_sequence_names'} = undef;
   $self->{'insert_sql'}        = undef;
   $self->{'insert_sql_with_inlining_start'} = undef;
   $self->{'update_sql_prefix'} = undef;
@@ -2593,6 +2808,13 @@ sub _clear_column_generated_values
   $self->{'insert_sql_with_inlining_start'} = undef;
   $self->{'update_sql_with_inlining_start'} = undef;
   $self->{'delete_sql'}             = undef;
+}
+
+sub _clear_primary_key_column_generated_values
+{
+  my($self) = shift;
+  $self->{'primary_key_column_accessor_names'} = undef;
+  $self->{'primary_key_column_mutator_names'} = undef;
 }
 
 sub method_name_is_reserved
@@ -3500,6 +3722,10 @@ If an object was read from the database the specified number of seconds ago or e
 
 A L<cached_objects_expire_in|/cached_objects_expire_in> value of undef or zero means that nothing will ever expire from the object cache for the L<Rose::DB::Object::Cached>-derived class associated with this metadata object.  This is the default.
 
+=item B<catalog [CATALOG]>
+
+Get or set the database catalog for this L<class|/class>.  This setting will B<override> any L<setting|Rose::DB/catalog> in the L<db|Rose::DB::Object/db> object.  Use this method only if you know that the L<class|/class> will always point to a specific catalog, regardless of what the L<Rose::DB>-derived database handle object specifies.
+
 =item B<class [CLASS]>
 
 Get or set the L<Rose::DB::Object>-derived class associated with this metadata object.  This is the class where the accessor methods for each column will be created (by L<make_methods|/make_methods>).
@@ -3566,13 +3792,15 @@ Returns the name of the "get_set" method for the column named NAME.  This is jus
 
 Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "get_set" methods for all the columns, in the order that the columns are returned by L<column_names|/column_names>.
 
-=item B<convention_manager [ OBJECT | NAME ]>
+=item B<convention_manager [ OBJECT | CLASS | NAME ]>
 
 Get or set the convention manager for this L<class|/class>.  Defaults to the return value of the L<init_convention_manager|/init_convention_manager> method.
 
 If undef is passed, then a L<Rose::DB::Object::ConventionManager::Null> object is stored instead.
 
 If a L<Rose::DB::Object::ConventionManager>-derived object is passed, its L<meta|Rose::DB::Object::ConventionManager/meta> attribute set to this metadata object and then it is used as the convention manager for this L<class|/class>.
+
+If a L<Rose::DB::Object::ConventionManager>-derived class name us passed, a new object of that class is created with its L<meta|Rose::DB::Object::ConventionManager/meta> attribute set to this metadata object.  Then it is used as the convention manager for this L<class|/class>.
 
 If a convention manager name is passed, then the corresponding class is looked up in the L<convention manager class map|convention_manager_classes>, a new object of that class is constructed, its L<meta|Rose::DB::Object::ConventionManager/meta> attribute set to this metadata object, and it is used as the convention manager for this L<class|/class>.  If there is no class mapped to NAME, a fatal error will occur.
 
@@ -3672,13 +3900,15 @@ Returns a list of foreign key objects in list context, or a reference to an arra
 
 =item B<generate_primary_key_value DB>
 
-This method is an alias for L<generate_primary_key_values|/generate_primary_key_values>.
+This method is the same as L<generate_primary_key_values|/generate_primary_key_values> except that it only returns the generated value for the first primary key column, rather than the entire list of values.  Use this method only when there is a single primary key column (or not at all).
 
 =item B<generate_primary_key_values DB>
 
-Given the L<Rose::DB>-derived object DB, generate a new primary key column value for the table described by this metadata object.  If a L<primary_key_generator|/primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value returned.
+Given the L<Rose::DB>-derived object DB, generate and return a list of new primary key column values for the table described by this metadata object.
 
-If no L<primary_key_generator|/primary_key_generator> is defined, a new primary key value will be generated, if possible, using the native facilities of the current database.  Note that this may not be possible for databases that auto-generate such values only after an insertion.  In that case, undef will be returned.
+If a L<primary_key_generator|/primary_key_generator> is defined, it will be called (passed this metadata object and the DB) and its value returned.
+
+If no L<primary_key_generator|/primary_key_generator> is defined, new primary key values will be generated, if possible, using the native facilities of the current database.  Note that this may not be possible for databases that auto-generate such values only after an insertion.  In that case, undef will be returned.
 
 =item B<init_convention_manager>
 
@@ -3828,11 +4058,11 @@ Get or set the subroutine used to generate new primary key values for the primar
 
 The subroutine is expected to return a list of values, one for each primary key column.  The values must be in the same order as the corresponding columns returned by L<primary_key_columns|/primary_key_columns>. (i.e., the first value belongs to the first column returned by L<primary_key_columns|/primary_key_columns>, the second value belongs to the second column, and so on.)
 
-=item B<primary_key_sequence_name [NAME]>
+=item B<primary_key_sequence_names [NAMES]>
 
-Get or set the name of the sequence used to populate the primary key column.  This method is only applicable to single-column primary keys.  Multi-column keys must set a custom L<primary_key_generator|/primary_key_generator>.
+Get or set the list of database sequence names used to populate the primary key columns.  The sequence names must be in the same order as the L<primary_key_columns|/primary_key_columns>.  NAMES may be a list or reference to an array of sequence names.  Returns a list (in list context) or reference to the array (in scalar context) of sequence names.
 
-If you do not set this value, it will be derived for you based on the name of the first primary key column.  In the common case, you do not need to be concerned about this method.  If you are using the built-in SERIAL or AUTO_INCREMENT type in your database for your single-column primary key, everything should just work.
+If you do not set this value, it will be derived for you based on the name of the primary key columns.  In the common case, you do not need to be concerned about this method.  If you are using the built-in SERIAL or AUTO_INCREMENT types in your database for your primary key columns, everything should just work.
 
 =item B<relationship NAME [, RELATIONSHIP | HASHREF]>
 
@@ -3847,6 +4077,10 @@ If both NAME and HASHREF are passed, then the combination of NAME and HASHREF mu
 Get or set the full list of relationships.  If ARGS are passed, the relationship list is cleared and then ARGS are passed to the L<add_relationships|/add_relationships> method.
 
 Returns a list of relationship objects in list context, or a reference to an array of relationship objects in scalar context.
+
+=item B<schema [SCHEMA]>
+
+Get or set the database schema for this L<class|/class>.  This setting will B<override> any L<setting|Rose::DB/schema> in the L<db|Rose::DB::Object/db> object.  Use this method only if you know that the L<class|/class> will always point to a specific schema, regardless of what the L<Rose::DB>-derived database handle object specifies.
 
 =item B<table [TABLE]>
 

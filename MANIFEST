@@ -108,6 +108,7 @@ t/benchmarks/lib/MyTest/RDBO/Simple/CodeName.pm
 t/benchmarks/lib/MyTest/RDBO/Simple/Product.pm
 t/benchmarks/lib/MyTest/RDBO/Simple/Product/Manager.pm
 t/column-triggers.t
+t/db-migration.t
 t/db-object-auto.t
 t/db-object-cached.t
 t/db-object-convention.t
@@ -134,6 +135,7 @@ t/lib/My/DB/Object.pm
 t/lib/My/DB/Unigene/Main.pm
 t/makemethods-db.t
 t/makemethods.t
+t/multi-pk-sequences.t
 t/pod.t
 t/sandbox/convention/convention-test-auto.pl
 t/sandbox/convention/convention-test.pl
@@ -149,8 +151,10 @@ t/sandbox/convention/lib/My/Price.pm
 t/sandbox/convention/lib/My/Product.pm
 t/sandbox/convention/lib/My/ProductColors.pm
 t/sandbox/convention/lib/My/Vendor.pm
+t/schema-override.t
 t/spot-check-01.t
 t/spot-check-02.t
 t/spot-check-03.t
+t/spot-check-04.t
 t/test-lib.pl
 META.yml                                 Module meta-data (added by MakeMaker)

@@ -5,7 +5,7 @@ use strict;
 use Rose::DB::Object::Metadata::UniqueKey;
 our @ISA = qw(Rose::DB::Object::Metadata::UniqueKey);
 
-our $VERSION = '0.53';
+our $VERSION = '0.58';
 
 use Rose::Object::MakeMethods::Generic
 (
@@ -17,21 +17,44 @@ use Rose::Object::MakeMethods::Generic
 
 sub init_name { 'primary_key' }
 
-sub sequence_name
+sub sequence_names
 {
   my($self) = shift;
 
-  my $db    = $self->parent->db;
-  my $db_id = $db->{'id'};
+  my $db;
+  $db = shift  if(UNIVERSAL::isa($_[0], 'Rose::DB'));
+  $db ||= $self->parent->init_db;
+  my $db_id = $db->id;
 
   if(@_)
   {
-    return $self->{'sequence_name'}{$db->driver} = 
-           $self->{'sequence_name'}{$db_id} = shift;
+    my $seqs = $self->{'sequence_names'}{$db->driver} = 
+      $self->{'sequence_names'}{$db_id} =
+      (@_ == 1 && ref $_[0]) ? $_[0] : [ @_ ];
+
+    my $i = 0;
+
+    foreach my $column ($self->SUPER::columns)
+    {
+      next  unless(ref $column); # may just be a column name
+      # Push down into column metadata object too
+      $column->default_value_sequence_name($db, $seqs->[$i++]);
+    }
   }
 
-  return $self->{'sequence_name'}{$db_id} || 
-         $self->{'sequence_name'}{$db->driver};
+  my $ret = $self->{'sequence_names'}{$db_id} || 
+            $self->{'sequence_names'}{$db->driver};
+
+  unless(ref $ret)
+  {
+    $self->sync_sequence_names;
+    $ret = $self->{'sequence_names'}{$db_id} || 
+           $self->{'sequence_names'}{$db->driver};
+  }
+
+  return  unless(ref $ret);
+
+  return wantarray ? @$ret : $ret;
 }
 
 sub auto_init_columns
@@ -46,7 +69,8 @@ sub add_columns
   my($self) = shift;
 
   $self->SUPER::add_columns(@_);
-  $self->sync_sequence_name;
+  $self->sync_sequence_names;
+  $self->parent->init_primary_key_column_info;
   return;
 }
 
@@ -75,25 +99,27 @@ sub columns
     $self->SUPER::columns(@_);
   }
 
-  $self->sync_sequence_name;
+  $self->parent->init_primary_key_column_info  if(@_);
+  $self->sync_sequence_names;
 
   return $wantarray ? @ret : $ret;
 }
 
-sub sync_sequence_name
+sub sync_sequence_names
 {
   my($self) = shift;
+
+  my @sequences;
 
   foreach my $column ($self->SUPER::columns)
   {
     next  unless(ref $column); # may just be a column name
-
-    if(my $seq = $column->default_value_sequence_name)
-    {
-      $self->sequence_name($seq);
-      return;
-    }
+    push(@sequences, $column->default_value_sequence_name);
   }
+
+  return  unless(grep { defined } @sequences);
+
+  $self->sequence_names(\@sequences)  if(@sequences);
 
   return;
 }
@@ -154,9 +180,9 @@ Get or set the name of the primary key.  Traditionally, this is the name of the 
 
 Get or set the L<Rose::DB::Object::Metadata>-derived object that this primary key belongs to.
 
-=item B<sequence_name [NAME]>
+=item B<sequence_names [NAMES]>
 
-Get or set the name of the database sequence (if any) used to generate values for the primary key column.
+Get or set the list of database sequence names (if any) used to generate values for the primary key columns.  The sequence names must be in the same order as the L<columns|/columns>.  NAMES may be a list or reference to an array of sequence names.  Returns a list (in list context) or reference to the array (in scalar context) of sequence names.
 
 =back
 
