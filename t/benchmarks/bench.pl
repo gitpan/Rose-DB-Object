@@ -95,8 +95,9 @@ our %Limit_Dialect =
   informix => 'First',
 );
 
-use constant LIMIT  => 50;
-use constant OFFSET => 25;
+use constant LIMIT     => 100;
+use constant OFFSET    => 50;
+use constant MAX_LIMIT => 1000;
 
 Benchmark->import(':hireswallclock')  if($Opt{'hi-res-time'});
 
@@ -1444,13 +1445,13 @@ EOF
     {
       my $sth = $DBH->prepare('SELECT id, name FROM rose_db_object_test_categories WHERE id = ?');
       $sth->execute($i + 500_000);
-      my($name, $category);
-      $sth->bind_columns(\$name, \$category);
+      my($id, $name);
+      $sth->bind_columns(\$id, \$name);
       $sth->fetch;
       $name .= ' updated';
 
       my $usth = $DBH->prepare('UPDATE rose_db_object_test_categories SET name = ? WHERE id = ?');
-      $usth->execute($name, $i + 500_000);
+      $usth->execute($name, $id);
 
       $i++;
     }
@@ -1884,8 +1885,8 @@ FROM
 WHERE
   c.id = p.category_id AND
   p.name LIKE 'Product %2%' AND
-  id <= @{[ 500_000 + $Iterations ]} AND
-  id >= 500000
+  p.id <= @{[ 500_000 + $Iterations ]} AND
+  p.id >= 500000
 LIMIT @{[ LIMIT ]}
 EOF
 
@@ -2084,9 +2085,9 @@ WHERE
   c.id = p.category_id AND
   n.product_id = p.id AND
   p.name LIKE 'Product %2%' AND
-  id <= @{[ 500_000 + $Iterations ]} AND
-  id >= 500000
-LIMIT @{[ LIMIT ]}
+  p.id <= @{[ 500_000 + $Iterations ]} AND
+  p.id >= 500000
+LIMIT @{[ MAX_LIMIT ]}
 EOF
 
       $sth->execute;
@@ -2114,7 +2115,7 @@ EOF
         }
 
         print "search_simple_product_and_category_and_code_name_dbi GOT $num\n";
-        #$printed++;
+        $printed++;
       }
 
       foreach my $p (@ps)
@@ -2147,7 +2148,7 @@ EOF
           ],
           with_objects    => [ 'code_names' ],
           require_objects => [ 'category' ],
-          limit => LIMIT);
+          limit => MAX_LIMIT);
       die unless(@$ps);
 
       if($Debug && !$printed)
@@ -2179,7 +2180,7 @@ EOF
           name => { -like => 'Product %2%' },
           id   => { '<=' => 200_000 + $Iterations,
                     '>=' => 200_000 } 
-        }, { limit_dialect => $Limit_Dialect, limit => LIMIT });
+        }, { limit_dialect => $Limit_Dialect, limit => MAX_LIMIT });
 
       die unless(@p);
 
@@ -2212,7 +2213,7 @@ EOF
           name => { -like => 'Product %2%' },
           id   => { '<=' => 400_000 + $Iterations,
                     '>=' => 400_000 } 
-        }, { prefetch => [ 'category_id' ], limit_dialect => $Limit_Dialect, limit => LIMIT });
+        }, { prefetch => [ 'category_id' ], limit_dialect => $Limit_Dialect, limit => MAX_LIMIT });
 
       die unless(@p);
 
@@ -2245,7 +2246,7 @@ EOF
           'me.name' => { -like => 'Product %2%' },
           'me.id'   => { '<=' => 300_000 + $Iterations,
                          '>=' => 300_000 } 
-        }, { prefetch => [ 'category_id' ], rows => LIMIT});
+        }, { prefetch => [ 'category_id' ], rows => MAX_LIMIT});
       die unless(@p);
 
       if($Debug && !$printed)
@@ -2765,9 +2766,9 @@ FROM
   rose_db_object_test_categories c
 WHERE
   c.id = p.category_id AND
-  p.name LIKE 'Product %2%'
-  id <= @{[ 500_000 + $Iterations ]} AND
-  id >= 500000
+  p.name LIKE 'Product %2%' AND
+  p.id <= @{[ 500_000 + $Iterations ]} AND
+  p.id >= 500000
 LIMIT @{[ LIMIT ]}
 EOF
 
@@ -3963,9 +3964,9 @@ WHERE
   c.id = p.category_id AND
   n.product_id = p.id AND
   p.name LIKE 'Product %2%' AND
-  id <= @{[ 500_000 + $Iterations ]} AND
-  id >= 500000
-LIMIT @{[ LIMIT ]}
+  p.id <= @{[ 500_000 + $Iterations ]} AND
+  p.id >= 500000
+LIMIT @{[ MAX_LIMIT ]}
 EOF
 
       $sth->execute;
@@ -4026,7 +4027,7 @@ EOF
           ],
           with_objects    => [ 'code_names' ],
           require_objects => [ 'category' ],
-          limit => LIMIT);
+          limit => MAX_LIMIT);
       die unless(@$ps);
 
       if($Debug && !$printed)
@@ -4058,7 +4059,7 @@ EOF
           name => { -like => 'Product %2%' },
           id   => { '<=' => 200_000 + $Iterations,
                     '>=' => 200_000 } 
-        }, { limit_dialect => $Limit_Dialect, limit => LIMIT });
+        }, { limit_dialect => $Limit_Dialect, limit => MAX_LIMIT });
       die unless(@p);
 
       if($Debug && !$printed)
@@ -4090,7 +4091,7 @@ EOF
           name => { -like => 'Product %2%' },
           id   => { '<=' => 400_000 + $Iterations,
                     '>=' => 400_000 } 
-        }, { prefetch => [ 'category_id' ], limit_dialect => $Limit_Dialect, limit => LIMIT });
+        }, { prefetch => [ 'category_id' ], limit_dialect => $Limit_Dialect, limit => MAX_LIMIT });
 
       die unless(@p);
 
@@ -4123,7 +4124,7 @@ EOF
           'me.name' => { -like => 'Product %2%' },
           'me.id'   => { '<=' => 300_000 + $Iterations,
                          '>=' => 300_000 } 
-        }, { prefetch => [ 'category_id' ], rows => LIMIT});
+        }, { prefetch => [ 'category_id' ], rows => MAX_LIMIT});
 
       die unless(@p);
 
@@ -4786,65 +4787,65 @@ sub Run_Tests
     'DBIC' => \&insert_complex_product_dbic,
   });
 
-#   INTERNAL_LOOPERS1:
-#   {
-#     #
-#     # Accessor
-#     #
-# 
-#     # It's okay for these tests to only have a few iterations because they
-#     # loop internally.
-#     local $Benchmark::Min_Count = 1;
-# 
-#     Bench('Simple: accessor 1', $CPU_Time,
-#     {
-#       'DBI ' => \&accessor_simple_category_dbi,
-#       'RDBO' => \&accessor_simple_category_rdbo,
-#       'CDBI' => \&accessor_simple_category_cdbi,
-#       'CDBS' => \&accessor_simple_category_cdbs,
-#       'DBIC' => \&accessor_simple_category_dbic,
-#     });
-# 
-#     Bench('Complex: accessor 1', $CPU_Time,
-#     {
-#       'DBI ' => \&accessor_simple_category_dbi,
-#       'RDBO' => \&accessor_complex_category_rdbo,
-#       'CDBI' => \&accessor_complex_category_cdbi,
-#       'CDBS' => \&accessor_complex_category_cdbs,
-#       'DBIC' => \&accessor_complex_category_dbic,
-#     });
-# 
-#     Bench('Simple: accessor 2', $CPU_Time,
-#     {
-#       'DBI ' => \&accessor_simple_product_dbi,
-#       'RDBO' => \&accessor_simple_product_rdbo,
-#       'CDBI' => \&accessor_simple_product_cdbi,
-#       'CDBS' => \&accessor_simple_product_cdbs,
-#       'DBIC' => \&accessor_simple_product_dbic,
-#     });
-# 
-#     Bench('Complex: accessor 2', $CPU_Time,
-#     {
-#       'DBI ' => \&accessor_simple_product_dbi,
-#       'RDBO' => \&accessor_complex_product_rdbo,
-#       'CDBI' => \&accessor_complex_product_cdbi,
-#       'CDBS' => \&accessor_complex_product_cdbs,
-#       'DBIC' => \&accessor_complex_product_dbic,
-#     });
-#   }
-# 
-#   #
-#   # Load
-#   #
-# 
-#   Bench('Simple: load 1', $Iterations,
-#   {
-#     'DBI ' => \&load_simple_category_dbi,
-#     'RDBO' => \&load_simple_category_rdbo,
-#     'CDBI' => \&load_simple_category_cdbi,
-#     'CDBS' => \&load_simple_category_cdbs,
-#     'DBIC' => \&load_simple_category_dbic,
-#   });
+  INTERNAL_LOOPERS1:
+  {
+    #
+    # Accessor
+    #
+
+    # It's okay for these tests to only have a few iterations because they
+    # loop internally.
+    local $Benchmark::Min_Count = 1;
+
+    Bench('Simple: accessor 1', $CPU_Time,
+    {
+      'DBI ' => \&accessor_simple_category_dbi,
+      'RDBO' => \&accessor_simple_category_rdbo,
+      'CDBI' => \&accessor_simple_category_cdbi,
+      'CDBS' => \&accessor_simple_category_cdbs,
+      'DBIC' => \&accessor_simple_category_dbic,
+    });
+
+    Bench('Complex: accessor 1', $CPU_Time,
+    {
+      'DBI ' => \&accessor_simple_category_dbi,
+      'RDBO' => \&accessor_complex_category_rdbo,
+      'CDBI' => \&accessor_complex_category_cdbi,
+      'CDBS' => \&accessor_complex_category_cdbs,
+      'DBIC' => \&accessor_complex_category_dbic,
+    });
+
+    Bench('Simple: accessor 2', $CPU_Time,
+    {
+      'DBI ' => \&accessor_simple_product_dbi,
+      'RDBO' => \&accessor_simple_product_rdbo,
+      'CDBI' => \&accessor_simple_product_cdbi,
+      'CDBS' => \&accessor_simple_product_cdbs,
+      'DBIC' => \&accessor_simple_product_dbic,
+    });
+
+    Bench('Complex: accessor 2', $CPU_Time,
+    {
+      'DBI ' => \&accessor_simple_product_dbi,
+      'RDBO' => \&accessor_complex_product_rdbo,
+      'CDBI' => \&accessor_complex_product_cdbi,
+      'CDBS' => \&accessor_complex_product_cdbs,
+      'DBIC' => \&accessor_complex_product_dbic,
+    });
+  }
+
+  #
+  # Load
+  #
+
+  Bench('Simple: load 1', $Iterations,
+  {
+    'DBI ' => \&load_simple_category_dbi,
+    'RDBO' => \&load_simple_category_rdbo,
+    'CDBI' => \&load_simple_category_cdbi,
+    'CDBS' => \&load_simple_category_cdbs,
+    'DBIC' => \&load_simple_category_dbic,
+  });
 
   #Bench('Complex: load 1', $Iterations,
   #{
@@ -4854,41 +4855,41 @@ sub Run_Tests
   #  'DBIC' => \&load_complex_category_dbic,
   #});
 
-#   Bench('Simple: load 2', $Iterations,
-#   {
-#     'DBI ' => \&load_simple_product_dbi,
-#     'RDBO' => \&load_simple_product_rdbo,
-#     'CDBI' => \&load_simple_product_cdbi,
-#     'CDBS' => \&load_simple_product_cdbs,
-#     'DBIC' => \&load_simple_product_dbic,
-#   });
-# 
-#   Bench('Complex: load 2', $Iterations,
-#   {
-#     'DBI ' => \&load_simple_product_dbi,
-#     'RDBO' => \&load_complex_product_rdbo,
-#     'CDBI' => \&load_complex_product_cdbi,
-#     'CDBS' => \&load_complex_product_cdbs,
-#     'DBIC' => \&load_complex_product_dbic,
-#   });
-# 
-#   Bench('Simple: load 3', $Iterations,
-#   {
-#     'DBI ' => \&load_simple_product_and_category_dbi,
-#     'RDBO' => \&load_simple_product_and_category_rdbo,
-#     'CDBI' => \&load_simple_product_and_category_cdbi,
-#     'CDBS' => \&load_simple_product_and_category_cdbs,
-#     'DBIC' => \&load_simple_product_and_category_dbic,
-#   });
-# 
-#   Bench('Complex: load 3', $Iterations,
-#   {
-#     'DBI ' => \&load_simple_product_and_category_dbi,
-#     'RDBO' => \&load_complex_product_and_category_rdbo,
-#     'CDBI' => \&load_complex_product_and_category_cdbi,
-#     'CDBS' => \&load_complex_product_and_category_cdbs,
-#     'DBIC' => \&load_complex_product_and_category_dbic,
-#   });
+  Bench('Simple: load 2', $Iterations,
+  {
+    'DBI ' => \&load_simple_product_dbi,
+    'RDBO' => \&load_simple_product_rdbo,
+    'CDBI' => \&load_simple_product_cdbi,
+    'CDBS' => \&load_simple_product_cdbs,
+    'DBIC' => \&load_simple_product_dbic,
+  });
+
+  Bench('Complex: load 2', $Iterations,
+  {
+    'DBI ' => \&load_simple_product_dbi,
+    'RDBO' => \&load_complex_product_rdbo,
+    'CDBI' => \&load_complex_product_cdbi,
+    'CDBS' => \&load_complex_product_cdbs,
+    'DBIC' => \&load_complex_product_dbic,
+  });
+
+  Bench('Simple: load 3', $Iterations,
+  {
+    'DBI ' => \&load_simple_product_and_category_dbi,
+    'RDBO' => \&load_simple_product_and_category_rdbo,
+    'CDBI' => \&load_simple_product_and_category_cdbi,
+    'CDBS' => \&load_simple_product_and_category_cdbs,
+    'DBIC' => \&load_simple_product_and_category_dbic,
+  });
+
+  Bench('Complex: load 3', $Iterations,
+  {
+    'DBI ' => \&load_simple_product_and_category_dbi,
+    'RDBO' => \&load_complex_product_and_category_rdbo,
+    'CDBI' => \&load_complex_product_and_category_cdbi,
+    'CDBS' => \&load_complex_product_and_category_cdbs,
+    'DBIC' => \&load_complex_product_and_category_dbic,
+  });
 
   #
   # Update
