@@ -76,7 +76,7 @@ sub auto_generate_columns
     $catalog = $self->select_catalog($db);
     $schema  = $self->select_schema($db); 
     $schema  = $db->default_implicit_schema  unless(defined $schema);
-    
+
     $schema  = lc $schema   if(defined $schema && $db->likes_lowercase_schema_names);
     $catalog = lc $catalog  if(defined $catalog && $db->likes_lowercase_catalog_names);
 
@@ -107,7 +107,7 @@ sub auto_generate_columns
         Carp::croak "Could not extract column name from DBI column_info()";
       }
 
-      $db->refine_dbi_column_info($col_info);
+      $db->refine_dbi_column_info($col_info, $self);
 
       $columns{$col_info->{'COLUMN_NAME'}} = 
         $self->auto_generate_column($col_info->{'COLUMN_NAME'}, $col_info);
@@ -431,7 +431,7 @@ sub auto_generate_foreign_keys
           # Null convention manager may return undef
           no warnings 'uninitialized'; 
           eval "require $foreign_class";
-          $foreign_class = undef  if($@);
+          $foreign_class = undef  if($@ || !UNIVERSAL::isa($foreign_class, 'Rose::DB::Object'));
         }
       }
 

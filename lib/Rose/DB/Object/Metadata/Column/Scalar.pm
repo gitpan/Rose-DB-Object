@@ -7,16 +7,29 @@ use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.55';
+our $VERSION = '0.60';
+
+use Rose::Class::MakeMethods::Generic
+(
+  inheritable_scalar => 'default_overflow',
+);
+
+__PACKAGE__->default_overflow('fatal');
 
 __PACKAGE__->add_common_method_maker_argument_names
 (
-  qw(length check_in with_init init_method)
+  qw(default length check_in with_init init_method overflow)
 );
 
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
+
+  'scalar --get_set_init' =>
+  [
+    overflow => { check_in => [ qw(truncate warn fatal) ] },
+  ],
+
   scalar => [ __PACKAGE__->common_method_maker_argument_names ]
 );
 
@@ -30,6 +43,8 @@ sub init_with_dbi_column_info
 
   return;
 }
+
+sub init_overflow { __PACKAGE__->default_overflow }
 
 1;
 
@@ -81,6 +96,10 @@ See the L<Rose::DB::Object::Metadata::Column|Rose::DB::Object::Metadata::Column/
 
 Get or set a reference to an array of valid column values.
 
+=item B<default VALUE>
+
+Get or set the default value for the column.
+
 =item B<init_method [NAME]>
 
 Get or set the name of the "init" method.  See the documentation for the C<scalar> method type in L<Rose::DB::Object::MakeMethods::Generic> for more information.
@@ -88,6 +107,28 @@ Get or set the name of the "init" method.  See the documentation for the C<scala
 =item B<length [INT]>
 
 Get or set the length of the column in characters.
+
+=item B<overflow [BEHAVIOR]>
+
+Get or set the setting that determines the behavior when the column value is greater than L<length|/length> characters.  Valid values for BEHAVIOR are:
+
+=over 4
+
+=item B<fatal>
+
+Throw an exception.
+
+=item B<truncate>
+
+Truncate the column value to the correct L<length|/length>.
+
+=item B<warn>
+
+Print a warning message.
+
+=back
+
+The default value is "fatal".
 
 =item B<type>
 

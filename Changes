@@ -1,3 +1,28 @@
+0.60 (12.31.2005) - John Siracusa <siracusa@mindspring.com>
+
+    * Added arbitrary-depth auto-joins to the Manager using a "dot-chained"
+      syntax (e.g., vendor.regions.code)
+    * Added make_modules() method to the loader.
+    * Added pre_init_hook() method to metadata objects and the loader.
+    * Added overflow attribute to control the behavior when a scalar, 
+      character, or varchar column value is too long.  Possible values
+      are "fatal" (the default), "truncate", and "warn".
+    * Serial columns are now detected correctly even when DBI returns a 
+      column type of integer or bigint.  (Reported by Cees Hek)
+    * Added support for bigserial columns.
+    * Enum columns now have their list of valid values printed correctly
+      by the perl_hash_definition() method.  (Reported by Juan Camacho)      
+    * Fixed a bug that caused the loader to trip over mixed-case unique 
+      keys in MySQL databases. (Reported by Juan Camacho)
+    * Force MDY dates in Postgres in the test suite, just in case the user
+      has European dates configured.  (Reported by Cees Hek)
+    * Fixed numerous Postgres 7.x bugs.  (Reported by Cees Hek)
+    * Modified the benchmark suite to further confine each module to its
+      own private set of database rows in order to eliminate the influence
+      of run order during the tests.
+    * Worked around SQLite ORDER BY bugs in order to make the test suite
+      function correctly.
+
 0.59 (12.19.2005) - John Siracusa <siracusa@mindspring.com>
 
     * Added in_array, any_in_array, and all_in_array query operators

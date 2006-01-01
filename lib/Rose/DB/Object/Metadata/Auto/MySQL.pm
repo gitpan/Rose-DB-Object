@@ -89,7 +89,8 @@ sub auto_generate_unique_keys
 
   # This sort order is part of the API, and is essential to make the
   # test suite work.
-  my @uk = map { $unique_keys{$_} } sort map { lc } keys(%unique_keys);
+  no warnings 'uninitialized';
+  my @uk = map { $unique_keys{$_} } sort { lc $a <=> lc $b } keys(%unique_keys);
 
   return wantarray ? @uk : \@uk;
 }

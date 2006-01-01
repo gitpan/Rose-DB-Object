@@ -2,6 +2,9 @@ package Rose::DB::Object::Loader;
 
 use strict;
 
+use Cwd;
+use File::Path;
+use File::Spec;
 use DBI;
 use Carp;
 use Clone::PP qw(clone);
@@ -13,7 +16,7 @@ use Rose::DB::Object::ConventionManager;
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.57';
+our $VERSION = '0.60';
 
 use Rose::Object::MakeMethods::Generic
 (
@@ -28,6 +31,8 @@ use Rose::Object::MakeMethods::Generic
     'include_tables',
     'exclude_tables',
     'filter_tables',
+    'pre_init_hook',
+    'module_dir',
   ],
 
   boolean => 
@@ -229,23 +234,82 @@ sub db_class
   return $self->{'db_class'} = $db_class;
 }
 
+sub make_modules
+{
+  my($self, %args) = @_;
+
+  my $module_dir = exists $args{'module_dir'} ? 
+    delete $args{'module_dir'} : $self->module_dir;
+
+  $module_dir = cwd()  unless(defined $module_dir);
+
+  unless(-d $module_dir)
+  {
+    croak "Module directory '$module_dir' does not exist";
+  }
+
+  my @classes = $self->make_classes(%args);
+
+  foreach my $class (@classes)
+  {
+    my @path = split('::', $class);
+    $path[-1] .= '.pm';
+    unshift(@path, $module_dir);
+
+    my $dir = File::Spec->catfile(@path[0 .. ($#path - 1)]);
+
+    mkpath($dir)  unless(-e $dir);
+
+    unless(-d $dir)
+    {
+      if(-f $dir)
+      {
+        croak "Could not create module directory '$module_dir' - a file ",
+              "with the same name already exists";
+      }
+      croak "Could not create module directory '$module_dir' - $!";
+    }
+
+    my $file = File::Spec->catfile(@path);
+
+    open(my $pm, '>', $file) or croak "Could not create $file - $!";
+
+    if($class->isa('Rose::DB::Object'))
+    {
+      print $pm $class->meta->perl_class_definition, "\n";
+    }
+    elsif($class->isa('Rose::DB::Object::Manager'))
+    {
+      print $pm $class->perl_class_definition, "\n";
+    }
+    else { croak "Unknown class: $class" }
+
+    close($pm) or croak  "Could not write $file - $!";
+  }
+
+  return wantarray ? @classes : \@classes;
+}
+
 sub make_classes
 {
   my($self, %args) = @_;
 
   my $include_views = exists $args{'include_views'} ? 
-    $args{'include_views'} : $self->include_views;
+    delete $args{'include_views'} : $self->include_views;
 
   my $with_managers = exists $args{'with_managers'} ? 
-    $args{'with_managers'} : $self->with_managers;
+    delete $args{'with_managers'} : $self->with_managers;
+
+  my $pre_init_hook = exists $args{'pre_init_hook'} ? 
+    delete $args{'pre_init_hook'} : $self->pre_init_hook;
 
   my $include = exists $args{'include_tables'} ? 
-    $args{'include_tables'} : $self->include_tables;
+    delete $args{'include_tables'} : $self->include_tables;
 
   my $exclude = exists $args{'exclude_tables'} ? 
-    $args{'exclude_tables'} : $self->exclude_tables;
+    delete $args{'exclude_tables'} : $self->exclude_tables;
 
-  my $filter = exists $args{'filter_tables'} ? $args{'filter_tables'} : 
+  my $filter = exists $args{'filter_tables'} ? delete $args{'filter_tables'} : 
     (!defined $include && !defined $exclude) ? $self->filter_tables : undef;
 
   if($include || $exclude)
@@ -440,6 +504,8 @@ sub make_classes
     }
 
     my $meta = $obj_class->meta;
+
+    $meta->pre_init_hook($pre_init_hook)  if($pre_init_hook);
 
     $meta->table($table);
     $meta->convention_manager($cm_class->new);
@@ -731,6 +797,10 @@ Defaults to the value of the loader object's L<filter_tables|/filter_tables> att
 
 If true, database views will also be processed.  Defaults to the value of the loader object's L<include_views|/include_views> attribute.
 
+=item B<pre_init_hook CODE>
+
+A reference to a subroutine that will be called just before each L<Rose::DB::Object>-derived class is L<initialize|Rose::DB::Object::Metadata/initialize>ed.  The subroutine will be passed the class's L<metdata|Rose::DB::Object::Metadata> object as an argument.  Defaults to the value of the loader object's L<pre_init_hook|/pre_init_hook> attribute.
+
 =item B<with_managers BOOL>
 
 If true, create L<Rose::DB::Object::Manager|Rose::DB::Object::Manager>-derived manager classes for each L<Rose::DB::Object> subclass.  Defaults to the value of the loader object's L<with_managers|/with_managers> attribute.
@@ -748,6 +818,30 @@ This parameter will be passed on to the L<auto_initialize|Rose::DB::Object::Meta
 Each L<Rose::DB::Object> subclass will be created according to the "best practices" described in the L<Rose::DB::Object::Tutorial>.  If a L<base class|/base_classes> is not provided, one (with a dynamically generated name) will be created automatically.  The same goes for the L<db|/db> object.  If one is not set, then a new (again, dynamically named) subclass of L<Rose::DB>, with its own L<private data source registry|Rose::DB/use_private_registry>, will be created automatically.
 
 This method returns a list (in list context) or a reference to an array (in scalar context) of the names of all the classes that were created.  (This list will include L<manager|Rose::DB::Object::Manager> class names as well, if any were created.)
+
+=item B<make_modules [PARAMS]>
+
+Automatically create L<Rose::DB::Object> and (optionally) L<Rose::DB::Object::Manager> subclasses for some or all of the tables in a database, then create Perl module (*.pm) files for each class.
+
+This method calls L<make_classes|/make_classes> to make the actual classes, and therefore takes all of the same parameters, with one addition.
+
+=over 4
+
+=item B<module_dir DIR>
+
+The path to the directory where the Perl module files will be created.  For example, given a DIR of "/home/john/lib", the Perl module file for the class C<My::DB::Object> would be located at "/home/john/lib/My/DB/Object.pm".  
+
+Defaults to the value of the loader object's L<module_dir|/module_dir> attribute.  If the L<module_dir|/module_dir> attribute is also undefined, then the current working directory (as determined by a call to L<cwd()|Cwd/cwd>) is used instead.
+
+=back
+
+=item B<module_dir [DIR]>
+
+Get or set the path to the directory where L<make_modules|/make_modules> will create its Perl modules files.  For example, given a DIR of "/home/john/lib", L<make_modules|/make_modules> would create the file  "/home/john/lib/My/DB/Object.pm" for the class C<My::DB::Object>.
+
+=item B<pre_init_hook [CODE]>
+
+Get or set a reference to a subroutine to be called just before each L<Rose::DB::Object>-derived class is L<initialize|Rose::DB::Object::Metadata/initialize>ed within the L<make_classes|/make_classes> method.  The subroutine will be passed the class's L<metdata|Rose::DB::Object::Metadata> object as an argument.
 
 =item B<with_managers BOOL>
 

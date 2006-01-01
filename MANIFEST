@@ -20,6 +20,7 @@ lib/Rose/DB/Object/Metadata/Auto/Pg.pm
 lib/Rose/DB/Object/Metadata/Auto/SQLite.pm
 lib/Rose/DB/Object/Metadata/Column.pm
 lib/Rose/DB/Object/Metadata/Column/Array.pm
+lib/Rose/DB/Object/Metadata/Column/BigSerial.pm
 lib/Rose/DB/Object/Metadata/Column/Bitfield.pm
 lib/Rose/DB/Object/Metadata/Column/Blob.pm
 lib/Rose/DB/Object/Metadata/Column/Boolean.pm
@@ -118,6 +119,7 @@ t/db-object-loader.t
 t/db-object-loader-2.t
 t/db-object-loader-3.t
 t/db-object-loader-4.t
+t/db-object-loader-5.t
 t/db-object-manager-bulk-ops.t
 t/db-object-manager.t
 t/db-object-mapper.t
@@ -128,6 +130,7 @@ t/db-object-relationship-auto-2.t
 t/db-object-std-cached.t
 t/db-object-std.t
 t/db-object.t
+t/deep-joins.t
 t/lazy-columns.t
 t/lib/My/DB/Gene/Main.pm
 t/lib/My/DB/Gene2Unigene.pm
@@ -156,5 +159,6 @@ t/spot-check-01.t
 t/spot-check-02.t
 t/spot-check-03.t
 t/spot-check-04.t
+t/spot-check-05.t
 t/test-lib.pl
 META.yml                                 Module meta-data (added by MakeMaker)

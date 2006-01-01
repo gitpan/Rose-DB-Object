@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 341;
+use Test::More tests => 342;
 
 BEGIN 
 {
@@ -252,16 +252,17 @@ SKIP: foreach my $db_type ('mysql')
   ok($o->save, "save() 1 - $db_type");
   ok($o->load, "load() 1 - $db_type");
 
-  $o->name('C' x 50);
-  is($o->name, 'C' x 32, "varchar truncation - $db_type");
+  eval { $o->name('C' x 50) };
+  ok($@, "varchar overflow fatal - $db_type");
 
   $o->name('John');
 
   $o->code('A');
   is($o->code, 'A     ', "character padding - $db_type");
 
-  $o->code('C' x 50);
-  is($o->code, 'C' x 6, "character truncation - $db_type");
+  eval { $o->code('C' x 50) };
+  ok($@, "code overflow fatal - $db_type");
+  $o->code('C' x 6);
 
   is($o->enums, 'foo', "enum 1 - $db_type");
   eval { $o->enums('blee') };
@@ -596,7 +597,7 @@ SKIP: foreach my $db_type ('informix')
 
 SKIP: foreach my $db_type ('sqlite')
 {
-  skip("SQLite tests", 66)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 67)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
@@ -866,8 +867,8 @@ EOF
 
     MyPgObject->meta->columns
     (
-      name     => { type => 'varchar', length => 32 },
-      code     => { type => 'char', length => 6 },
+      name     => { type => 'varchar', length => 32, overflow => 'truncate' },
+      code     => { type => 'char', length => 6, overflow => 'truncate' },
       id       => { primary_key => 1, not_null => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int', lazy => 1 },
@@ -1117,8 +1118,8 @@ EOF
 
     MyInformixObject->meta->columns
     (
-      name     => { type => 'varchar', length => 32 },
-      code     => { type => 'char', length => 6 },
+      name     => { type => 'varchar', length => 32, overflow => 'truncate' },
+      code     => { type => 'char', length => 6, overflow => 'truncate' },
       id       => { type => 'serial', primary_key => 1, not_null => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int', lazy => 1 },
@@ -1229,8 +1230,8 @@ EOF
 
     MySQLiteObject->meta->columns
     (
-      name     => { type => 'varchar', length => 32 },
-      code     => { type => 'char', length => 6 },
+      name     => { type => 'varchar', length => 32, overflow => 'truncate' },
+      code     => { type => 'char', length => 6, overflow => 'truncate' },
       id       => { primary_key => 1, not_null => 1 },
       k1       => { type => 'int' },
       k2       => { type => 'int', lazy => 1 },
@@ -1258,8 +1259,12 @@ EOF
     MySQLiteObject->meta->column('id')->add_trigger(inflate => sub { defined $_[1] ? [ $_[1] ] : undef });
     MySQLiteObject->meta->column('id')->add_trigger(deflate => sub { ref $_[1] ? @{$_[1]}  : $_[1] });
 
+    my $pre_inited = 0;
+    MySQLiteObject->meta->pre_init_hook(sub { $pre_inited++ });
+
     eval { MySQLiteObject->meta->initialize };
     Test::More::ok($@, 'meta->initialize() reserved method');
+    Test::More::is($pre_inited, 1, 'meta->pre_init_hook()');
 
     MySQLiteObject->meta->alias_column(save => 'save_col');
 

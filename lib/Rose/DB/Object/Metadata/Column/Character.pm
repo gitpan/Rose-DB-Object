@@ -8,18 +8,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column::Scalar;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
-our $VERSION = '0.04';
-
-__PACKAGE__->add_common_method_maker_argument_names
-(
-  qw(default length)
-);
-
-Rose::Object::MakeMethods::Generic->make_methods
-(
-  { preserve_existing => 1 },
-  scalar => [ __PACKAGE__->common_method_maker_argument_names ]
-);
+our $VERSION = '0.60';
 
 sub type { 'character' }
 

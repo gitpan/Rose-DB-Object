@@ -19,7 +19,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.59';
+our $VERSION = '0.60';
 
 our $Debug = 0;
 
@@ -33,6 +33,7 @@ use Rose::Object::MakeMethods::Generic
   [
     'class',
     'error',
+    'pre_init_hook',
   ],
 
   'scalar --get_set_init' =>
@@ -131,6 +132,7 @@ __PACKAGE__->column_type_classes
   'smallint'  => 'Rose::DB::Object::Metadata::Column::Integer',
 
   'serial'    => 'Rose::DB::Object::Metadata::Column::Serial',
+  'bigserial' => 'Rose::DB::Object::Metadata::Column::BigSerial',
 
   'enum'      => 'Rose::DB::Object::Metadata::Column::Enum',
 
@@ -1204,6 +1206,11 @@ sub initialize
 
   $Debug && warn $self->class, " - initialize\n";
 
+  if(my $code = $self->pre_init_hook)
+  {
+    $code->($self, @_);
+  }
+
   my $class = $self->class
     or Carp::croak "Missing class for metadata object $self";
 
@@ -2159,14 +2166,14 @@ sub primary_key_sequence_names
     # with type information.
     if($column->type eq 'scalar')
     {
-      $seq = _sequence_name($db, 
-                            $self->select_catalog($db), 
-                            $self->select_schema($db), 
-                            $table, 
-                            $column);
+      $seq = $self->_sequence_name($db, 
+                                   $self->select_catalog($db), 
+                                   $self->select_schema($db), 
+                                   $table, 
+                                   $column);
     }
     # Set auto-created serial column sequence names for Pg only
-    elsif($column->type eq 'serial' && $db->driver eq 'pg')
+    elsif($column->type =~ /^(?:big)?serial$/ && $db->driver eq 'pg')
     {
       $seq = $db->auto_sequence_name(table => $table, column => $column);
     }
@@ -2175,7 +2182,7 @@ sub primary_key_sequence_names
     {
       $seqs[$i] = $seq  if(defined $seq);
     }
-    
+
     $i++;
   }
 
@@ -2190,7 +2197,7 @@ sub primary_key_sequence_names
 
 sub _sequence_name
 {
-  my($db, $catalog, $schema, $table, $column) = @_;
+  my($self, $db, $catalog, $schema, $table, $column) = @_;
 
   # XXX: This is only beneficial in Postgres right now
   return  unless($db->driver eq 'pg');
@@ -2215,9 +2222,19 @@ sub _sequence_name
 
   return  if($@ || !$col_info);
 
-  $db->refine_dbi_column_info($col_info);
+  $db->refine_dbi_column_info($col_info, $self);
 
-  return $col_info->{'rdbo_default_value_sequence_name'};
+  my $seq = $col_info->{'rdbo_default_value_sequence_name'};
+
+  my $implicit_schema = $db->default_implicit_schema;
+
+  # Strip off default implicit schema unless a schema is explicitly specified  
+  if(defined $seq && defined $implicit_schema && !defined $schema)
+  {
+    $seq =~ s/^$implicit_schema\.//;
+  }
+
+  return $seq;
 }
 
 sub column_names
@@ -3054,6 +3071,10 @@ sub init_auto_helper
 
               while(my($name, $value) = each(%{"${auto_helper_class}::"}))
               {
+                no warnings;
+
+                next  if($name =~ /^[A-Z]+$/); # skip BEGIN, DESTROY, etc.
+
                 *auto_symbol     = $value;
                 *existing_symbol = *{"${class}::$name"};
 
@@ -3337,6 +3358,7 @@ The default mapping of type names to class names is:
   smallint  => Rose::DB::Object::Metadata::Column::Integer
 
   serial    => Rose::DB::Object::Metadata::Column::Serial
+  bigserial => Rose::DB::Object::Metadata::Column::BigSerial
 
   enum      => Rose::DB::Object::Metadata::Column::Enum
 
@@ -4046,6 +4068,9 @@ Given the column object COLUMN and the method type TYPE, returns the correspondi
 
 Given the method name NAME and the class name CLASS, returns true if the method name is reserved (i.e., is used by the CLASS API), false otherwise.
 
+=item B<pre_init_hook [CODE]>
+
+Get or set a reference to a subroutine that will be called just before the L<initialize|/initialize> method runs.  The subroutine arguments will be the metdata object itself and any arguments passed to the call to L<initialize|/initialize>.
 =item B<primary_key [PK]>
 
 Get or set the L<Rose::DB::Object::Metadata::PrimaryKey> object that stores the list of column names that make up the primary key for this table.

@@ -17,7 +17,9 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.55';
+our $VERSION = '0.60';
+
+our $Debug = 0;
 
 sub scalar
 {
@@ -25,144 +27,275 @@ sub scalar
 
   my $key = $args->{'hash_key'} || $name;
   my $interface = $args->{'interface'} || 'get_set';
+  my $length    = $args->{'length'} || 0;
+  my $overflow  = $args->{'overflow'};
+  my $default   = $args->{'default'};
+  my $check_in  = $args->{'check_in'};
+  my $type      = $args->{'_method_type'} || 'scalar';
+
+  $length = undef  if($type eq 'integer'); # don't limit integers by length
+
+  my $init_method;
+
+  if(exists $args->{'with_init'} || exists $args->{'init_method'})
+  {
+    $init_method = $args->{'init_method'} || "init_$name";
+  }
+
+  ##
+  ## Build code snippets
+  ##
+
+  my $qkey = $key;
+  $qkey =~ s/'/\\'/g;
+  my $qname = $name;
+  $qname =~ s/"/\\"/g;
+
+  #
+  # check_in code
+  #
+
+  my $check_in_code = '';
+  my %check;
+
+  if($check_in)
+  {
+    $check_in = [ $check_in ] unless(ref $check_in);
+    %check = map { $_ => 1 } @$check_in;
+
+    $check_in_code=<<"EOF";
+if(defined \$value)
+    {
+      Carp::croak "Invalid $name: '\$value'"  unless(exists \$check{\$value});
+    }
+
+EOF
+  }
+
+  #
+  # length check code
+  #
+
+  my $length_check_code = '';
+
+  if($length)
+  {
+    unless($length =~ /^\d+$/)
+    {
+      Carp::croak "Invalid length for $type column $qname: '$length'";
+    }
+
+    no warnings 'uninitialized';
+    if($overflow eq 'fatal')
+    {
+      $length_check_code =<<"EOF";
+no warnings 'uninitialized';
+if(length(\$value) > $length)
+    {
+      Carp::croak ref(\$self), ": Value for $qname() is too long.  Maximum ",
+                  "length is $length character@{[ $length == 1 ? '' : 's' ]}.  ",
+                  "Value is ", length(\$value), " characters: \$value";
+    }
+
+EOF
+    }
+    elsif($overflow eq 'warn')
+    {
+      $length_check_code =<<"EOF";
+no warnings 'uninitialized';
+if(length(\$value) > $length)
+    {
+      Carp::croak ref(\$self), ": WARNING: Value for $qname() is too long.  ",
+                  "Maximum length is $length character@{[ $length == 1 ? '' : 's' ]}.  ",
+                  "Value is ", length(\$value), " characters: \$value";
+    }
+EOF
+    }
+    elsif($overflow eq 'truncate')
+    {
+      $length_check_code =<<"EOF";
+no warnings 'uninitialized';
+if(length(\$value) > $length)
+    {
+      \$value = substr(\$value, 0, $length);
+    }
+
+EOF
+    }
+    elsif(defined $overflow)
+    {
+      Carp::croak "Invalid overflow value: $overflow";
+    }
+  }
+
+  #
+  # set code
+  #
+
+  my $set_code;
+
+  if($type eq 'character')
+  {
+    $set_code = qq(\$self->{'$qkey'} = sprintf("%-${length}s", \$value););
+  }
+  else
+  {
+    $set_code = qq(\$self->{'$qkey'} = \$value;);
+  }
+
+  #
+  # return code
+  #
+
+  my $return_code = '';
+  my $return_code_shift = '';
+
+  if(defined $default)
+  {
+    if($type eq 'character')
+    {
+      $return_code=<<"EOF";
+return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
+  (\$self->{'$qkey'} = sprintf("%-${length}s", \$default));
+EOF
+    }
+    else
+    {
+      $return_code=<<"EOF";
+return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : (\$self->{'$qkey'} = \$default);
+EOF
+    }
+  }
+  elsif(defined $init_method)
+  {
+    if($type eq 'character')
+    {
+      $return_code=<<"EOF";
+return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : (\$self->{'$qkey'} = \$self->$init_method());
+EOF
+    }
+    else
+    {
+      $return_code=<<"EOF";
+return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
+  (\$self->{'$qkey'} = sprintf("%-${length}s", \$self->$init_method())););
+EOF
+    }
+  }
+  else
+  {
+    $return_code       = qq(return \$self->{'$qkey'};);
+    $return_code_shift = qq(return shift->{'$qkey'};);
+  }
+
+  $return_code_shift ||= $return_code;
 
   my %methods;
 
   if($interface eq 'get_set')
   {
-    if(my $check = $args->{'check_in'})
+    my $code;
+
+    # I can't help myself...
+    if(defined $default || defined $init_method)
     {
-      $check = [ $check ] unless(ref $check);
-      my %check = map { $_ => 1 } @$check;
+      $code=<<"EOF";
+sub
+{
+  my \$self = shift;
 
-      my $default = $args->{'default'};
-
-      if(defined $default)
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $default);
-        };
-      }
-      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-      {
-        my $init_method = $args->{'init_method'} || "init_$name";
-
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $_[0]->$init_method());
-        };
-      }
-      else
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = $_[1];
-          }
-          return $_[0]->{$key};
-        };
-      }
-    }
-    else
-    {
-      my $default = $args->{'default'};
-
-      if(defined $default)
-      {
-        $methods{$name} = sub
-        {
-          return $_[0]->{$key} = $_[1]  if(@_ > 1);
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $default);
-        };
-      }
-      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-      {
-        my $init_method = $args->{'init_method'} || "init_$name";
-
-        $methods{$name} = sub
-        {
-          return $_[0]->{$key} = $_[1]  if(@_ > 1);
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $_[0]->$init_method());
-        };
-      }
-      else
-      {
-        $methods{$name} = sub
-        {
-          return $_[0]->{$key} = $_[1]  if(@_ > 1);
-          return $_[0]->{$key};
-        };
-      }
-    }
-  }
-  elsif($interface eq 'set')
+  if(\@_)
   {
-    if(my $check = $args->{'check_in'})
-    {
-      $check = [ $check ] unless(ref $check);
-      my %check = map { $_ => 1 } @$check;
+    my \$value = shift;
 
-      $methods{$name} = sub
-      {
-        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
-        Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-        return $_[0]->{$key} = $_[1];
-      };
+    $check_in_code
+    $length_check_code
+    $set_code
+    $return_code
+  }
+
+  $return_code
+};
+EOF
     }
     else
     {
-      $methods{$name} = sub
-      {
-        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
-        return $_[0]->{$key} = $_[1];
-      };
+      $code=<<"EOF";
+sub
+{
+  if(\@_ > 1)
+  {
+    my \$self  = shift;
+    my \$value = shift;
+
+    $check_in_code
+    $length_check_code
+    return $set_code
+  }
+
+  $return_code_shift
+};
+EOF
+    }
+
+    $Debug && warn "sub $name = ", $code;
+    $methods{$name} = eval $code;
+
+    if($@)
+    {
+      Carp::croak "Error in generated code for method $name - $@\n",
+                  "Code was: $code";
     }
   }
   elsif($interface eq 'get')
   {
-    my $default = $args->{'default'};
+    my $code;
 
-    if(defined $default)
+    # I can't help myself...
+    if(defined $default || defined $init_method)
     {
-      $methods{$name} = sub
-      {
-        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                 ($_[0]->{$key} = $default);
-      };
-    }
-    elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-    {
-      my $init_method = $args->{'init_method'} || "init_$name";
-
-      $methods{$name} = sub
-      {
-        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                 ($_[0]->{$key} = $_[0]->$init_method());
-      };
+      $code = qq(sub { my \$self = shift; $return_code };);
     }
     else
     {
-      $methods{$name} = sub
-      {
-        return $_[0]->{$key};
-      };
+      $code = qq(sub { shift->{'$qkey'} });
+    }
+
+    $Debug && warn "sub $name = ", $code;
+    $methods{$name} = eval $code;
+
+    if($@)
+    {
+      Carp::croak "Error in generated code for method $name - $@\n",
+                  "Code was: $code";
+    }
+  }
+  elsif($interface eq 'set')
+  {
+    my $arg_check_code = 
+      qq(Carp::croak ref(\$_[0]), ": Missing argument in call to $qname"  unless(\@_ > 1););
+
+    my $code=<<"EOF";
+sub
+{
+  $arg_check_code
+  my \$self = shift;
+  my \$value = shift;
+
+  $check_in_code
+  $length_check_code
+  $set_code
+  $return_code
+};
+EOF
+
+    $Debug && warn "sub $name = ", $code;
+    $methods{$name} = eval $code;
+
+    if($@)
+    {
+      Carp::croak "Error in generated code for method $name - $@\n",
+                  "Code was: $code";
     }
   }
   else { Carp::croak "Unknown interface: $interface" }
@@ -283,347 +416,25 @@ sub enum
   return \%methods;
 }
 
-sub character
+sub character 
 {
   my($class, $name, $args) = @_;
-
-  my $key = $args->{'hash_key'} || $name;
-  my $interface = $args->{'interface'} || 'get_set';
-  my $length    = $args->{'length'} || 0;
-
-  my %methods;
-
-  if($interface eq 'get_set')
-  {
-    if(my $check = $args->{'check_in'})
-    {
-      $check = [ $check ] unless(ref $check);
-      my %check = map { $_ => 1 } @$check;
-
-      my $default = $args->{'default'};
-
-      if(defined $default)
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = ($length && defined $_[1]) ?
-              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $default);
-        };
-      }
-      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-      {
-        my $init_method = $args->{'init_method'} || "init_$name";
-
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = ($length && defined $_[1]) ?
-              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $_[0]->$init_method());
-        };
-      }
-      else
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = ($length && defined $_[1]) ?
-              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-          }
-          return $_[0]->{$key};
-        };
-      }
-    }
-    else
-    {
-      my $default = $args->{'default'};
-
-      if(defined $default)
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1)
-          {
-            return $_[0]->{$key} = ($length && defined $_[1]) ?
-              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $default);
-        };
-      }
-      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-      {
-        my $init_method = $args->{'init_method'} || "init_$name";
-
-        $methods{$name} = sub
-        {
-          if(@_ > 1)
-          {
-            return $_[0]->{$key} = ($length && defined $_[1]) ?
-              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $_[0]->$init_method());
-        };
-      }
-      else
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1)
-          {
-            return $_[0]->{$key} = ($length && defined $_[1]) ?
-              sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-          }
-          return $_[0]->{$key};
-        };
-      }
-    }
-  }
-  elsif($interface eq 'get')
-  {
-    my $default = $args->{'default'};
-
-    if(defined $default)
-    {
-      $methods{$name} = sub
-      {
-        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                 ($_[0]->{$key} = $default);
-      };
-    }
-    elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-    {
-      my $init_method = $args->{'init_method'} || "init_$name";
-
-      $methods{$name} = sub
-      {
-        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                 ($_[0]->{$key} = $_[0]->$init_method());
-      };
-    }
-    else
-    {
-      $methods{$name} = sub { shift->{$key} };
-    }
-  }
-  elsif($interface eq 'set')
-  {
-    if(my $check = $args->{'check_in'})
-    {
-      $check = [ $check ] unless(ref $check);
-      my %check = map { $_ => 1 } @$check;
-
-      if(exists $args->{'with_init'} || exists $args->{'init_method'})
-      {
-        my $init_method = $args->{'init_method'} || "init_$name";
-
-        $methods{$name} = sub
-        {
-          Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
-          Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-          return $_[0]->{$key} = ($length && defined $_[1]) ?
-            sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-        };
-      }
-      else
-      {
-        $methods{$name} = sub
-        {
-          Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
-          Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-          return $_[0]->{$key} = ($length && defined $_[1]) ?
-            sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-        };
-      }
-    }
-    else
-    {
-      $methods{$name} = sub
-      {
-        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
-        return $_[0]->{$key} = ($length && defined $_[1]) ?
-          sprintf('%-*s', $length, substr($_[1], 0, $length)) : $_[1];
-      };
-    }
-  }
-  else { Carp::croak "Unknown interface: $interface" }
-
-  return \%methods;
+  $args->{'_method_type'} = 'character';
+  $class->scalar($name, $args);
 }
 
-sub varchar
+sub varchar 
 {
   my($class, $name, $args) = @_;
+  $args->{'_method_type'} = 'varchar';
+  $class->scalar($name, $args);
+}
 
-  my $key = $args->{'hash_key'} || $name;
-  my $interface = $args->{'interface'} || 'get_set';
-  my $length    = $args->{'length'} || 0;
-
-  my %methods;
-
-  if($interface eq 'get_set')
-  {
-    if(my $check = $args->{'check_in'})
-    {
-      $check = [ $check ] unless(ref $check);
-      my %check = map { $_ => 1 } @$check;
-
-      my $default = $args->{'default'};
-
-      if(defined $default)
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = ($length && defined $_[1]) ? substr($_[1], 0, $length) : $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $default);
-        };
-      }
-      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-      {
-        my $init_method = $args->{'init_method'} || "init_$name";
-
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = ($length && defined $_[1]) ? substr($_[1], 0, $length) : $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $_[0]->$init_method());
-        };
-      }
-      else
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1 && defined $_[1])
-          {
-            Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-            return $_[0]->{$key} = ($length && defined $_[1]) ? substr($_[1], 0, $length) : $_[1];
-          }
-          return $_[0]->{$key};
-        };
-      }
-    }
-    else
-    {
-      my $default = $args->{'default'};
-
-      if(defined $default)
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1)
-          {
-            no warnings; # substr on undef is ok here
-            return $_[0]->{$key} = ($length && defined $_[1]) ? substr($_[1], 0, $length) : $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $default);
-        };
-      }
-      elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-      {
-        my $init_method = $args->{'init_method'} || "init_$name";
-
-        $methods{$name} = sub
-        {
-          if(@_ > 1)
-          {
-            no warnings; # substr on undef is ok here
-            return $_[0]->{$key} = ($length && defined $_[1]) ? substr($_[1], 0, $length) : $_[1];
-          }
-          return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                   ($_[0]->{$key} = $_[0]->$init_method());
-        };
-      }
-      else
-      {
-        $methods{$name} = sub
-        {
-          if(@_ > 1)
-          {
-            no warnings; # substr on undef is ok here
-            return $_[0]->{$key} = ($length && defined $_[1]) ? substr($_[1], 0, $length) : $_[1];
-          }
-          return $_[0]->{$key};
-        };
-      }
-    }
-  }
-  elsif($interface eq 'get')
-  {
-    my $default = $args->{'default'};
-
-    if(defined $default)
-    {
-      $methods{$name} = sub
-      {
-        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                 ($_[0]->{$key} = $default);
-      };
-    }
-    elsif(exists $args->{'with_init'} || exists $args->{'init_method'})
-    {
-      my $init_method = $args->{'init_method'} || "init_$name";
-
-      $methods{$name} = sub
-      {
-        return (defined $_[0]->{$key}) ? $_[0]->{$key} : 
-                 ($_[0]->{$key} = $_[0]->$init_method());
-      };
-    }
-    else
-    {
-      $methods{$name} = sub { shift->{$key} };
-    }
-  }
-  elsif($interface eq 'set')
-  {
-    if(my $check = $args->{'check_in'})
-    {
-      $check = [ $check ] unless(ref $check);
-      my %check = map { $_ => 1 } @$check;
-
-      $methods{$name} = sub
-      {
-        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
-        Carp::croak "Invalid $name: '$_[1]'"  unless(exists $check{$_[1]});
-        return $_[0]->{$key} = ($length && defined $_[1]) ? substr($_[1], 0, $length) : $_[1];
-      };
-    }
-    else
-    {
-      $methods{$name} = sub
-      {
-        Carp::croak "Missing argument in call to $name"  unless(@_ > 1);
-        no warnings; # substr on undef is ok here
-        return $_[0]->{$key} = ($length && defined $_[1]) ? substr($_[1], 0, $length) : $_[1];
-      };
-    }
-  }
-  else { Carp::croak "Unknown interface: $interface" }
-
-  return \%methods;
+sub integer 
+{
+  my($class, $name, $args) = @_;
+  $args->{'_method_type'} = 'integer';
+  $class->scalar($name, $args);
 }
 
 sub boolean
@@ -3887,10 +3698,7 @@ Rose::DB::Object::MakeMethods::Generic - Create generic object methods for Rose:
 
 =head1 DESCRIPTION
 
-L<Rose::DB::Object::MakeMethods::Generic> is a method maker that inherits
-from L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods>
-documentation to learn about the interface.  The method types provided
-by this module are described below.
+L<Rose::DB::Object::MakeMethods::Generic> is a method maker that inherits from L<Rose::Object::MakeMethods>.  See the L<Rose::Object::MakeMethods> documentation to learn about the interface.  The method types provided by this module are described below.
 
 All method types defined by this module are designed to work with objects that are subclasses of (or otherwise conform to the interface of) L<Rose::DB::Object>.  In particular, the object is expected to have a L<db|Rose::DB::Object/db> method that returns a L<Rose::DB>-derived object.  See the L<Rose::DB::Object> documentation for more details.
 
@@ -3908,16 +3716,16 @@ Create get/set methods for "array" attributes.   A "array" column in a database 
 
 =over 4
 
-=item C<default>
+=item B<default VALUE>
 
 Determines the default value of the attribute.  The value should be a reference to an array.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
 The key inside the hash-based object to use for the storage of this
 attribute.  Defaults to the name of the method.
 
-=item C<interface>
+=item B<interface NAME>
 
 Choose the interface.  The default is C<get_set>.
 
@@ -3927,7 +3735,7 @@ Choose the interface.  The default is C<get_set>.
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a get/set method for a "array" object attribute.  A "array" column in a database table contains an ordered list of values.
 
@@ -3937,7 +3745,7 @@ When saving to the database, if the attribute value is defined, the method will 
 
 When not saving to the database, the method returns the array as a list in list context, or as a reference to the array in scalar context.
 
-=item C<get>
+=item B<get>
 
 Creates an accessor method for a "array" object attribute.  A "array" column in a database table contains an ordered list of values.
 
@@ -3945,7 +3753,7 @@ When saving to the database, if the attribute value is defined, the method will 
 
 When not saving to the database, the method returns the array as a list in list context, or as a reference to the array in scalar context.
 
-=item C<set>
+=item B<set>
 
 Creates a mutator method for a "array" object attribute.  A "array" column in a database table contains an ordered list of values.
 
@@ -3997,28 +3805,28 @@ Create get/set methods for bitfield attributes.
 
 =over 4
 
-=item C<default>
+=item B<default VALUE>
 
 Determines the default value of the attribute.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
 The key inside the hash-based object to use for the storage of this
 attribute.  Defaults to the name of the method.
 
-=item C<interface>
+=item B<interface NAME>
 
 Choose the interface.  The default is C<get_set>.
 
-=item C<intersects>
+=item B<intersects NAME>
 
 Set the name of the "intersects" method.  (See C<with_intersects> below.)  Defaults to the bitfield attribute method name with "_intersects" appended.
 
-=item C<bits>
+=item B<bits INT>
 
 The number of bits in the bitfield.  Defaults to 32.
 
-=item C<with_intersects>
+=item B<with_intersects BOOL>
 
 This option is only applicable with the C<get_set> interface.
 
@@ -4032,17 +3840,17 @@ The "intersects" method will return true if there is any intersection between it
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a get/set method for a bitfield attribute.  When setting the attribute, the value is passed through the L<parse_bitfield|Rose::DB/parse_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before being assigned.
 
 When saving to the database, the method will pass the attribute value through the L<format_bitfield|Rose::DB/format_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
 
-=item C<get>
+=item B<get>
 
 Creates an accessor method for a bitfield attribute.  When saving to the database, the method will pass the attribute value through the L<format_bitfield|Rose::DB/format_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
 
-=item C<set>
+=item B<set>
 
 Creates a mutator method for a bitfield attribute.  When setting the attribute, the value is passed through the L<parse_bitfield|Rose::DB/parse_bitfield> method of the object's L<db|Rose::DB::Object/db> attribute before being assigned.
 
@@ -4088,16 +3896,16 @@ Create get/set methods for boolean attributes.
 
 =over 4
 
-=item C<default>
+=item B<default VALUE>
 
 Determines the default value of the attribute.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
 The key inside the hash-based object to use for the storage of this
 attribute.  Defaults to the name of the method.
 
-=item C<interface>
+=item B<interface NAME>
 
 Choose the interface.  The default is C<get_set>.
 
@@ -4107,7 +3915,7 @@ Choose the interface.  The default is C<get_set>.
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a get/set method for a boolean attribute.  When setting the attribute, if the value is "true" according to Perl's rules, it is compared to a list of "common" true and false values: 1, 0, 1.0 (with any number of zeros), 0.0 (with any number of zeros), t, true, f, false, yes, no.  (All are case-insensitive.)  If the value matches, then it is set to true (1) or false (0) accordingly.
 
@@ -4115,11 +3923,11 @@ If the value does not match any of those, then it is passed through the L<parse_
 
 When saving to the database, the method will pass the attribute value through the L<format_boolean|Rose::DB/format_boolean> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
 
-=item C<get>
+=item B<get>
 
 Creates an accessor method for a boolean attribute.  When saving to the database, the method will pass the attribute value through the L<format_boolean|Rose::DB/format_boolean> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
 
-=item C<set>
+=item B<set>
 
 Creates a mutator method for a boolean attribute.  When setting the attribute, if the value is "true" according to Perl's rules, it is compared to a list of "common" true and false values: 1, 0, 1.0 (with any number of zeros), 0.0 (with any number of zeros), t, true, f, false, yes, no.  (All are case-insensitive.)  If the value matches, then it is set to true (1) or false (0) accordingly.
 
@@ -4168,26 +3976,54 @@ Create get/set methods for fixed-length character string attributes.
 
 =over 4
 
-=item C<check_in>
+=item B<check_in ARRAYREF>
 
 A reference to an array of valid values.  When setting the attribute, if the new value is not equal (string comparison) to one of the valid values, a fatal error will occur.
 
-=item C<default>
+=item B<default VALUE>
 
 Determines the default value of the attribute.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
-The key inside the hash-based object to use for the storage of this
-attribute.  Defaults to the name of the method.
+The key inside the hash-based object to use for the storage of this attribute.  Defaults to the name of the method.
 
-=item C<interface>
+=item B<init_method NAME>
+
+The name of the method to call when initializing the value of an undefined attribute.  Defaults to the method name with the prefix C<init_> added.  This option implies C<with_init>.
+
+=item B<interface NAME>
 
 Choose the interface.  The default is C<get_set>.
 
-=item C<length>
+=item B<length INT>
 
-The number of characters in the string.  Any strings longer than this will be truncated, and any strings shorter will be padded with spaces to meet the length requirement.  If length is omitted, the string will be left unmodified.
+The number of characters in the string.  Any strings shorter than this will be padded with spaces to meet the length requirement.  If length is omitted, the string will be left unmodified.
+
+=item B<overflow BEHAVIOR>
+
+Determines the behavior when the value is greater than the number of characters specified by the C<length> option.  Valid values for BEHAVIOR are:
+
+=over 4
+
+=item B<fatal>
+
+Throw an exception.
+
+=item B<truncate>
+
+Truncate the value to the correct length.
+
+=item B<warn>
+
+Print a warning message.
+
+=back
+
+=item B<with_init BOOL>
+
+Modifies the behavior of the C<get_set> and C<get> interfaces.  If the attribute is undefined, the method specified by the C<init_method> option is called and the attribute is set to the return value of that
+method.
 
 =back
 
@@ -4195,15 +4031,15 @@ The number of characters in the string.  Any strings longer than this will be tr
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a get/set method for a fixed-length character string attribute.  When setting, any strings longer than C<length> will be truncated, and any strings shorter will be padded with spaces to meet the length requirement.  If C<length> is omitted, the string will be left unmodified.
 
-=item C<get>
+=item B<get>
 
 Creates an accessor method for a fixed-length character string attribute.
 
-=item C<set>
+=item B<set>
 
 Creates a mutator method for a fixed-length character string attribute.  Any strings longer than C<length> will be truncated, and any strings shorter will be padded with spaces to meet the length requirement.  If C<length> is omitted, the string will be left unmodified.
 
@@ -4243,30 +4079,27 @@ Create get/set methods for enum attributes.
 
 =over 4
 
-=item C<default>
+=item B<default VALUE>
 
 Determines the default value of the attribute.
 
-=item C<values>
+=item B<values ARRAYREF>
 
 A reference to an array of the enum values.  This attribute is required.  When setting the attribute, if the new value is not equal (string comparison) to one of the enum values, a fatal error will occur.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
-The key inside the hash-based object to use for the storage of this
-attribute.  Defaults to the name of the method.
+The key inside the hash-based object to use for the storage of this attribute.  Defaults to the name of the method.
 
-=item C<init_method>
+=item B<init_method NAME>
 
-The name of the method to call when initializing the value of an
-undefined attribute.  Defaults to the method name with the prefix
-C<init_> added.  This option implies C<with_init>.
+The name of the method to call when initializing the value of an undefined attribute.  Defaults to the method name with the prefix C<init_> added.  This option implies C<with_init>.
 
-=item C<interface>
+=item B<interface NAME>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The C<get_set> interface is the default.
 
-=item C<with_init>
+=item B<with_init BOOL>
 
 Modifies the behavior of the C<get_set> and C<get> interfaces.  If the attribute is undefined, the method specified by the C<init_method> option is called and the attribute is set to the return value of that
 method.
@@ -4277,16 +4110,15 @@ method.
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a get/set method for an enum attribute.  When called with an argument, the value of the attribute is set.  If the value is invalid, a fatal error will occur.  The current value of the attribute is returned.
 
-=item C<get>
+=item B<get>
 
-Creates an accessor method for an object attribute that returns the current
-value of the attribute.
+Creates an accessor method for an object attribute that returns the current value of the attribute.
 
-=item C<set>
+=item B<set>
 
 Creates a mutator method for an object attribute.  When called with an argument, the value of the attribute is set.  If the value is invalid, a fatal error will occur.  If called with no arguments, a fatal error will occur.
 
@@ -4324,6 +4156,85 @@ Example:
 
     print $o->type, ' is at stage ', $o->stage; # get
 
+=item B<integer>
+
+Create get/set methods for integer attributes.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item B<default VALUE>
+
+Determines the default value of the attribute.
+
+=item B<hash_key NAME>
+
+The key inside the hash-based object to use for the storage of this attribute.  Defaults to the name of the method.
+
+=item B<init_method NAME>
+
+The name of the method to call when initializing the value of an undefined attribute.  Defaults to the method name with the prefix C<init_> added.  This option implies C<with_init>.
+
+=item B<interface NAME>
+
+Choose the interface.  The C<get_set> interface is the default.
+
+=item B<with_init BOOL>
+
+Modifies the behavior of the C<get_set> and C<get> interfaces.  If the attribute is undefined, the method specified by the C<init_method> option is called and the attribute is set to the return value of that method.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item B<get_set>
+
+Creates a get/set method for an integer object attribute.  When called with an argument, the value of the attribute is set.  The current value of the attribute is returned.
+
+=item B<get>
+
+Creates an accessor method for an integer object attribute that returns the current value of the attribute.
+
+=item B<set>
+
+Creates a mutator method for an integer object attribute.  When called with an argument, the value of the attribute is set.  If called with no arguments, a fatal error will occur.
+
+=back
+
+=back
+
+Example:
+
+    package MyDBObject;
+
+    our @ISA = qw(Rose::DB::Object);
+
+    use Rose::DB::Object::MakeMethods::Generic
+    (
+      integer => 
+      [
+        code => { default => 99  },
+        type => { with_init => 1 }
+      ],
+    );
+
+    sub init_type { 123 }
+    ...
+
+    $o = MyDBObject->new(...);
+
+    print $o->code; # 99
+    print $o->type; # 123
+
+    $o->code(8675309); # set
+    $o->type(42);      # set
+
+
 =item B<objects_by_key>
 
 Create get/set methods for an array of L<Rose::DB::Object>-derived objects fetched based on a key formed from attributes of the current object.
@@ -4334,43 +4245,43 @@ Create get/set methods for an array of L<Rose::DB::Object>-derived objects fetch
 
 =over 4
 
-=item C<class>
+=item B<class CLASS>
 
 The name of the L<Rose::DB::Object>-derived class of the objects to be fetched.  This option is required.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
 The key inside the hash-based object to use for the storage of the fetched objects.  Defaults to the name of the method.
 
-=item C<key_columns>
+=item B<key_columns HASHREF>
 
 A reference to a hash that maps column names in the current object to those in the objects to be fetched.  This option is required.
 
-=item C<manager_args>
+=item B<manager_args HASHREF>
 
 A reference to a hash of arguments passed to the C<manager_class> when fetching objects.  If C<manager_class> defaults to L<Rose::DB::Object::Manager>, the following argument is added to the C<manager_args> hash: C<object_class =E<gt> CLASS>, where CLASS is the value of the C<class> option (see above).  If C<manager_args> includes a "sort_by" argument, be sure to prefix each column name with the appropriate table name.  (See the L<synopsis|/SYNOPSIS> for examples.)
 
-=item C<manager_class>
+=item B<manager_class CLASS>
 
 The name of the L<Rose::DB::Object::Manager>-derived class used to fetch the objects.  The C<manager_method> class method is called on this class.  Defaults to L<Rose::DB::Object::Manager>.
 
-=item C<manager_method>
+=item B<manager_method NAME>
 
 The name of the class method to call on C<manager_class> in order to fetch the objects.  Defaults to C<get_objects>.
 
-=item C<interface>
+=item B<interface NAME>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The C<get_set> interface is the default.
 
-=item C<relationship>
+=item B<relationship OBJECT>
 
 The L<Rose::DB::Object::Metadata::Relationship> object that describes the "key" through which the "objects_by_key" are fetched.  This is required when using the "add_now", "add_on_save", and "get_set_on_save" interfaces.
 
-=item C<share_db>
+=item B<share_db BOOL>
 
 If true, the L<db|Rose::DB::Object/db> attribute of the current object is shared with all of the objects fetched.  Defaults to true.
 
-=item C<query_args>
+=item B<query_args ARRAYREF>
 
 A reference to an array of arguments added to the value of the C<query> parameter passed to the call to C<manager_class>'s C<manager_method> class method.
 
@@ -4380,7 +4291,7 @@ A reference to an array of arguments added to the value of the C<query> paramete
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object.
 
@@ -4406,7 +4317,7 @@ The fetch may fail for several reasons.  The fetch will not even be attempted if
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
-=item C<get_set_now>
+=item B<get_set_now>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object, and will also save the objects to the database when called with arguments.  The objects do not have to already exist in the database; they will be inserted if needed.
 
@@ -4438,7 +4349,7 @@ The fetch may fail for several reasons.  The fetch will not even be attempted if
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
-=item C<get_set_on_save>
+=item B<get_set_on_save>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object, and will also save the objects to the database when the "parent" object is L<save|Rose::DB::Object/save>d.  The objects do not have to already exist in the database; they will be inserted if needed.
 
@@ -4468,7 +4379,7 @@ The fetch may fail for several reasons.  The fetch will not even be attempted if
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
-=item C<add_now>
+=item B<add_now>
 
 Creates a method that will add to a list of L<Rose::DB::Object>-derived objects that are related to the current object by a key formed from attributes of the current object.  The objects do not have to already exist in the database; they will be inserted if needed.
 
@@ -4496,7 +4407,7 @@ When adding each object, if the object does not already exists in the database, 
 
 The parent object's list of related objects is then set to undef, causing the related objects to be reloaded from the database the next time they're needed.
 
-=item C<add_on_save>
+=item B<add_on_save>
 
 Creates a method that will add to a list of L<Rose::DB::Object>-derived objects that are related to the current object by a key formed from attributes of the current object.  The objects will be added to the database when the parent object is L<save|Rose::DB::Object/save>d.  The objects do not have to already exist in the database; they will be inserted if needed.
 
@@ -4727,47 +4638,47 @@ Create methods that fetch L<Rose::DB::Object>-derived objects via an intermediat
 
 =over 4
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
 The key inside the hash-based object to use for the storage of the fetched objects.  Defaults to the name of the method.
 
-=item C<interface>
+=item B<interface NAME>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The C<get_set> interface is the default.
 
-=item C<manager_args>
+=item B<manager_args HASHREF>
 
 A reference to a hash of arguments passed to the C<manager_class> when fetching objects.  If C<manager_args> includes a "sort_by" argument, be sure to prefix each column name with the appropriate table name.  (See the L<synopsis|/SYNOPSIS> for examples.)
 
-=item C<manager_class>
+=item B<manager_class CLASS>
 
 The name of the L<Rose::DB::Object::Manager>-derived class that the C<map_class> will use to fetch records.  Defaults to L<Rose::DB::Object::Manager>.
 
-=item C<manager_method>
+=item B<manager_method NAME>
 
 The name of the class method to call on C<manager_class> in order to fetch the objects.  Defaults to C<get_objects>.
 
-=item C<map_class>
+=item B<map_class CLASS>
 
 The name of the L<Rose::DB::Object>-derived class that maps between the other two L<Rose::DB::Object>-derived classes.  This class must have a foreign key and/or "many to one" relationship for each of the two tables that it maps between.
 
-=item C<map_from>
+=item B<map_from NAME>
 
 The name of the "many to one" relationship or foreign key in C<map_class> that points to the object of the class that this relationship exists in.  Setting this value is only necessary if the C<map_class> has more than one foreign key or "many to one" relationship that points to one of the classes that it maps between.
 
-=item C<map_to>
+=item B<map_to NAME>
 
 The name of the "many to one" relationship or foreign key in C<map_class> that points to the "foreign" object to be fetched.  Setting this value is only necessary if the C<map_class> has more than one foreign key or "many to one" relationship that points to one of the classes that it maps between.
 
-=item C<relationship>
+=item B<relationship OBJECT>
 
 The L<Rose::DB::Object::Metadata::Relationship> object that describes the "key" through which the "objects_by_key" are fetched.  This option is required.
 
-=item C<share_db>
+=item B<share_db BOOL>
 
 If true, the L<db|Rose::DB::Object/db> attribute of the current object is shared with all of the objects fetched.  Defaults to true.
 
-=item C<query_args>
+=item B<query_args ARRAYREF>
 
 A reference to an array of arguments added to the value of the C<query> parameter passed to the call to C<manager_class>'s C<manager_method> class method.
 
@@ -4777,7 +4688,7 @@ A reference to an array of arguments added to the value of the C<query> paramete
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>.
 
@@ -4801,7 +4712,7 @@ When fetching objects from the database, if the call to C<manager_class>'s C<man
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
-=item C<get_set_now>
+=item B<get_set_now>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, and will also save objects to the database and map them to the parent object when called with arguments.  The objects do not have to already exist in the database; they will be inserted if needed.
 
@@ -4833,7 +4744,7 @@ When fetching, if the call to C<manager_class>'s C<manager_method> method return
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
-=item C<get_set_on_save>
+=item B<get_set_on_save>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, and will also save objects to the database and map them to the parent object when the "parent" object is L<save|Rose::DB::Object/save>d.  The objects do not have to already exist in the database; they will be inserted if needed.
 
@@ -4863,7 +4774,7 @@ When fetching, if the call to C<manager_class>'s C<manager_method> method return
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
-=item C<add_now>
+=item B<add_now>
 
 Creates a method that will add to a list of L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, and will also save objects to the database and map them to the parent object.  The objects do not have to already exist in the database; they will be inserted if needed.
 
@@ -4887,7 +4798,7 @@ The latter two formats will be used to construct an object of type C<class>.  A 
 
 The parent object's list of related objects is then set to undef, causing the related objects to be reloaded from the database the next time they're needed.
 
-=item C<add_on_save>
+=item B<add_on_save>
 
 Creates a method that will add to a list of L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, and will also save objects to the database and map them to the parent object when the "parent" object is L<save|Rose::DB::Object/save>d.  The objects and map records will be added to the database when the parent object is L<save|Rose::DB::Object/save>d.  The objects do not have to already exist in the database; they will be inserted if needed.
 
@@ -4925,27 +4836,27 @@ Create a get/set methods for a single L<Rose::DB::Object>-derived object loaded 
 
 =over 4
 
-=item C<class>
+=item B<class CLASS>
 
 The name of the L<Rose::DB::Object>-derived class of the object to be loaded.  This option is required.
 
-=item C<foreign_key>
+=item B<foreign_key OBJECT>
 
 The L<Rose::DB::Object::Metadata::ForeignKey> object that describes the "key" through which the "object_by_key" is fetched.  This is required when using the "delete_now", "delete_on_save", and "get_set_on_save" interfaces.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
 The key inside the hash-based object to use for the storage of the object.  Defaults to the name of the method.
 
-=item C<key_columns>
+=item B<key_columns HASHREF>
 
 A reference to a hash that maps column names in the current object to those of the primary key in the object to be loaded.  This option is required.
 
-=item C<interface>
+=item B<interface NAME>
 
 Choose the interface.  The default is C<get_set>.
 
-=item C<share_db>
+=item B<share_db BOOL>
 
 If true, the L<db|Rose::DB::Object/db> attribute of the current object is shared with the object loaded.  Defaults to true.
 
@@ -4955,7 +4866,7 @@ If true, the L<db|Rose::DB::Object/db> attribute of the current object is shared
 
 =over 4
 
-=item C<delete_now>
+=item B<delete_now>
 
 Deletes a L<Rose::DB::Object>-derived object from the database based on a primary key formed from attributes of the current object.  First, the "parent" object will have all of its attributes that refer to the "foreign" set to null, and it will be saved into the database.  This needs to be done first because a database that enforces referential integrity will not allow a row to be deleted if it is still referenced by a foreign key in another table.
 
@@ -4965,7 +4876,7 @@ The entire process takes place within a transaction if the database supports it.
 
 Returns true if the foreign object was deleted successfully or did not exist in the database, false if any of the keys that refer to the foreign object were undef, and triggers the normal L<Rose::DB::Object> L<error handling|Rose::DB::Object::Metadata/error_mode> in the case of any other kind of failure.
 
-=item C<delete_on_save>
+=item B<delete_on_save>
 
 Deletes a L<Rose::DB::Object>-derived object from the database when the "parent" object is L<save|Rose::DB::Object/save>d, based on a primary key formed from attributes of the current object.  The "parent" object will have all of its attributes that refer to the "foreign" set to null immediately, but the actual delete will not be done until the parent is saved.
 
@@ -4975,7 +4886,7 @@ The entire process takes place within a transaction if the database supports it.
 
 Returns true if the foreign object was deleted successfully or did not exist in the database, false if any of the keys that refer to the foreign object were undef, and triggers the normal L<Rose::DB::Object> L<error handling|Rose::DB::Object::Metadata/error_mode> in the case of any other kind of failure.
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object.
 
@@ -5005,7 +4916,7 @@ If the call to the newly created object's L<load|Rose::DB::Object/load> method r
 
 If the load succeeds, the object is returned.
 
-=item C<get_set_now>
+=item B<get_set_now>
 
 Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object, and will also save the object to the database when called with an appropriate object as an argument.
 
@@ -5039,7 +4950,7 @@ If the call to the newly created object's L<load|Rose::DB::Object/load> method r
 
 If the load succeeds, the object is returned.
 
-=item C<get_set_on_save>
+=item B<get_set_on_save>
 
 Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object, and save the object when the "parent" object is L<save|Rose::DB::Object/save>d.
 
@@ -5209,30 +5120,52 @@ Create get/set methods for scalar attributes.
 
 =over 4
 
-=item C<default>
+=item B<default VALUE>
 
 Determines the default value of the attribute.
 
-=item C<check_in>
+=item B<check_in ARRAYREF>
 
 A reference to an array of valid values.  When setting the attribute, if the new value is not equal (string comparison) to one of the valid values, a fatal error will occur.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
 The key inside the hash-based object to use for the storage of this
 attribute.  Defaults to the name of the method.
 
-=item C<init_method>
+=item B<init_method NAME>
 
-The name of the method to call when initializing the value of an
-undefined attribute.  Defaults to the method name with the prefix
-C<init_> added.  This option implies C<with_init>.
+The name of the method to call when initializing the value of an undefined attribute.  Defaults to the method name with the prefix C<init_> added.  This option implies C<with_init>.
 
-=item C<interface>
+=item B<interface NAME>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+Choose the interface.  The C<get_set> interface is the default.
 
-=item C<with_init>
+=item B<length INT>
+
+The maximum number of characters in the string.
+
+=item B<overflow BEHAVIOR>
+
+Determines the behavior when the value is greater than the number of characters specified by the C<length> option.  Valid values for BEHAVIOR are:
+
+=over 4
+
+=item B<fatal>
+
+Throw an exception.
+
+=item B<truncate>
+
+Truncate the value to the correct length.
+
+=item B<warn>
+
+Print a warning message.
+
+=back
+
+=item B<with_init BOOL>
 
 Modifies the behavior of the C<get_set> and C<get> interfaces.  If the attribute is undefined, the method specified by the C<init_method> option is called and the attribute is set to the return value of that
 method.
@@ -5243,18 +5176,15 @@ method.
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
-Creates a get/set method for an object attribute.  When
-called with an argument, the value of the attribute is set.  The current
-value of the attribute is returned.
+Creates a get/set method for an object attribute.  When called with an argument, the value of the attribute is set.  The current value of the attribute is returned.
 
-=item C<get>
+=item B<get>
 
-Creates an accessor method for an object attribute that returns the current
-value of the attribute.
+Creates an accessor method for an object attribute that returns the current value of the attribute.
 
-=item C<set>
+=item B<set>
 
 Creates a mutator method for an object attribute.  When called with an argument, the value of the attribute is set.  If called with no arguments, a fatal error will occur.
 
@@ -5310,16 +5240,16 @@ Create get/set methods for "set" attributes.   A "set" column in a database tabl
 
 =over 4
 
-=item C<default>
+=item B<default VALUE>
 
 Determines the default value of the attribute.  The value should be a reference to an array.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
 The key inside the hash-based object to use for the storage of this
 attribute.  Defaults to the name of the method.
 
-=item C<interface>
+=item B<interface NAME>
 
 Choose the interface.  The default is C<get_set>.
 
@@ -5329,7 +5259,7 @@ Choose the interface.  The default is C<get_set>.
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a get/set method for a "set" object attribute.  A "set" column in a database table contains an unordered group of values.  On the Perl side of the fence, an ordered list (an array) is used to store the values, but keep in mind that the order is not significant, nor is it guaranteed to be preserved.
 
@@ -5339,7 +5269,7 @@ When saving to the database, if the attribute value is defined, the method will 
 
 When not saving to the database, the method returns the set as a list in list context, or as a reference to the array in scalar context.
 
-=item C<get>
+=item B<get>
 
 Creates an accessor method for a "set" object attribute.  A "set" column in a database table contains an unordered group of values.  On the Perl side of the fence, an ordered list (an array) is used to store the values, but keep in mind that the order is not significant, nor is it guaranteed to be preserved.
 
@@ -5347,7 +5277,7 @@ When saving to the database, if the attribute value is defined, the method will 
 
 When not saving to the database, the method returns the set as a list in list context, or as a reference to the array in scalar context.
 
-=item C<set>
+=item B<set>
 
 Creates a mutator method for a "set" object attribute.  A "set" column in a database table contains an unordered group of values.  On the Perl side of the fence, an ordered list (an array) is used to store the values, but keep in mind that the order is not significant, nor is it guaranteed to be preserved.
 
@@ -5398,22 +5328,50 @@ Create get/set methods for variable-length character string attributes.
 
 =over 4
 
-=item C<default>
+=item B<default VALUE>
 
 Determines the default value of the attribute.
 
-=item C<hash_key>
+=item B<hash_key NAME>
 
-The key inside the hash-based object to use for the storage of this
-attribute.  Defaults to the name of the method.
+The key inside the hash-based object to use for the storage of this attribute.  Defaults to the name of the method.
 
-=item C<interface>
+=item B<init_method NAME>
 
-Choose the interface.  The only current interface is C<get_set>, which is the default.
+The name of the method to call when initializing the value of an undefined attribute.  Defaults to the method name with the prefix C<init_> added.  This option implies C<with_init>.
 
-=item C<length>
+=item B<interface NAME>
 
-The maximum number of characters in the string.  Any strings longer than this will be truncated.  If length is omitted, the string will be left unmodified.
+Choose the interface.  The C<get_set> interface is the default.
+
+=item B<length INT>
+
+The maximum number of characters in the string.
+
+=item B<overflow BEHAVIOR>
+
+Determines the behavior when the value is greater than the number of characters specified by the C<length> option.  Valid values for BEHAVIOR are:
+
+=over 4
+
+=item B<fatal>
+
+Throw an exception.
+
+=item B<truncate>
+
+Truncate the value to the correct length.
+
+=item B<warn>
+
+Print a warning message.
+
+=back
+
+=item B<with_init BOOL>
+
+Modifies the behavior of the C<get_set> and C<get> interfaces.  If the attribute is undefined, the method specified by the C<init_method> option is called and the attribute is set to the return value of that
+method.
 
 =back
 
@@ -5421,7 +5379,7 @@ The maximum number of characters in the string.  Any strings longer than this wi
 
 =over 4
 
-=item C<get_set>
+=item B<get_set>
 
 Creates a get/set accessor method for a fixed-length character string attribute.  When setting, any strings longer than C<length> will be truncated.  If C<length> is omitted, the string will be left unmodified.
 

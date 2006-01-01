@@ -107,9 +107,9 @@ sub default_value_sequence_name
   $db = shift  if(UNIVERSAL::isa($_[0], 'Rose::DB'));
   my $parent = $self->parent;
   my $db_id = $db ? $db->id : $parent ? $parent->init_db_id : ANY_DB;
-  
+
   return $self->{'default_value_sequence_name'}{$db_id}  unless(@_);
-  
+
   $self->{'default_value_sequence_name'}{$db_id} = shift;
 
   if($parent && $self->is_primary_key_member)
@@ -312,7 +312,12 @@ sub perl_column_defintion_attributes
 
     my $val = $self->can($attr) ? $self->$attr() : next ATTR;
 
-    if(!defined $val || ref $val || ($attr eq 'not_null' && !$self->not_null))
+    if($attr eq 'check_in' && ref $val && ref $val eq 'ARRAY')
+    {
+      $val = perl_arrayref(array => $val, inline => 1);
+      $attr = 'values';
+    }
+    elsif(!defined $val || ref $val || ($attr eq 'not_null' && !$self->not_null))
     {
       next ATTR;
     }
@@ -322,21 +327,40 @@ sub perl_column_defintion_attributes
       next ATTR;
     }
 
+    if($attr eq 'overflow' && $val eq $self->init_overflow)
+    {
+      next ATTR;
+    }
+
+    # Use shorter "sequence" hash key name for this attr
     if($attr eq 'default_value_sequence_name')
     {
-      my $seq = $self->default_value_sequence_name;
+      # Only list an explicit sequence for serial columns if the sequence
+      # name differs from the default auto-generated sequence name.
+      if($self->type =~ /^(?:big)?serial$/)
+      {
+        my $seq = $self->default_value_sequence_name;
 
-      my $meta = $self->parent;
-      my $db   = $meta->db;
+        my $meta = $self->parent;
+        my $db   = $meta->db;
 
-      my $auto_seq = $db->auto_sequence_name(table  => $meta->table,
-                                             schema => $db->schema, 
-                                             column => $self);
+        my $auto_seq = $db->auto_sequence_name(table  => $meta->table,
+                                               column => $self);
 
-      $seq =~ s/^[^.]+\.//;
+        # Use schema prefix on auto-generated name if necessary
+        if($seq =~ /^[^.]+\./)
+        {
+          my $schema = $meta->select_schema($db);
+          $auto_seq = "$schema.$auto_seq"  if($schema);
+        }
 
-      no warnings 'uninitialized';
-      if($seq ne $auto_seq)
+        no warnings 'uninitialized';
+        if(lc $seq ne lc $auto_seq)
+        {
+          push(@attrs, 'sequence');
+        }
+      }
+      else
       {
         push(@attrs, 'sequence');
       }

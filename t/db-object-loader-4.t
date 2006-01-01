@@ -33,7 +33,7 @@ SETUP:
   our @ISA = qw(Rose::DB::Object);
   sub meta_class { 'My::DB::Object::Metadata' }
   sub foo_bar { 123 }
-  
+
   package MyWeirdClass;
   our @ISA = qw(Rose::Object);
   sub baz { 456 }
@@ -49,7 +49,7 @@ our $empty_registry = Rose::DB::Registry->new;
 
 my $i = 1;
 
-foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
+foreach my $db_type (qw(mysql pg_with_schema pg informix sqlite))
 {
   SKIP:
   {
@@ -77,7 +77,7 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
       db_password  => $db->password,
       base_classes => [ qw(My::DB::Object MyWeirdClass) ],
       class_prefix => $class_prefix);
-  
+
   Rose::DB->registry($empty_registry);
 
   my @classes = $loader->make_classes(include_tables => $Include_Tables);
@@ -117,26 +117,26 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
              { name => 'green' });
 
   $p->save;
-  
+
   $p = $product_class->new(id => $p->id)->load;
   is($p->vendor->name, "Acme $i", "vendor 1 - $db_type");
 
-  
+
   my @prices = sort { $a->price <=> $b->price } $p->prices;
-  
+
   is(scalar @prices, 2, "prices 1 - $db_type");
   is($prices[0]->price, 1.23, "prices 2 - $db_type");
   is($prices[1]->price, 4.56, "prices 3 - $db_type");
 
   my @colors = sort { $a->name cmp $b->name } $p->colors;
-  
+
   is(scalar @colors, 2, "colors 1 - $db_type");
   is($colors[0]->name, 'green', "colors 2 - $db_type");
   is($colors[1]->name, 'red', "colors 3 - $db_type");
 
   my $mgr_class = $class_prefix . '::Product::Manager';
   my $prods = $mgr_class->get_products(query => [ id => $p->id ]);
-  
+
   is(ref $prods, 'ARRAY', "get_products 1 - $db_type");
   is(@$prods, 1, "get_products 2 - $db_type");
   is($prods->[0]->id, $p->id, "get_products 3 - $db_type");
@@ -177,13 +177,13 @@ BEGIN
       $dbh->do('DROP TABLE prices CASCADE');
       $dbh->do('DROP TABLE products CASCADE');
       $dbh->do('DROP TABLE vendors CASCADE');
-    
+
       $dbh->do('DROP TABLE Rose_db_object_private.product_color_map CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.colors CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.prices CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.products CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.vendors CASCADE');
-    
+
       $dbh->do('DROP SCHEMA Rose_db_object_private CASCADE');
       $dbh->do('CREATE SCHEMA Rose_db_object_private');
     }
@@ -266,7 +266,7 @@ CREATE TABLE Rose_db_object_private.products
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
-  vendor_id  INT REFERENCES vendors (id),
+  vendor_id  INT REFERENCES Rose_db_object_private.vendors (id),
 
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
             CHECK(status IN ('inactive', 'active', 'defunct')),
@@ -282,7 +282,7 @@ EOF
 CREATE TABLE Rose_db_object_private.prices
 (
   id          SERIAL NOT NULL PRIMARY KEY,
-  product_id  INT NOT NULL REFERENCES products (id),
+  product_id  INT NOT NULL REFERENCES Rose_db_object_private.products (id),
   region      CHAR(2) NOT NULL DEFAULT 'US',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
@@ -303,8 +303,8 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE Rose_db_object_private.product_color_map
 (
-  product_id  INT NOT NULL REFERENCES products (id),
-  color_id    INT NOT NULL REFERENCES colors (id),
+  product_id  INT NOT NULL REFERENCES Rose_db_object_private.products (id),
+  color_id    INT NOT NULL REFERENCES Rose_db_object_private.colors (id),
 
   PRIMARY KEY(product_id, color_id)
 )
@@ -434,7 +434,7 @@ CREATE TABLE product_color_map
 )
 TYPE=InnoDB
 EOF
-    
+
     $dbh->disconnect;
   }
 
@@ -488,7 +488,7 @@ CREATE TABLE products
 
   date_created  DATETIME YEAR TO SECOND,
   release_date  DATETIME YEAR TO SECOND,
-  
+
   UNIQUE(name)
 )
 EOF
@@ -578,7 +578,7 @@ CREATE TABLE products
 
   date_created  DATETIME,
   release_date  DATETIME,
-  
+
   UNIQUE(name)
 )
 EOF
@@ -644,7 +644,7 @@ END
     $dbh->do('DROP TABLE Rose_db_object_private.vendors CASCADE');
 
     $dbh->do('DROP SCHEMA Rose_db_object_private CASCADE');
-      
+
     $dbh->disconnect;
   }
 

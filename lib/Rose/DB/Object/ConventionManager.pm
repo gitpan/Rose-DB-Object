@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Object;
 our @ISA = qw(Rose::DB::Object::Metadata::Object);
 
-our $VERSION = '0.58';
+our $VERSION = '0.60';
 
 our $Debug = 0;
 
@@ -102,7 +102,7 @@ sub auto_primary_key_column_names
   # 3. The first serial column in the column list, alphabetically
   foreach my $column (sort { lc $a->name cmp lc $b->name } $meta->columns)
   {
-    return [ $column->name ]  if($column->type eq 'serial');
+    return [ $column->name ]  if($column->type =~ /^(?:big)?serial$/);
   }
 
   # 4. The first column
@@ -246,7 +246,7 @@ sub auto_foreign_key
       unless(UNIVERSAL::isa($fk_class, 'Rose::DB::Object'))
       {
         eval "require $fk_class";
-        return  if($@);
+        return  if($@ || !UNIVERSAL::isa($fk_class, 'Rose::DB::Object'));
       }
     }
 
@@ -356,7 +356,7 @@ sub auto_relationship
         unless(UNIVERSAL::isa($f_class, 'Rose::DB::Object'))
         {
           eval "require $f_class";
-          return  if($@);
+          return  if($@ || !UNIVERSAL::isa($f_class, 'Rose::DB::Object'));
         }
       }
 
@@ -378,7 +378,7 @@ sub auto_relationship
         unless(UNIVERSAL::isa($f_class, 'Rose::DB::Object'))
         {
           eval "require $f_class";
-          return  if($@);
+          return  if($@ || !UNIVERSAL::isa($f_class, 'Rose::DB::Object'));
         }
       }
 

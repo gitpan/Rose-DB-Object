@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util qw(row_id lazy_column_values_loaded_key);
 
-our $VERSION = '0.59';
+our $VERSION = '0.60';
 
 our $Debug = 0;
 
@@ -892,7 +892,7 @@ sub insert
 
   if($@)
   {
-    $self->error("update() - $@");
+    $self->error("insert() - $@");
     #$db->rollback or warn $db->error  if($started_new_tx);
     $self->meta->handle_error($self);
     return 0;

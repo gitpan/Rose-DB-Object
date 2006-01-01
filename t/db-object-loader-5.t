@@ -2,7 +2,11 @@
 
 use strict;
 
-use Test::More tests => 1 + (5 * 16) + 3;
+use File::Spec;
+use File::Path;
+use FindBin qw($Bin);
+
+use Test::More tests => 1 + (5 * 31);
 
 BEGIN 
 {
@@ -12,79 +16,154 @@ BEGIN
 
 our %Have;
 
-our @Tables = qw(vendors products prices colors products_colors);
+our @Tables = qw(vendors products prices colors product_color_map);
 our $Include_Tables = join('|', @Tables);
+our $Module_Dir = File::Spec->catfile($Bin, 'loader_lib');
 
-our %Reserved_Words;
+SETUP:
+{
+  package My::DB;
+  our @ISA = qw(Rose::DB);
+
+  package My::DB::Object::Metadata;
+  our @ISA = qw(Rose::DB::Object::Metadata);    
+  sub make_column_methods
+  {
+    my($self) = shift;
+    $JCS::Called_For{$self->class}++;
+    $self->SUPER::make_column_methods(@_);
+  }
+
+  package My::DB::Object;
+  our @ISA = qw(Rose::DB::Object);
+  sub meta_class { 'My::DB::Object::Metadata' }
+  sub foo_bar { 123 }
+
+  package MyWeirdClass;
+  our @ISA = qw(Rose::Object);
+  sub baz { 456 }
+
+  File::Path::rmtree($Module_Dir)  if(-d $Module_Dir);
+
+  unless(-d $Module_Dir)
+  {
+    mkdir($Module_Dir);
+
+    unless(-d $Module_Dir)
+    {
+      die "Could not mkdir($Module_Dir) - $!";
+    }
+  }
+
+  unshift(@INC, $Module_Dir);
+
+  my $base_pm_dir = File::Spec->catfile($Module_Dir, 'My', 'DB', 'Object');
+  File::Path::mkpath($base_pm_dir);
+
+  my $base_pm = File::Spec->catfile($Module_Dir, 'My', 'DB', 'Object.pm');
+  open(my $fh, '>', $base_pm) or die "Could not create $base_pm - $!";
+  print $fh "1;\n";
+  close($fh) or die "Could not write $base_pm - $!";
+
+  my $base_meta_pm = File::Spec->catfile($Module_Dir, 'My', 'DB', 'Object', 'Metadata.pm');
+  open($fh, '>', $base_meta_pm) or die "Could not create $base_meta_pm - $!";
+  print $fh "1;\n";
+  close($fh) or die "Could not write $base_meta_pm - $!";
+
+  my $weird_pm = File::Spec->catfile($Module_Dir, 'MyWeirdClass.pm');
+  open($fh, '>', $weird_pm) or die "Could not create $weird_pm - $!";
+  print $fh "1;\n";
+  close($fh) or die "Could not write $weird_pm - $!";
+}
 
 #
 # Tests
 #
 
-FOO:
-{
-  package MyCM;
-
-  @MyCM::ISA = qw(Rose::DB::Object::ConventionManager);
-
-  sub auto_foreign_key_name 
-  {
-    $JCS::Called_Custom_CM{$_[0]->parent->class}++;
-    shift->SUPER::auto_foreign_key_name(@_);
-  }
-}
+# We'll need to clear the registry since we're using DSN instead
+our $real_registry  = Rose::DB->registry;
+our $empty_registry = Rose::DB::Registry->new;
 
 my $i = 1;
 
-foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
+foreach my $db_type (qw(mysql pg_with_schema pg informix sqlite))
 {
   SKIP:
   {
-    unless($Have{$db_type})
-    {
-      skip("$db_type tests", 16 + scalar @{$Reserved_Words{$db_type} ||= []});
-    }
+    skip("$db_type tests", 31)  unless($Have{$db_type});
   }
 
   next  unless($Have{$db_type});
 
   $i++;
 
-  Rose::DB->default_type($db_type);
+  Rose::DB->registry($real_registry);
   Rose::DB::Object::Metadata->unregister_all_classes;
 
   my $class_prefix = ucfirst($db_type eq 'pg_with_schema' ? 'pgws' : $db_type);
 
   #$Rose::DB::Object::Metadata::Debug = 1;
 
-  %JCS::Called_Custom_CM = ();
-
-  my $pre_init_hook = 0;
+  my $db = My::DB->new($db_type);
 
   my $loader = 
     Rose::DB::Object::Loader->new(
-      db            => Rose::DB->new,
-      class_prefix  => $class_prefix,
-      pre_init_hook => sub { $pre_init_hook++ });
+      db_dsn       => $db->dsn,
+      db_schema    => $db->schema,
+      db_username  => $db->username,
+      db_password  => $db->password,
+      base_classes => [ qw(My::DB::Object MyWeirdClass) ],
+      class_prefix => $class_prefix);
 
-  $loader->convention_manager($i % 2 ? 'MyCM' : MyCM->new);
+  Rose::DB->registry($empty_registry);
 
-  my @classes = $loader->make_classes(include_tables => $Include_Tables . 
-                                      ($db_type eq 'mysql' ? '|read' : ''));
+  my @classes = $loader->make_modules(include_tables => $Include_Tables,
+                                      module_dir     => $Module_Dir);
 
-  is(scalar keys %JCS::Called_Custom_CM, 3, "custom convention manager - $db_type");
-  ok($pre_init_hook > 0, "pre_init_hook - $db_type");
-
-  if($db_type eq 'informix')
+  if($db_type eq 'pg')
   {
-    foreach my $class (@classes)
+    is(Pg::Color->meta->column('id')->perl_hash_definition,
+       q(id => { type => 'bigserial', not_null => 1 }),
+       "bigserial perl_hash_definition 1 - $db_type"); 
+
+    is(Pg::Price->meta->column('id')->perl_hash_definition,
+       q(id => { type => 'serial', not_null => 1 }),
+       "bigserial perl_hash_definition 2 - $db_type");
+  }
+  elsif($db_type eq 'pg_with_schema')
+  {
+    is(Pgws::Color->meta->column('id')->perl_hash_definition,
+       q(id => { type => 'bigserial', not_null => 1 }),
+       "bigserial perl_hash_definition 1 - $db_type"); 
+
+    is(Pgws::Price->meta->column('id')->perl_hash_definition,
+       q(id => { type => 'serial', not_null => 1 }),
+       "bigserial perl_hash_definition 2 - $db_type");
+  }
+  else
+  {
+    SKIP:
     {
-      next  unless($class->isa('Rose::DB::Object'));
-      $class->meta->allow_inline_column_values(1);
+      skip('Pg serial tests', 2);
     }
   }
 
+  foreach my $class (@classes)
+  {
+    my @path = split('::', $class);
+    $path[-1] .= '.pm';
+    my $file = File::Spec->catfile($Module_Dir, @path);
+    ok(-e $file, "make_modules() $class");
+  }
+
+  SKIP:
+  {
+    skip('reserved name tests', 12 - scalar(@classes))  unless(@classes == 12);
+  }
+
   my $product_class = $class_prefix . '::Product';
+
+  ok($JCS::Called_For{$product_class}, "custom metadata - $db_type");
 
   ##
   ## Run tests
@@ -92,18 +171,20 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
 
   my $p = $product_class->new(name => "Sled $i");
 
-  # Check reserved methods
-  foreach my $word (@{$Reserved_Words{$db_type} ||= []})
+  ok($p->db->class =~ /^${class_prefix}::DB::Base\d+$/, "db 1 - $db_type");
+
+  ok($p->isa('My::DB::Object'), "base class 1 - $db_type");
+  ok($p->isa('MyWeirdClass'), "base class 2 - $db_type");
+  is($p->foo_bar, 123, "foo_bar 1 - $db_type");
+  is($p->baz, 456, "baz 1 - $db_type");
+
+  if($db_type eq 'pg_with_schema')
   {
-    ok($p->$word(int(rand(10)) + 1), "reserved word: $word - $db_type");
+    is($p->db->schema, lc 'Rose_db_object_private', "schema - $db_type");
   }
-
-  is($p->db->class, 'Rose::DB', "db 1 - $db_type");
-
-  OBJECT_CLASS:
+  else
   {
-    no strict 'refs';
-    ok(${"${product_class}::ISA"}[0] =~ /^${class_prefix}::DB::Object::Base\d+$/, "base class 1 - $db_type");
+    ok(1, "schema - $db_type");
   }
 
   $p->vendor(name => "Acme $i");
@@ -133,10 +214,6 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
   is($colors[1]->name, 'red', "colors 3 - $db_type");
 
   my $mgr_class = $class_prefix . '::Product::Manager';
-
-  #local $Rose::DB::Object::Manager::Debug = 1;
-  #$DB::single = 1;
-
   my $prods = $mgr_class->get_products(query => [ id => $p->id ]);
 
   is(ref $prods, 'ARRAY', "get_products 1 - $db_type");
@@ -144,37 +221,13 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
   is($prods->[0]->id, $p->id, "get_products 3 - $db_type");
 
   #$DB::single = 1;
-  #local $Rose::DB::Object::Debug = 1;
-
-  # Reserved tablee name tests
-  if($db_type eq 'mysql')
-  {
-    my $o = Mysql::Read->new(read => 'Foo')->save;
-    $o = Mysql::Read->new(id => $o->id)->load;
-    is($o->read, 'Foo', "reserved table name 1 - $db_type");
-    my $os = Mysql::Read::Manager->get_read;
-    ok(@$os == 1 && $os->[0]->read eq 'Foo', "reserved table name 2 - $db_type");
-  }
-  else
-  {
-    SKIP:
-    {
-      skip("reserved table name tests", 2);
-    }
-  }
+  #$Rose::DB::Object::Debug = 1;
 }
 
 
 BEGIN
 {
   our %Have;
-
-  our %Reserved_Words =
-  (
-    'pg' => [ 'role' ],
-    'pg_with_schema' => [ 'role' ],
-    'mysql' => [ 'read' ],
-  );
 
   #
   # Postgres
@@ -198,13 +251,13 @@ BEGIN
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
 
-      $dbh->do('DROP TABLE products_colors CASCADE');
+      $dbh->do('DROP TABLE product_color_map CASCADE');
       $dbh->do('DROP TABLE colors CASCADE');
       $dbh->do('DROP TABLE prices CASCADE');
       $dbh->do('DROP TABLE products CASCADE');
       $dbh->do('DROP TABLE vendors CASCADE');
 
-      $dbh->do('DROP TABLE Rose_db_object_private.products_colors CASCADE');
+      $dbh->do('DROP TABLE Rose_db_object_private.product_color_map CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.colors CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.prices CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.products CASCADE');
@@ -230,8 +283,6 @@ CREATE TABLE products
   id      SERIAL NOT NULL PRIMARY KEY,
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-
-  @{[ join(', ', map { "$_ INT" } @{$Reserved_Words{'pg'}}) . ',' ]}
 
   vendor_id  INT REFERENCES vendors (id),
 
@@ -260,7 +311,7 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE colors
 (
-  id    SERIAL NOT NULL PRIMARY KEY,
+  id    SERIAL8 NOT NULL PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
 
   UNIQUE(name)
@@ -268,7 +319,7 @@ CREATE TABLE colors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products_colors
+CREATE TABLE product_color_map
 (
   product_id  INT NOT NULL REFERENCES products (id),
   color_id    INT NOT NULL REFERENCES colors (id),
@@ -294,9 +345,7 @@ CREATE TABLE Rose_db_object_private.products
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
-  @{[ join(', ', map { "$_ INT" } @{$Reserved_Words{'pg'}}) . ',' ]}
-
-  vendor_id  INT REFERENCES vendors (id),
+  vendor_id  INT REFERENCES Rose_db_object_private.vendors (id),
 
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
             CHECK(status IN ('inactive', 'active', 'defunct')),
@@ -312,7 +361,7 @@ EOF
 CREATE TABLE Rose_db_object_private.prices
 (
   id          SERIAL NOT NULL PRIMARY KEY,
-  product_id  INT NOT NULL REFERENCES products (id),
+  product_id  INT NOT NULL REFERENCES Rose_db_object_private.products (id),
   region      CHAR(2) NOT NULL DEFAULT 'US',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
@@ -323,7 +372,7 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE Rose_db_object_private.colors
 (
-  id    SERIAL NOT NULL PRIMARY KEY,
+  id    BIGSERIAL NOT NULL PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
 
   UNIQUE(name)
@@ -331,10 +380,10 @@ CREATE TABLE Rose_db_object_private.colors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE Rose_db_object_private.products_colors
+CREATE TABLE Rose_db_object_private.product_color_map
 (
-  product_id  INT NOT NULL REFERENCES products (id),
-  color_id    INT NOT NULL REFERENCES colors (id),
+  product_id  INT NOT NULL REFERENCES Rose_db_object_private.products (id),
+  color_id    INT NOT NULL REFERENCES Rose_db_object_private.colors (id),
 
   PRIMARY KEY(product_id, color_id)
 )
@@ -361,12 +410,11 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
 
-      $dbh->do('DROP TABLE products_colors CASCADE');
+      $dbh->do('DROP TABLE product_color_map CASCADE');
       $dbh->do('DROP TABLE colors CASCADE');
       $dbh->do('DROP TABLE prices CASCADE');
       $dbh->do('DROP TABLE products CASCADE');
       $dbh->do('DROP TABLE vendors CASCADE');
-      $dbh->do('DROP TABLE `read` CASCADE');
     }
 
     # Foreign key stuff requires InnoDB support
@@ -406,8 +454,6 @@ CREATE TABLE products
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
-  @{[ join(', ', map { "`$_` INT" } @{$Reserved_Words{'mysql'}}) . ',' ]}
-
   vendor_id  INT,
 
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
@@ -435,7 +481,7 @@ CREATE TABLE prices
   UNIQUE(product_id, region),
   INDEX(product_id),
 
-  FOREIGN KEY (product_id) REFERENCES products (id) ON UPDATE NO ACTION
+  FOREIGN KEY (product_id) REFERENCES products (id)
 )
 TYPE=InnoDB
 EOF
@@ -452,7 +498,7 @@ TYPE=InnoDB
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products_colors
+CREATE TABLE product_color_map
 (
   product_id  INT NOT NULL,
   color_id    INT NOT NULL,
@@ -462,17 +508,8 @@ CREATE TABLE products_colors
   INDEX(color_id),
   INDEX(product_id),
 
-  FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE NO ACTION,
-  FOREIGN KEY (color_id) REFERENCES colors (id) ON UPDATE NO ACTION
-)
-TYPE=InnoDB
-EOF
-
-    $dbh->do(<<"EOF");
-CREATE TABLE `read`
-(
-  id      INT AUTO_INCREMENT PRIMARY KEY,
-  `read`  VARCHAR(255) NOT NULL
+  FOREIGN KEY (product_id) REFERENCES products (id),
+  FOREIGN KEY (color_id) REFERENCES colors (id)
 )
 TYPE=InnoDB
 EOF
@@ -499,7 +536,7 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
 
-      $dbh->do('DROP TABLE products_colors CASCADE');
+      $dbh->do('DROP TABLE product_color_map CASCADE');
       $dbh->do('DROP TABLE colors CASCADE');
       $dbh->do('DROP TABLE prices CASCADE');
       $dbh->do('DROP TABLE products CASCADE');
@@ -558,7 +595,7 @@ CREATE TABLE colors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products_colors
+CREATE TABLE product_color_map
 (
   product_id  INT NOT NULL REFERENCES products (id),
   color_id    INT NOT NULL REFERENCES colors (id),
@@ -589,7 +626,7 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
 
-      $dbh->do('DROP TABLE products_colors');
+      $dbh->do('DROP TABLE product_color_map');
       $dbh->do('DROP TABLE colors');
       $dbh->do('DROP TABLE prices');
       $dbh->do('DROP TABLE products');
@@ -648,7 +685,7 @@ CREATE TABLE colors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products_colors
+CREATE TABLE product_color_map
 (
   product_id  INT NOT NULL REFERENCES products (id),
   color_id    INT NOT NULL REFERENCES colors (id),
@@ -663,7 +700,11 @@ EOF
 
 END
 {
-  # Delete test table
+  File::Path::rmtree($Module_Dir)  if(-d $Module_Dir);
+
+  # Delete test tables
+
+  Rose::DB->registry($real_registry);
 
   if($Have{'pg'})
   {
@@ -671,13 +712,13 @@ END
     my $dbh = Rose::DB->new('pg_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE products_colors CASCADE');
+    $dbh->do('DROP TABLE product_color_map CASCADE');
     $dbh->do('DROP TABLE colors CASCADE');
     $dbh->do('DROP TABLE prices CASCADE');
     $dbh->do('DROP TABLE products CASCADE');
     $dbh->do('DROP TABLE vendors CASCADE');
 
-    $dbh->do('DROP TABLE Rose_db_object_private.products_colors CASCADE');
+    $dbh->do('DROP TABLE Rose_db_object_private.product_color_map CASCADE');
     $dbh->do('DROP TABLE Rose_db_object_private.colors CASCADE');
     $dbh->do('DROP TABLE Rose_db_object_private.prices CASCADE');
     $dbh->do('DROP TABLE Rose_db_object_private.products CASCADE');
@@ -694,12 +735,11 @@ END
     my $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE products_colors CASCADE');
+    $dbh->do('DROP TABLE product_color_map CASCADE');
     $dbh->do('DROP TABLE colors CASCADE');
     $dbh->do('DROP TABLE prices CASCADE');
     $dbh->do('DROP TABLE products CASCADE');
     $dbh->do('DROP TABLE vendors CASCADE');
-    $dbh->do('DROP TABLE `read` CASCADE');
 
     $dbh->disconnect;
   }
@@ -710,7 +750,7 @@ END
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE products_colors CASCADE');
+    $dbh->do('DROP TABLE product_color_map CASCADE');
     $dbh->do('DROP TABLE colors CASCADE');
     $dbh->do('DROP TABLE prices CASCADE');
     $dbh->do('DROP TABLE products CASCADE');
@@ -725,7 +765,7 @@ END
     my $dbh = Rose::DB->new('sqlite_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE products_colors');
+    $dbh->do('DROP TABLE product_color_map');
     $dbh->do('DROP TABLE colors');
     $dbh->do('DROP TABLE prices');
     $dbh->do('DROP TABLE products');
