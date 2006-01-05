@@ -1,3 +1,16 @@
+0.61 (01.05.2006) - John Siracusa <siracusa@mindspring.com>
+
+    * Added "select" parameter to the Manager which accetps an explicit
+      list of columns to be selected.
+    * It's now possible to filter based on columns that are not selected
+      as part of a Manager query.
+    * Extra parameters can now be passed to the method created by
+      make_manager_method_from_sql()
+    * Fixed several bitfield column accessor method bugs.  (Reported by 
+      Svilen Ivanov)
+    * The loader's make_modules() method now correctly creates *.pm files
+      for auto-generated base classes.  (Reported by Sean Davis)
+
 0.601 (01.01.2006) - John Siracusa <siracusa@mindspring.com>
 
     * Fixed some incorrect deep join tests.
