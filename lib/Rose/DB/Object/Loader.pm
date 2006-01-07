@@ -17,7 +17,7 @@ use Rose::DB::Object::Metadata::Util qw(perl_hashref);
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.61';
+our $VERSION = '0.62';
 
 use Rose::Object::MakeMethods::Generic
 (
@@ -357,11 +357,9 @@ sub _perl_db_class
 
   my $hash = perl_hashref(hash        => $info->{'db_entry'}, 
                           inline      => 0, 
+                          no_curlies  => 1,
                           key_padding => $max,
                           indent      => $args->{'indent'} || 2);
-
-  $hash =~ s/^{\n//;
-  $hash =~ s/\n}$//;
 
   return<<"EOF";
 package $class;
@@ -552,11 +550,10 @@ sub make_classes
   {
     $init_db = sub { $db_class->new(%db_args) };
 
-    my $hash = perl_hashref(hash   => \%db_args,
-                            inline => 1,
-                            indent => 0);
-    $hash =~ s/^{\n//;
-    $hash =~ s/\n}$//;
+    my $hash = perl_hashref(hash       => \%db_args,
+                            inline     => 1,
+                            no_curlies => 1,
+                            indent     => 0);
 
     $extra_info->{'perl_init_db'} = 
       "use $db_class;\n" .
@@ -579,7 +576,7 @@ sub make_classes
     }
   }
 
-  my $installed_init_db_in_base_class = 0;
+  $extra_info->{'init_db_in_base_class'} = 0;
 
   # Install the init_db routine in the base class, but only if 
   # using the default base calss.
@@ -587,10 +584,31 @@ sub make_classes
   {
     no strict 'refs';
     *{"$base_classes[0]::init_db"} = $init_db;
-    $installed_init_db_in_base_class = 
-      $extra_info->{'init_db_in_base_class'} = 1;
+    $extra_info->{'init_db_in_base_class'} = 1;
     $extra_info->{'base_classes'}{$base_classes[0]}++;
     push(@$extra_classes, $base_classes[0]);
+  }
+  else
+  {
+    if($made_new_db_class || $db_class ne 'Rose::DB')
+    {
+      no strict 'refs';
+      no warnings;
+      *{"$base_classes[0]::init_db"} = $init_db;
+      $extra_info->{'init_db_in_base_class'} = 1;
+      $extra_info->{'base_classes'}{$base_classes[0]}++;
+    }
+    else
+    {
+      foreach my $base_class (@base_classes)
+      {
+        if($base_class->can('init_db'))
+        {
+          $extra_info->{'init_db_in_base_class'} = 1;
+          last;
+        }
+      }
+    }
   }
 
   my $class_prefix = $self->class_prefix || '';
@@ -616,7 +634,7 @@ sub make_classes
     no strict 'refs';
     @{"${obj_class}::ISA"} = @base_classes;
 
-    unless($installed_init_db_in_base_class)
+    unless($extra_info->{'init_db_in_base_class'})
     {
       *{"${obj_class}::init_db"} = $init_db;
     }
@@ -627,6 +645,7 @@ sub make_classes
 
     $meta->table($table);
     $meta->convention_manager($cm_class->new);
+
     $meta->auto_initialize(%args);
 
     push(@classes, $obj_class);
