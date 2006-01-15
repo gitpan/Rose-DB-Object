@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1412;
+use Test::More tests => 1443;
 
 BEGIN 
 {
@@ -4067,7 +4067,7 @@ SKIP: foreach my $db_type ('informix')
 
 SKIP: foreach my $db_type ('sqlite')
 {
-  skip("SQLite tests", 356)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 387)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
@@ -5434,6 +5434,119 @@ SKIP: foreach my $db_type ('sqlite')
   is($count, 5, "add 2 many to many on save 34 - $db_type");
 
   # End "many to many" tests
+  
+  # Begin with_map_records tests
+
+  @colors = $o->colors2;  
+
+  is($colors[0]->map_record->color_id, $colors[0]->id, "with_map_records rel 1 - $db_type");
+  is($colors[0]->map_record->obj_id, $o->id, "with_map_records rel 2 - $db_type");
+
+  @colors = $o->colors3;  
+
+  is($colors[-1]->map_record->color_id, $colors[-1]->id, "with_map_records rel 3 - $db_type");
+  is($colors[-1]->map_record->obj_id, $o->id, "with_map_records rel 4 - $db_type");
+  is($colors[-1]->map_record->color_id, 1, "with_map_records rel 5 - $db_type");
+
+  my $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MySQLiteObject',
+      query => [ id => $o->id ],
+      require_objects => [ 'colors3' ],
+      with_map_records => { colors3 => 'mrec' });
+
+  is($objs->[0]->colors3->[0]->mrec->color_id, $objs->[0]->colors3->[0]->id, "with_map_records mrec 1 - $db_type");
+  is($objs->[0]->colors3->[0]->mrec->obj_id, $o->id, "with_map_records mrec 2 - $db_type");
+  is($objs->[0]->colors3->[0]->mrec->color_id, 9, "with_map_records mrec 3 - $db_type");
+  is($objs->[0]->colors3->[-1]->mrec->color_id, 1, "with_map_records mrec 4 - $db_type");
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MySQLiteObject',
+      query => [ id => [ $o->id, 333 ] ],
+      with_objects => [ 'colors3' ],
+      with_map_records => 1,
+      sort_by => 'name DESC');
+
+  is($objs->[1]->colors3->[0]->map_rec->color_id, $objs->[1]->colors3->[0]->id, "with_map_records map_rec 1 - $db_type");
+  is($objs->[1]->colors3->[0]->map_rec->obj_id, $o->id, "with_map_records map_rec 2 - $db_type");
+  is($objs->[1]->colors3->[0]->map_rec->color_id, 9, "with_map_records map_rec 3 - $db_type");
+  is($objs->[1]->colors3->[-1]->map_rec->color_id, 1, "with_map_records map_rec 4 - $db_type");
+  is($objs->[0]->name, 'Zoom', "with_map_records map_rec 5 - $db_type");
+  
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MySQLiteObject',
+      query => [ id => $o->id ],
+      require_objects => [ 'colors2' ],
+      with_map_records => 1);
+
+  is($objs->[0]->colors2->[0]->map_record->color_id, $objs->[0]->colors2->[0]->id, "with_map_records map_record 1 - $db_type");
+  is($objs->[0]->colors2->[0]->map_record->obj_id, $o->id, "with_map_records map_record 2 - $db_type");
+
+  $objs = 
+    Rose::DB::Object::Manager->get_objects(
+      object_class => 'MySQLiteObject',
+      query => [ id => $o->id ],
+      require_objects => [ 'colors2' ],
+      with_map_records => 1);
+
+  is($objs->[0]->colors2->[0]->map_record->color_id, $objs->[0]->colors2->[0]->id, "with_map_records map_record 1 - $db_type");
+  is($objs->[0]->colors2->[0]->map_record->obj_id, $o->id, "with_map_records map_record 2 - $db_type");
+
+  my $iter = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => 'MySQLiteObject',
+      query => [ id => $o->id ],
+      require_objects => [ 'colors3' ],
+      with_map_records => { colors3 => 'mrec' });
+
+  $obj = $iter->next;
+  is($obj->colors3->[0]->mrec->color_id, $obj->colors3->[0]->id, "with_map_records mrec 1 - $db_type");
+  is($obj->colors3->[0]->mrec->obj_id, $o->id, "with_map_records mrec 2 - $db_type");
+  is($obj->colors3->[0]->mrec->color_id, 9, "with_map_records mrec 3 - $db_type");
+  is($obj->colors3->[-1]->mrec->color_id, 1, "with_map_records mrec 4 - $db_type");
+
+  $iter = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => 'MySQLiteObject',
+      query => [ id => [ $o->id, 333 ] ],
+      with_objects => [ 'colors3' ],
+      with_map_records => 1,
+      sort_by => 'name DESC');
+
+  $obj = $iter->next;
+  is($obj->name, 'Zoom', "with_map_records map_rec 5 - $db_type");
+
+  $obj = $iter->next;
+  is($obj->colors3->[0]->map_rec->color_id, $obj->colors3->[0]->id, "with_map_records map_rec 1 - $db_type");
+  is($obj->colors3->[0]->map_rec->obj_id, $o->id, "with_map_records map_rec 2 - $db_type");
+  is($obj->colors3->[0]->map_rec->color_id, 9, "with_map_records map_rec 3 - $db_type");
+  is($obj->colors3->[-1]->map_rec->color_id, 1, "with_map_records map_rec 4 - $db_type");
+
+  $iter = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => 'MySQLiteObject',
+      query => [ id => $o->id ],
+      require_objects => [ 'colors2' ],
+      with_map_records => 1);
+
+  $obj = $iter->next;
+  is($obj->colors2->[0]->map_record->color_id, $obj->colors2->[0]->id, "with_map_records map_record 1 - $db_type");
+  is($obj->colors2->[0]->map_record->obj_id, $o->id, "with_map_records map_record 2 - $db_type");
+
+  $iter = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => 'MySQLiteObject',
+      query => [ id => $o->id ],
+      require_objects => [ 'colors2' ],
+      with_map_records => 1);
+
+  $obj = $iter->next;
+  is($obj->colors2->[0]->map_record->color_id, $obj->colors2->[0]->id, "with_map_records map_record 1 - $db_type");
+  is($obj->colors2->[0]->map_record->obj_id, $o->id, "with_map_records map_record 2 - $db_type");
+
+  # End with_map_records tests
 }
 
 BEGIN
@@ -5631,7 +5744,7 @@ EOF
         type  => 'one to many',
         class => 'MyPgOtherObject2',
         column_map => { id => 'pid' },
-        manager_args => { sort_by => 'rose_db_object_other2.name DESC' },
+        manager_args => { sort_by => 'name DESC' },
         methods =>
         {
           get_set         => undef,
@@ -6565,7 +6678,7 @@ EOF
         map_class => 'MySQLiteColorMap',
         #map_from  => 'object',
         #map_to    => 'color',
-        manager_args => { sort_by => 'rose_db_object_colors.name' },
+        manager_args => { sort_by => 'name' },
         methods =>
         {
           get_set         => undef,
@@ -6574,6 +6687,20 @@ EOF
           add_now         => undef,
           add_on_save     => 'add_colors_on_save',
         },
+      },
+
+      colors2 =>
+      {
+        type      => 'many to many',
+        map_class => 'MySQLiteColorMap',
+        manager_args => { sort_by => 'name', with_map_records => 1 },
+      },
+
+      colors3 =>
+      {
+        type      => 'many to many',
+        map_class => 'MySQLiteColorMap',
+        manager_args => { sort_by => 'rose_db_object_colors_map.color_id DESC', with_map_records => 'map_rec' },
       },
     );
 

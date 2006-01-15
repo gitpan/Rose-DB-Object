@@ -19,7 +19,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.60';
+our $VERSION = '0.63';
 
 our $Debug = 0;
 
@@ -3217,7 +3217,7 @@ As you can read in the documentation for the L<auto_initialize|/auto_initialize>
 
 In order to retrieve the information required for auto-initialization, a database connection must be opened and queries must be run.  Sometimes these queries include complex joins.  All of these queries must be successfully completed before the L<Rose::DB::Object>-derived objects that the L<Rose::DB::Object::Metadata> is associated with can be used.
 
-In an environment like L<mod_perl>, server start-up time is precisely when you want to any expensive operations.  But in a command-line script or other short-lived process, the overhead of auto-initializing many metadata objects may become prohibitive.
+In an environment like L<mod_perl>, server start-up time is precisely when you want to do any expensive operations.  But in a command-line script or other short-lived process, the overhead of auto-initializing many metadata objects may become prohibitive.
 
 Also, don't forget that auto-initialization requires a database connection.  L<Rose::DB::Object>-derived objects can sometimes be useful even without a database connection (e.g., to temporarily store information that will never go into the database, or to synthesize data using object methods that have no corresponding database column).  When using auto-initialization, this is not possible because the  L<Rose::DB::Object>-derived class won't even load if auto-initialization fails because it could not connect to the database.
 
@@ -4071,6 +4071,7 @@ Given the method name NAME and the class name CLASS, returns true if the method 
 =item B<pre_init_hook [CODE]>
 
 Get or set a reference to a subroutine that will be called just before the L<initialize|/initialize> method runs.  The subroutine arguments will be the metdata object itself and any arguments passed to the call to L<initialize|/initialize>.
+
 =item B<primary_key [PK]>
 
 Get or set the L<Rose::DB::Object::Metadata::PrimaryKey> object that stores the list of column names that make up the primary key for this table.
