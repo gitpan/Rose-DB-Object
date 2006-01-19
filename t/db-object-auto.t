@@ -803,10 +803,13 @@ EOF
   # MySQL
   #
 
-  eval 
+  my $db_version;
+
+  eval
   {
-    $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
-      or die Rose::DB->error;
+    my $db = Rose::DB->new('mysql_admin');
+    $dbh = $db->retain_dbh() or die Rose::DB->error;
+    $db_version = $db->database_version;
   };
 
   if(!$@ && $dbh)
@@ -821,6 +824,14 @@ EOF
       $dbh->do('DROP TABLE Rose_db_object_test2');
     }
 
+    # MySQL 5.0.3 or later has a completely stupid "native" BIT type
+    # which we want to avoid because DBI's column_info() method prints
+    # a warning when it encounters such a column.
+    my $bit_col = 
+      ($db_version >= 5_000_003) ?
+        q(bits  TINYINT(1) NOT NULL DEFAULT '00101') :
+        q(bits  BIT(5) NOT NULL DEFAULT '00101');
+
     $dbh->do(<<"EOF");
 CREATE TABLE Rose_db_object_test
 (
@@ -833,7 +844,7 @@ CREATE TABLE Rose_db_object_test
   flag           TINYINT(1) NOT NULL DEFAULT 1,
   flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'act''ive',
-  bits           BIT(5) NOT NULL DEFAULT '00101',
+  $bit_col,
   nums           VARCHAR(255),
   start          DATE DEFAULT '1980-12-24',
   save           INT,
@@ -871,6 +882,8 @@ EOF
 
     sub meta_class { 'MyMySQLMeta' }
     sub init_db { Rose::DB->new('mysql') }
+
+    MyMySQLObject->meta->allow_inline_column_values(1);
 
     MyMySQLObject->meta->table('Rose_db_object_test');
 

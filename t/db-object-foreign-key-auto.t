@@ -1724,14 +1724,15 @@ EOF
   # MySQL
   #
 
+  my $db_version;
+
   eval
   {
     my $db = Rose::DB->new('mysql_admin');
     $dbh = $db->retain_dbh or die Rose::DB->error;
+    $db_version = $db->database_version;
 
-    my $version = $dbh->get_info(18); # SQL_DBMS_VER  
-
-    die "MySQL version too old"  unless($version =~ /^4\./);
+    die "MySQL version too old"  unless($db_version >= 4_000_000);
 
     CLEAR:
     {
@@ -1858,6 +1859,14 @@ EOF
     MyMySQLOtherObject4->meta->table('Rose_db_object_other4');
     MyMySQLOtherObject4->meta->auto_initialize;    
 
+    # MySQL 5.0.3 or later has a completely stupid "native" BIT type
+    # which we want to avoid because DBI's column_info() method prints
+    # a warning when it encounters such a column.
+    my $bit_col = 
+      ($db_version >= 5_000_003) ?
+        q(bits  TINYINT(1) NOT NULL DEFAULT '00101') :
+        q(bits  BIT(5) NOT NULL DEFAULT '00101');
+
     $dbh->do(<<"EOF");
 CREATE TABLE Rose_db_object_test
 (
@@ -1866,7 +1875,7 @@ CREATE TABLE Rose_db_object_test
   flag           TINYINT(1) NOT NULL,
   flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'active',
-  bits           BIT(5) NOT NULL DEFAULT '00101',
+  $bit_col,
   start          DATE DEFAULT '1980-12-24',
   save           INT,
   fk1            INT UNSIGNED,
@@ -1901,6 +1910,8 @@ EOF
     our @ISA = qw(Rose::DB::Object);
 
     sub init_db { Rose::DB->new('mysql') }
+
+    MyMySQLObject->meta->allow_inline_column_values(1);
 
     MyMySQLObject->meta->table('Rose_db_object_test');
     MyMySQLObject->meta->convention_manager(undef);

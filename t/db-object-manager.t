@@ -7576,7 +7576,7 @@ SKIP: foreach my $db_type (qw(sqlite))
   my $objs = 
     MySQLiteObject->get_objectz(
       share_db     => 1,
-      query_is_sql => 1,
+      #query_is_sql => 1,
       query        =>
       [
         id         => { ge => 1 },
@@ -7631,7 +7631,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         flag       => 1,
         flag2      => 0,
         status     => 'active',
-        bits       => '00001',
+        bits       => q(b'00001'),
         start      => '2001-01-02',
         save_col   => [ 1, 5 ],
         nums       => '{1,2,3}',
@@ -7660,7 +7660,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         flag       => 1,
         flag2      => 0,
         status     => 'active',
-        bits       => '00001',
+        bits       => q(b'00001'),
         start      => '2001-01-02',
         save_col   => [ 1, 5 ],
         nums       => '{1,2,3}',
@@ -7696,7 +7696,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         flag       => 1,
         flag2      => 0,
         status     => 'active',
-        bits       => '00001',
+        bits       => q(b'00001'),
         start      => '2001-01-02',
         save_col   => [ 1, 5 ],
         nums       => '{1,2,3}',
@@ -7726,7 +7726,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         flag       => 1,
         flag2      => 0,
         status     => 'active',
-        bits       => '00001',
+        bits       => q(b'00001'),
         start      => '2001-01-02',
         save_col   => [ 1, 5 ],
         nums       => '{1,2,3}',
@@ -7783,21 +7783,21 @@ SKIP: foreach my $db_type (qw(sqlite))
   ok($fo->save, "bb object save() 4 - $db_type");
 
   my $o5 = MySQLiteObject->new(id         => 5,
-                           name       => 'Betty',  
-                           flag       => 'f',
-                           flag2      => 't',
-                           status     => 'with',
-                           bits       => '10101',
-                           start      => '2002-05-20',
-                           save_col   => 123,
-                           nums       => [ 4, 5, 6 ],
-                           fkone      => 1,
-                           fk2        => 2,
-                           fk3        => 3,
-                           b1         => 2,
-                           b2         => 4,
-                           last_modified => '2001-01-10 20:34:56',
-                           date_created  => '2002-05-10 10:34:56');
+                               name       => 'Betty',  
+                               flag       => 'f',
+                               flag2      => 't',
+                               status     => 'with',
+                               bits       => '10101',
+                               start      => '2002-05-20',
+                               save_col   => 123,
+                               nums       => [ 4, 5, 6 ],
+                               fkone      => 1,
+                               fk2        => 2,
+                               fk3        => 3,
+                               b1         => 2,
+                               b2         => 4,
+                               last_modified => '2001-01-10 20:34:56',
+                               date_created  => '2002-05-10 10:34:56');
 
   ok($o5->save, "object save() 7 - $db_type");
 
@@ -10550,10 +10550,13 @@ EOF
   # MySQL
   #
 
-  eval 
+  my $db_version;
+
+  eval
   {
-    $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
-      or die Rose::DB->error;
+    my $db = Rose::DB->new('mysql_admin');
+    $dbh = $db->retain_dbh() or die Rose::DB->error;
+    $db_version = $db->database_version;
   };
 
   if(!$@ && $dbh)
@@ -10633,6 +10636,12 @@ EOF
 
     MyMySQLBB->meta->initialize;
 
+    # MySQL 5.0.3 or later has a completely stupid "native" BIT type
+    my $bit_col = 
+      ($db_version >= 5_000_003) ?
+        q(bits  BIT(5) NOT NULL DEFAULT B'00101') :
+        q(bits  BIT(5) NOT NULL DEFAULT '00101');
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -10641,7 +10650,7 @@ CREATE TABLE rose_db_object_test
   flag           TINYINT(1) NOT NULL,
   flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'active',
-  bits           VARCHAR(5) NOT NULL DEFAULT '00101',
+  $bit_col,
   nums           VARCHAR(255),
   start          DATE,
   save           INT,
@@ -10949,6 +10958,8 @@ EOF
     our @ISA = qw(Rose::DB::Object);
 
     sub extra { $_[0]->{'extra'} = $_[1]  if(@_ > 1); $_[0]->{'extra'} }
+
+    MyMySQLObject->meta->allow_inline_column_values(1);
 
     MyMySQLObject->meta->table('rose_db_object_test');
 

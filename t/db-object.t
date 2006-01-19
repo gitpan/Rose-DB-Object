@@ -362,6 +362,7 @@ SKIP: foreach my $db_type ('mysql')
 
   $o = MyMySQLObject->new(name => 'John', id => 9);
   $o->save_col(22);
+
   ok($o->save, "save() 4 - $db_type");
   $o->save_col(50);
   ok($o->save, "save() 5 - $db_type");
@@ -920,10 +921,13 @@ EOF
   # MySQL
   #
 
-  eval 
+  my $db_version;
+
+  eval
   {
-    $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
-      or die Rose::DB->error;
+    my $db = Rose::DB->new('mysql_admin');
+    $dbh = $db->retain_dbh() or die Rose::DB->error;
+    $db_version = $db->database_version;
   };
 
   if(!$@ && $dbh)
@@ -938,6 +942,17 @@ EOF
       $dbh->do('DROP TABLE rose_db_object_test2');
     }
 
+    # MySQL 5.0.3 or later has a completely stupid "native" BIT type
+    my $bit_col1 = 
+      ($db_version >= 5_000_003) ?
+        q(bitz  BIT(5) NOT NULL DEFAULT B'00101') :
+        q(bitz  BIT(5) NOT NULL DEFAULT '00101');
+
+    my $bit_col2 = 
+      ($db_version >= 5_000_003) ?
+        q(bitz2  BIT(2) NOT NULL DEFAULT B'00') :
+        q(bitz2  BIT(2) NOT NULL DEFAULT '0');
+        
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (
@@ -950,8 +965,8 @@ CREATE TABLE rose_db_object_test
   flag           TINYINT(1) NOT NULL,
   flag2          TINYINT(1),
   status         VARCHAR(32) DEFAULT 'active',
-  bitz           BIT(5) NOT NULL DEFAULT '00101',
-  bitz2          BIT(2) DEFAULT '0',
+  $bit_col1,
+  $bit_col2,
   bitz3          BIT(4),
   decs           FLOAT(10,2),
   nums           VARCHAR(255),
@@ -986,6 +1001,8 @@ EOF
     our @ISA = qw(Rose::DB::Object);
 
     sub init_db { Rose::DB->new('mysql') }
+
+    MyMySQLObject->meta->allow_inline_column_values(1);
 
     MyMySQLObject->meta->table('rose_db_object_test');
 

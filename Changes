@@ -1,10 +1,21 @@
+0.64 (01.19.2006) - John Siracusa <siracusa@mindspring.com>
+
+    * Worked around yet more SQLite ORDER BY bugs.
+    * Improved the column trigger implementation.
+    * Added support for MySQL 5's brain-dead new BIT column type.  Classes
+      must allow_inline_column_values(1) to use it due to the inability of
+      DBD::mysql to bind BIT values correctly without explicit calls to
+      DBI's bind_param() method.
+    * Use alternate strategies for extracting foreign key information from
+      MySQL 5 because the old way no longer works reliably.
+
 0.63 (01.15.2006) - John Siracusa <siracusa@mindspring.com>
 
     * Made the with_map_records Manager argument work in the
       manager_args list for relationships.
     * Added the generate_manager_class_name() method to the loader.
-    * Added auto_manager_class_name() method to convention manager, and
-      made the loader delegate to it.
+    * Added the auto_manager_class_name() method to convention manager, 
+      and made the loader delegate to it.
 
 0.62 (01.06.2006) - John Siracusa <siracusa@mindspring.com>
 
