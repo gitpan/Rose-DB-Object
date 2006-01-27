@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 344;
+use Test::More tests => 351;
 
 BEGIN 
 {
@@ -233,7 +233,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 70)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 77)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -248,6 +248,7 @@ SKIP: foreach my $db_type ('mysql')
   $o->date_created('now');
   $o->last_modified($o->date_created);
   $o->save_col(22);
+
   $o->bitz3('11');
 
   ok($o->save, "save() 1 - $db_type");
@@ -256,7 +257,7 @@ SKIP: foreach my $db_type ('mysql')
   my $ox = MyMySQLObject->new(id => $o->id)->load;
   is($ox->bitz2->to_Bin(), '00', "spot check bitfield 1 - $db_type");
   is($ox->bitz3->to_Bin(), '0011', "spot check bitfield 2 - $db_type");
-  
+
   eval { $o->name('C' x 50) };
   ok($@, "varchar overflow fatal - $db_type");
 
@@ -276,6 +277,7 @@ SKIP: foreach my $db_type ('mysql')
   $o->enums('bar');
 
   my $ouk;
+
   ok($ouk = MyMySQLObject->new(k1 => 1,
                                k2 => undef,
                                k3 => 3)->load, "load() uk 1 - $db_type");
@@ -292,8 +294,10 @@ SKIP: foreach my $db_type ('mysql')
   ok(ref $o2 && $o2->isa('MyMySQLObject'), "new() 2 - $db_type");
 
   is($o2->bits->to_Bin, '00101', "bits() (bitfield default value) - $db_type");
+  is($o2->bitz2->to_Bin, '00', "bitz2() (bitfield default value) - $db_type");
 
   ok($o2->load, "load() 2 - $db_type");
+
   ok(!$o2->not_found, "not_found() 1 - $db_type");
 
   is($o2->name, $o->name, "load() verify 1 - $db_type");
@@ -312,6 +316,8 @@ SKIP: foreach my $db_type ('mysql')
   ok($@, 'set_status()');
 
   is($o2->bits->to_Bin, '00101', "load() verify 9 (bitfield value) - $db_type");
+  is($o2->bitz2->to_Bin, '00', "load() verify 10 (bitfield value) - $db_type");
+  is($o2->bitz3->to_Bin, '0011', "load() verify 11 (bitfield value) - $db_type");
 
   my $clone = $o2->clone;
   ok($o2->start eq $clone->start, "clone() 1 - $db_type");
@@ -412,6 +418,21 @@ SKIP: foreach my $db_type ('mysql')
 
   is($o->k1, 3, "save() verify 3 multi-value primary key with generated values - $db_type");
   is($o->k2, 4, "save() verify 4 multi-value primary key with generated values - $db_type");
+
+  is($ox->bitz3->to_Bin(), '0011', "spot check bitfield 3 - $db_type");
+
+  $ox->bitz3->Bit_On(3);
+  is($ox->bitz3->to_Bin(), '1011', "spot check bitfield 4 - $db_type");
+
+  $ox->save(insert => 1);
+
+  $ox = MyMySQLObject->new(id => $ox->id)->load;
+  is($ox->bitz3->to_Bin(), '1011', "spot check bitfield 5 - $db_type");
+
+  $ox->bitz3->Bit_On(2);
+  $ox->save;
+  $ox = MyMySQLObject->new(id => $ox->id)->load;
+  is($ox->bitz3->to_Bin(), '1111', "spot check bitfield 6 - $db_type");
 }
 
 #
@@ -952,7 +973,7 @@ EOF
       ($db_version >= 5_000_003) ?
         q(bitz2  BIT(2) NOT NULL DEFAULT B'00') :
         q(bitz2  BIT(2) NOT NULL DEFAULT '0');
-        
+
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
 (

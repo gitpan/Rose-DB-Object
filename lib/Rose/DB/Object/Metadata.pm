@@ -19,7 +19,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.63';
+our $VERSION = '0.65';
 
 our $Debug = 0;
 
@@ -1673,6 +1673,8 @@ sub add_deferred_foreign_keys
 {
   my($class) = shift;  
 
+my $check = 0;
+
   ARG: foreach my $arg (@_)
   {
     foreach my $fk (@Deferred_Foreign_Keys)
@@ -1803,7 +1805,7 @@ sub make_relationship_methods
 
       $relationship->make_methods(%args);
     }
-    else
+    elsif(!$relationship->can('foreign_key') || !$relationship->foreign_key)
     {
       # Confirm that no info is missing.  This prevents an improperly
       # configured relationship from being deferred "forever"
@@ -3276,7 +3278,7 @@ More troublingly, databases do not always provide all the metadata that a human 
       name  VARCHAR(64)
     );
 
-Now look at the metadata that MySQL stores internally for this table:
+Now look at the metadata that MySQL 4 stores internally for this table:
 
     mysql> describe mytable;
     +-------+------------------+------+-----+---------+----------------+

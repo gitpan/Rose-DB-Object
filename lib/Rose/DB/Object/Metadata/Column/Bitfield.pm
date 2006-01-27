@@ -8,7 +8,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.64';
+our $VERSION = '0.65';
 
 __PACKAGE__->add_common_method_maker_argument_names
 (
@@ -118,6 +118,8 @@ Rose::DB::Object::Metadata::Column::Bitfield - Bitfield column metadata.
 Objects of this class store and manipulate metadata for bitfield columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for parsing, formatting, and creating object methods that manipulate column values.
 
 This class inherits from L<Rose::DB::Object::Metadata::Column>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column> documentation for more information.
+
+B<Important note:> if you are using MySQL 5.0.3 or later, you I<must> L<allow inline column values|Rose::DB::Object::Metadata/allow_inline_column_values> in any L<Rose::DB::Object>-derived class that has one or more bitfield columns.  (That is, columns that use the C<BIT> data type.)  This requirement may be relaxed in the future.
 
 =head1 METHOD MAP
 
