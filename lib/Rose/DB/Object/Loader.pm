@@ -17,7 +17,7 @@ use Rose::DB::Object::Metadata::Util qw(perl_hashref);
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.63';
+our $VERSION = '0.66';
 
 use Rose::Object::MakeMethods::Generic
 (
@@ -36,13 +36,22 @@ use Rose::Object::MakeMethods::Generic
     'module_dir',
   ],
 
+  'scalar --get_set_init' =>
+  [
+    'with_relationships',
+  ],
+
   boolean => 
   [
     'using_default_base_class',
-    'include_views' => { default => 0 },
-    'with_managers' => { default => 1 },
+    'include_views'     => { default => 0 },
+    'with_managers'     => { default => 1 },
+    'with_foreign_keys' => { default => 1 },
+    'with_unique_keys'  => { default => 1 },
   ],
 );
+
+sub init_with_relationships { 1 }
 
 my $Base_Class_Counter = 1;
 
@@ -387,6 +396,8 @@ $hash
 EOF
 }
 
+sub default_pre_init_hook { }
+
 sub make_classes
 {
   my($self, %args) = @_;
@@ -394,11 +405,22 @@ sub make_classes
   my $extra_classes = delete $args{'extra_classes'};
   my $extra_info    = delete $args{'extra_info'};
 
+  my $db = delete $args{'db'};
+
   my $include_views = exists $args{'include_views'} ? 
     delete $args{'include_views'} : $self->include_views;
 
   my $with_managers = exists $args{'with_managers'} ? 
     delete $args{'with_managers'} : $self->with_managers;
+
+  $args{'with_relationships'} = $self->with_relationships
+    unless(exists $args{'with_relationships'});
+
+  $args{'with_foreign_keys'} = $self->with_foreign_keys
+    unless(exists $args{'with_foreign_keys'});
+
+  $args{'with_unique_keys'} = $self->with_unique_keys
+    unless(exists $args{'with_unique_keys'});
 
   my $pre_init_hook = exists $args{'pre_init_hook'} ? 
     delete $args{'pre_init_hook'} : $self->pre_init_hook;
@@ -433,11 +455,49 @@ sub make_classes
     };
   }
 
+  my $class_prefix =  exists $args{'class_prefix'} ? 
+    delete $args{'class_prefix'} : $self->class_prefix || '';
+
+  unless($class_prefix =~ /^(?:\w+::)*\w+(?:::)?$/)
+  {
+    croak "Illegal class prefix: $class_prefix";
+  }
+
+  $class_prefix .= '::'  unless($class_prefix =~ /::$/);
+
+  # When setting explicit values for attributes that cascade to
+  # affect other attributes, save off tehold values are restore
+  # them at the end.
+  my %save;
+
+  if(exists $args{'db_class'})
+  {
+    my $db_class = delete $args{'db_class'};
+
+    if($db && $db_class && $db_class ne $db->class)
+    {
+      Carp::croak "The db and db_class parameters conflict: ", $db->class,
+                  " vs. $db_class";
+    }
+
+    if(defined(my $db_class = $self->db_class))
+    {
+      $save{'db_class'} = $db_class;
+    }
+
+    if(defined(my $db = $self->db))
+    {
+      $save{'db'} = $db;
+    }
+
+    $self->db_class($db_class);
+  }    
+
   #
   # Get or create the db object
   #
 
-  my $db = $self->db;
+  $db ||= $self->db;
 
   my $db_class = $db ? $db->class : undef;
 
@@ -617,8 +677,6 @@ sub make_classes
     }
   }
 
-  my $class_prefix = $self->class_prefix || '';
-
   my $cm = $self->convention_manager or die "Missing convention manager";
 
   my @classes;
@@ -647,7 +705,21 @@ sub make_classes
 
     my $meta = $obj_class->meta;
 
-    $meta->pre_init_hook($pre_init_hook)  if($pre_init_hook);
+    if($pre_init_hook)
+    {
+      if(ref $pre_init_hook eq 'CODE')
+      {
+        $pre_init_hook = [ $pre_init_hook ];
+      }
+      elsif(ref $pre_init_hook ne 'ARRAY')
+      {
+        Carp::croak "Invalid pre_init_hook: $pre_init_hook";
+      }
+    }
+
+    unshift(@$pre_init_hook, sub { $self->default_pre_init_hook(@_) });
+
+    $meta->pre_init_hook($pre_init_hook);
 
     $meta->table($table);
     $meta->convention_manager($cm_class->new);
@@ -665,6 +737,14 @@ sub make_classes
   }
 
   $classes[0]->meta_class->clear_all_dbs  if(@classes);
+
+  if(%save)
+  {
+    while(my($method, $value) = each(%save))
+    {
+      $self->$method($value);
+    }
+  }
 
   return wantarray ? @classes : \@classes;
 }
@@ -926,6 +1006,14 @@ Automatically create L<Rose::DB::Object> and (optionally) L<Rose::DB::Object::Ma
 
 =over 4
 
+=item B<db [DB]>
+
+The L<Rose::DB>-derived object used to connect to the database.  This object will also be used as the prototype for the L<db|Rose::DB::Object/db> object used by each L<Rose::DB::Object> subclass created by this call to L<make_classes|/make_classes>.  Defaults to the value of the loader object's L<db|/db> attribute.
+
+=item B<db_class [CLASS]>
+
+The name of the L<Rose::DB>-derived class used to construct a L<db|/db> object if one has not been set via the parameter or object attribute of the same name.  Defaults to the value of the loader object's L<db_class|/db_class> attribute.
+
 =item B<include_tables REGEX>
 
 Table names that do not match REGEX will be skipped.  Defaults to the value of the loader object's L<include_tables|/include_tables> attribute.
@@ -944,9 +1032,13 @@ Defaults to the value of the loader object's L<filter_tables|/filter_tables> att
 
 If true, database views will also be processed.  Defaults to the value of the loader object's L<include_views|/include_views> attribute.
 
-=item B<pre_init_hook CODE>
+=item B<pre_init_hook [ CODEREF | ARRAYREF ]>
 
-A reference to a subroutine that will be called just before each L<Rose::DB::Object>-derived class is L<initialize|Rose::DB::Object::Metadata/initialize>ed.  The subroutine will be passed the class's L<metdata|Rose::DB::Object::Metadata> object as an argument.  Defaults to the value of the loader object's L<pre_init_hook|/pre_init_hook> attribute.
+A reference to a subroutine or a reference to an array of code references that will be called just before each L<Rose::DB::Object>-derived class is L<initialize|Rose::DB::Object::Metadata/initialize>ed.  Each referenced subroutine will be passed the class's L<metdata|Rose::DB::Object::Metadata> object plus any arguments to the L<initialize|Rose::DB::Object::Metadata/initialize> method.  Defaults to the value of the loader object's L<pre_init_hook|/pre_init_hook> attribute.
+
+=item B<with_foreign_keys BOOL>
+
+If true, set up foreign key metadata for each L<Rose::DB::Object>-derived.  Defaults to the value of the loader object's L<with_foreign_keys|/with_foreign_keys> attribute.
 
 =item B<with_managers BOOL>
 
@@ -955,6 +1047,14 @@ If true, create L<Rose::DB::Object::Manager|Rose::DB::Object::Manager>-derived m
 The manager class name is determined by passing the L<Rose::DB::Object>-derived class name to the L<generate_manager_class_name|/generate_manager_class_name> method.
 
 The L<Rose::DB::Object> subclass's L<metadata object|Rose::DB::Object::Metadata>'s L<make_manager_class|Rose::DB::Object::Metadata/make_manager_class> method will be used to create the manager class.  It will be passed the return value of the convention manager's L<auto_manager_base_name|Rose::DB::Object::ConventionManager/auto_manager_base_name> method as an argument.
+
+=item B<with_relationships [ BOOL | ARRAYREF ]>
+
+A boolean value or a reference to an array of relationship L<type|Rose::DB::Object::Metadata::Relationship/type> names.  If set to a simple boolean value, then all types of relationships will be considered when making classes.  If set to a list of relationship type names, then only relationships of those types will be considered.  Defaults to the value of the loader object's L<with_relationships|/with_relationships> attribute.
+
+=item B<with_unique_keys BOOL>
+
+If true, set up unique key metadata for each L<Rose::DB::Object>-derived.  Defaults to the value of the loader object's L<with_unique_keys|/with_unique_keys> attribute.
 
 =back
 
@@ -992,13 +1092,25 @@ Get or set the path to the directory where L<make_modules|/make_modules> will cr
 
 Get or set a reference to a subroutine to be called just before each L<Rose::DB::Object>-derived class is L<initialize|Rose::DB::Object::Metadata/initialize>ed within the L<make_classes|/make_classes> method.  The subroutine will be passed the class's L<metdata|Rose::DB::Object::Metadata> object as an argument.
 
-=item B<with_managers BOOL>
+=item B<with_foreign_keys BOOL>
+
+If true, the L<make_classes|/make_classes> method will set up foreign key metadata for each L<Rose::DB::Object>-derived class it creates.  Defaults to true.
+
+=item B<with_managers [BOOL]>
 
 If true, the L<make_classes|/make_classes> method will create L<Rose::DB::Object::Manager|Rose::DB::Object::Manager>-derived manager classes for each L<Rose::DB::Object> subclass by default.  Defaults to true.
 
 The manager class name is determined by passing the L<Rose::DB::Object>-derived class name to the L<generate_manager_class_name|/generate_manager_class_name> method.
 
 The L<Rose::DB::Object> subclass's L<metadata object|Rose::DB::Object::Metadata>'s L<make_manager_class|Rose::DB::Object::Metadata/make_manager_class> method will be used to create the manager class.  It will be passed the return value of the convention manager's L<auto_manager_base_name|Rose::DB::Object::ConventionManager/auto_manager_base_name> method as an argument.
+
+=item B<with_relationships [ BOOL | ARRAYREF ]>
+
+A boolean value or a reference to an array of relationship L<type|Rose::DB::Object::Metadata::Relationship/type> names.  If set to a simple boolean value, then the L<make_classes|/make_classes> method will consider all types of relationships when making classes.  If set to a list of relationship type names, then only relationships of those types will be considered by  L<make_classes|/make_classes>.  Defaults to true.
+
+=item B<with_unique_keys BOOL>
+
+If true, the L<make_classes|/make_classes> method will set up unique key metadata for each L<Rose::DB::Object>-derived class it creates.  Defaults to true.
 
 =back
 

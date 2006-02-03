@@ -782,8 +782,17 @@ sub get_objects
         my $ft_class = $rel->class 
           or Carp::confess "$class - Missing foreign object class for '$name'";
 
-        my $ft_columns = $rel->key_columns 
-          or Carp::confess "$class - Missing key columns for '$name'";
+        my $ft_columns = $rel->key_columns;
+
+        if(!$ft_columns && $rel_type ne 'one to many')
+        {
+          Carp::confess "$class - Missing key columns for '$name'";
+        }
+
+        if($rel_type eq 'one to many' && (my $query_args = $rel->query_args))
+        {
+          push(@{$args{'query'}}, @$query_args);
+        }
 
         my $ft_meta = $ft_class->meta; 
 
@@ -822,7 +831,7 @@ sub get_objects
                         "$class";
 
         # Reset each() iterator
-        keys(%$ft_columns);
+        #keys(%$ft_columns);
 
         my(@redundant, @redundant_null);
 
@@ -1072,7 +1081,7 @@ sub get_objects
                         "$class";
 
         # Reset each() iterator
-        keys(%$ft_columns);
+        #keys(%$ft_columns);
 
         # Add join condition(s)
         while(my($local_column, $foreign_column) = each(%$ft_columns))
@@ -1298,8 +1307,10 @@ sub get_objects
       # When selecting sub-objects via a "... to many" relationship, force
       # a sort by t1's primarky key unless sorting by some other column in
       # t1.  This is required to ensure that all result rows from each row
-      # in t1 are grouped together.
-      if($num_to_many_rels > 0)
+      # in t1 are grouped together.  But don't do it when we're selecting
+      # columns from just one table.  (Compare to 2 because the primary 
+      # table name and the "t1" alias are both always in the fetch list.)
+      if($num_to_many_rels > 0 && (!%fetch || (keys %fetch || 0) > 2))
       {
         my $do_prefix = 1;
 
@@ -1330,11 +1341,13 @@ sub get_objects
 
     $args{'sort_by'} = $sort_by;
   }
-  elsif($num_to_many_rels > 0)
+  elsif($num_to_many_rels > 0 && (!%fetch || (keys %fetch || 0) > 2))
   {
     # When selecting sub-objects via a "... to many" relationship, force a
     # sort by t1's primarky key to ensure that all result rows from each
-    # row in t1 are grouped together.
+    # row in t1 are grouped together.  But don't do it when we're selecting
+    # columns from just one table. (Compare to 2 because the primary table
+    # name and the "t1" alias are both always in the fetch list.)
     $args{'sort_by'} = [ join(', ', map { "t1.$_" } $meta->primary_key_column_names) ];
   }
 

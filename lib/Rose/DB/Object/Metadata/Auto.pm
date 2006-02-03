@@ -14,7 +14,7 @@ our $Debug;
 
 *Debug = \$Rose::DB::Object::Metadata::Debug;
 
-our $VERSION = '0.65';
+our $VERSION = '0.66';
 
 use Rose::Class::MakeMethods::Generic
 (
@@ -870,6 +870,8 @@ sub auto_init_unique_keys
 {
   my($self, %args) = @_;
 
+  return  if(exists $args{'with_unique_keys'} && !$args{'with_unique_keys'});
+
   my $pk_cols = join("\0", $self->primary_key_columns);
 
   unless(length $pk_cols)
@@ -909,6 +911,12 @@ sub auto_init_foreign_keys
 {
   my($self, %args) = @_;
 
+  if(exists $args{'with_foreign_keys'} && !$args{'with_foreign_keys'})
+  {
+    $self->initialized_foreign_keys(1);
+    return;
+  }
+
   my $auto_foreign_keys     = $self->auto_generate_foreign_keys(%args);
   my $existing_foreign_keys = $self->foreign_keys;
 
@@ -930,6 +938,8 @@ sub auto_init_foreign_keys
   {
     $self->foreign_keys(@$auto_foreign_keys);
   }
+
+  $self->initialized_foreign_keys(1);
 
   return;
 }
@@ -976,7 +986,6 @@ sub auto_init_relationships
 {
   my($self) = shift;
   my(%args) = @_;
-
 
   my $type_map  = $self->relationship_type_classes;
   my @all_types = keys %$type_map;
@@ -1233,6 +1242,6 @@ KNOWN BUGS:
 MySQL:
 
 CHAR(6) column shows up as VARCHAR(6)
-BIT(5)  column shows up as TINYINT(1)
+BIT(5)  column shows up as TINYINT(1) (MySQL 5.0.2 or earlier) 
 BOOLEAN column shows up as TINYINT(1)
 No native support for array types in MySQL

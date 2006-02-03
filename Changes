@@ -1,3 +1,14 @@
+0.66 (02.02.2006) - John Siracusa <siracusa@mindspring.com>
+
+    * Disabled implicit primary table sort clause in the Manager when 
+      only fetching rows from a single table.
+    * Allow multiple pre_init_hook()s in the loader and metadata object.
+    * Improved auto-initialization of many-to-many relationships.
+    * Added with_relationships, with_foreign_keys, with_unique_keys, db,
+      and db_class parameters to make_classes() and the loader object.
+    * Renamed some obscure convention manager methods and altered the
+      default behavior of the is_map_class() method slightly.
+
 0.65 (01.27.2006) - John Siracusa <siracusa@mindspring.com>
 
     * More MySQL 5 bitfield fixes.  (Reported by Svilen Ivanov)

@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Object;
 our @ISA = qw(Rose::DB::Object::Metadata::Object);
 
-our $VERSION = '0.60';
+our $VERSION = '0.66';
 
 our $Debug = 0;
 
@@ -192,14 +192,14 @@ sub is_map_class
 
   return 0  unless(UNIVERSAL::isa($class, 'Rose::DB::Object'));
 
-  my $is_map_table = $self->looks_like_map_table_name($class->meta->table);
-  my $is_map_class = $self->looks_like_map_class_name($class);
+  my $is_map_table = $self->looks_like_map_table($class->meta->table);
+  my $is_map_class = $self->looks_like_map_class($class);
 
   return 1  if($is_map_table && (!defined $is_map_class || $is_map_class));
   return 0;
 }
 
-sub looks_like_map_class_name
+sub looks_like_map_class
 {
   my($self, $class) = @_;
 
@@ -212,16 +212,18 @@ sub looks_like_map_class_name
   my @fks  = $meta->foreign_keys;
 
   return 1  if(@fks == 2);
-  return 0  if($meta->is_initialized && !$meta->has_deferred_foreign_keys);
+  return 0  if(($meta->is_initialized || $meta->initialized_foreign_keys) && 
+               !$meta->has_deferred_foreign_keys);
   return undef;
 }
 
-sub looks_like_map_table_name
+sub looks_like_map_table
 {
   my($self, $table) = @_;
 
   if($table =~ m{^(?:
                     (?:\w+_){2,}map             # foo_bar_map
+                  | (?:\w+_)*\w+_(?:\w+_)*\w+s  # foo_bars
                   | (?:\w+_)*\w+s_(?:\w+_)*\w+s # foos_bars
                )$}x)
   {
@@ -655,17 +657,17 @@ For example, the primary key column name in the C<products> table might be C<id>
 
 Examples: C<product_sku>, C<vendor_id>, C<employee_address_id>.
 
-=item B<"one to one" and "many to one" relationship names are singular.>
+=item B<One-to-one and many-to-one relationship names are singular.>
 
-Examples: C<product>, C<vendor>, C<code>.  These relationships may point to zero or one foreign object.  The default method names generated from such relationships are based on the relationship name, so singular names make the most sense.
+Examples: C<product>, C<vendor>, C<code>.  These relationships may point to zero or one foreign object.  The default method names generated from such relationships are based on the relationship names, so singular names make the most sense.
 
-=item B<"one to many" and "many to many" relationship names are plural.>
+=item B<One-to-many and many-to-many relationship names are plural.>
 
-Examples: C<colors>, C<prices>, C<customer_details>.  These relationships may point to more than one foreign object.  The default method names generated from such relationships are based on the relationship name, so plural names make the most sense.
+Examples: C<colors>, C<prices>, C<customer_details>.  These relationships may point to more than one foreign object.  The default method names generated from such relationships are based on the relationship names, so plural names make the most sense.
 
-=item B<Mapping tables and their associated classes that participate in "many to many" relationships are named according a formula that combines the names of the two classes/tables that are being linked.>
+=item B<Mapping tables and their associated classes that participate in many-to-many relationships are named according a formula that combines the names of the two classes/tables that are being linked.>
 
-See the L<auto_relationship|/auto_relationship>, L<looks_like_map_class_name|/looks_like_map_class_name>, and L<looks_like_map_table_name|/looks_like_map_table_name> documentation for all the details. 
+See the L<auto_relationship|/auto_relationship>, L<looks_like_map_class|/looks_like_map_class>, and L<looks_like_map_table|/looks_like_map_table> documentation for all the details. 
 
 =back
 
@@ -885,17 +887,17 @@ Examples:
 
 Returns true if CLASS is a L<map class|Rose::DB::Object::Metadata::Relationship::ManyToMany/map_class> used as part of a L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany> relationship, false if it does not.
 
-The default implementations returns true if CLASS is derived from L<Rose::DB::Object> and its L<table|Rose::DB::Object::Metadata/table> name looks like a map table name according to the L<looks_like_map_table_name|/looks_like_map_table_name> method and the L<looks_like_map_class_name|/looks_like_map_class_name> method returns either true or undef.
+The default implementations returns true if CLASS is derived from L<Rose::DB::Object> and its L<table|Rose::DB::Object::Metadata/table> name looks like a map table name according to the L<looks_like_map_table|/looks_like_map_table> method and the L<looks_like_map_class|/looks_like_map_class> method returns either true or undef.
 
 Override this method to control which classes are considered map classes.  Note that it may be called several times on the same class at various stages of that class's construction.
 
-=item B<looks_like_map_class_name CLASS>
+=item B<looks_like_map_class CLASS>
 
 Given the class name CLASS, returns true if it looks like the name of a L<map class|Rose::DB::Object::Metadata::Relationship::ManyToMany/map_class> used as part of a L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany> relationship, false (but defined) if it does not, and undef if it's unsure.
 
-The default implementation returns true if CLASS is derived from L<Rose::DB::Object> and has exactly two foreign keys.  It returns false (but defined) if CLASS is derived from L<Rose::DB::Object> and has been L<initialized|Rose::DB::Object/initialize>, but does not have exactly two foreign keys.  It returns undef otherwise.
+The default implementation returns true if CLASS is derived from L<Rose::DB::Object> and has exactly two foreign keys.  It returns false (but defined) if CLASS is derived from L<Rose::DB::Object> and has been L<initialized|Rose::DB::Object/initialize> (or if the foreign keys have been L<auto-initialized|Rose::DB::Object/auto_init_foreign_keys>) and the CLASS has no deferred foreign keys.  It returns undef otherwise.
 
-=item B<looks_like_map_table_name TABLE>
+=item B<looks_like_map_table TABLE>
 
 Returns true if TABLE looks like the name of a mapping table used as part of a L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany> relationship, false (but defined) if it does not, and undef if it's unsure.
 
@@ -904,6 +906,7 @@ The default implementation returns true if TABLE is in one of these forms:
     Regex                     Examples
     -----------------------   -----------------------------
     (\w+_){2,}map             pig_toe_map, pig_skin_toe_map
+    (\w+_)*\w+_(\w+_)*\w+s    pig_toes, pig_skin_toe_jams
     (\w+_)*\w+s_(\w+_)*\w+s   pigs_toes, pig_skins_toe_jams
 
 It returns false otherwise.
@@ -1257,14 +1260,9 @@ Using L<Rose::DB::Object>'s L<auto-initialization|Rose::DB::Object::Metadata/"AU
 
   package My::Auto::Product;
   use base 'My::Object';
-  __PACKAGE__->meta->relationships
-  (
-    prices => 'one to many',
-    colors => 'many to many',
-  );
   __PACKAGE__->meta->auto_initialize;
 
-Not a single table, column, or foreign key name is specified, and the "one to many" and "many to many" relationships in the C<My::Auto::Product> class have no information other than their names.  Yet everything still works:
+Not a single table, column, foreign key, or relationship is specified, yet everything still works:
 
   $p = My::Auto::Product->new(id => 1)->load;
 
@@ -1276,7 +1274,9 @@ Not a single table, column, or foreign key name is specified, and the "one to ma
   # "red, green"
   print join(', ', map { $_->name } $p->colors), "\n";
 
-I don't recommend this kind of extreme approach, but it is an effective demonstration of the power of the convention manager.
+More precisely, everything still works I<provided> that you load all the of the related modules.  For example, if you don't load C<My::Auto::Product> but don't load C<My::Auto::Price> (either from within the C<My::Auto::Product> class or in your program itself), then the C<My::Auto::Product> will not have a C<prices()> method (since your program will have no knowledge of the C<My::Auto::Price> class).  Use the L<loader|Rose::DB::Object::Loader> if you want to set up a bunch of related classes automatically without worrying about this kind of thing.
+
+Anyway, I don't recommend this kind of extreme approach, but it is an effective demonstration of the power of the convention manager.
 
 =head1 AUTHOR
 
