@@ -14,7 +14,7 @@ use Rose::DB::Object::Constants qw(PRIVATE_PREFIX STATE_LOADING STATE_IN_DB);
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.63';
+our $VERSION = '0.67';
 
 our $Debug = 0;
 
@@ -75,27 +75,11 @@ sub handle_error
   return 1;
 }
 
-use constant MAP_RECORD_ATTR   => PRIVATE_PREFIX . '_map_record';
+# XXX: These are duplicated from ManyToMany.pm because I don't want to use()
+# XXX: that module from here if I don't have to.  Lazy or foolish?  Hm.
+# XXX: Anyway, make sure they stay in sync!
 use constant MAP_RECORD_METHOD => 'map_record';
 use constant DEFAULT_REL_KEY   => PRIVATE_PREFIX . '_default_rel_key';
-
-MAKE_MAP_RECORD_METHOD:
-{
-  my $counter = 1;
-
-  sub make_map_record_method
-  {
-    my($key) = shift || $counter++;
-
-    $key = MAP_RECORD_ATTR . '_' . $key;
-
-    return sub 
-    {
-      return $_[0]->{$key} = $_[1]  if(@_ > 1);
-      return shift->{$key};
-    }
-  }
-}
 
 sub object_class { }
 
@@ -354,7 +338,7 @@ sub get_objects
   {
     unless(ref $with_map_records)
     {
-      if($with_map_records =~ /^[A-Za-z]\w*$/)
+      if($with_map_records =~ /^[A-Za-z_]\w*$/)
       {
         $with_map_records = { DEFAULT_REL_KEY() => $with_map_records };
       }
@@ -936,12 +920,13 @@ sub get_objects
         my $rel_mgr_args = $rel->manager_args || {};
 
         my $map_record_method;
+        my $rel_map_record_method = $rel->map_record_method;
 
         if(my $rel_with_map_records = $rel_mgr_args->{'with_map_records'})
         {
           $map_record_method =
             ($with_map_records && exists $with_map_records->{$name}) ? $with_map_records->{$name} :
-            ($rel_with_map_records eq '1') ? MAP_RECORD_METHOD : $rel_with_map_records;
+            $rel_map_record_method ? $rel_map_record_method : MAP_RECORD_METHOD;
         }
         elsif($with_map_records)
         {
@@ -995,7 +980,8 @@ sub get_objects
           unless($ft_class->can($map_record_method))
           {
             no strict 'refs';
-            *{"${ft_class}::$map_record_method"} = make_map_record_method();
+            *{"${ft_class}::$map_record_method"} = 
+              Rose::DB::Object::Metadata::Relationship::ManyToMany::make_map_record_method($map_class);
           }
         }
 
