@@ -10,13 +10,13 @@ our @ISA = qw(Rose::DB::Object::Metadata::Relationship);
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.65';
+our $VERSION = '0.68';
 
 __PACKAGE__->default_auto_method_types(qw(get_set_on_save delete_on_save));
 
 __PACKAGE__->add_common_method_maker_argument_names
 (
-  qw(class share_db key_columns)
+  qw(class share_db key_columns referential_integrity)
 );
 
 use Rose::Object::MakeMethods::Generic
@@ -24,6 +24,7 @@ use Rose::Object::MakeMethods::Generic
   boolean =>
   [
     '_share_db' => { default => 1 },
+    'referential_integrity' => { default => 1 },
   ],
 
   hash =>
@@ -145,7 +146,8 @@ sub id
   my $column_map = $self->column_map;
 
   return $self->parent->class . ' ' .   $self->class . ' ' . 
-    join("\0", map { join("\1", lc $_, lc $column_map->{$_}) } sort keys %$column_map);
+    join("\0", map { join("\1", lc $_, lc $column_map->{$_}) } sort keys %$column_map) .
+    join("\0", map { $_ . '=' . ($self->$_() || 0) } qw(referential_integrity));
 }
 
 sub build_method_name_for_type
@@ -162,6 +164,18 @@ sub build_method_name_for_type
   }
 
   return undef;
+}
+
+sub soft 
+{
+  my($self) = shift;
+  
+  if(@_)
+  {
+    $self->referential_integrity(!$_[0]);
+  }
+
+  return ! $self->referential_integrity;
 }
 
 1;
@@ -251,6 +265,14 @@ If passed a local column name LOCAL, return the corresponding column name in the
 =item B<column_map [HASH | HASHREF]>
 
 Get or set a reference to a hash that maps local column names to foreign column names.
+
+=item B<referential_integrity [BOOL]>
+
+Get or set the boolean value that determines what happens when the columns in the L<column_map|/column_map> have L<defined|perlfunc/defined> values, but the object they point to is not found.  If true, a fatal error will occur.  If false, then the methods that service this relationship will simply return undef.  The default is true.
+
+=item B<soft [BOOL]>
+
+This method is the mirror image of the L<referential_integrity|/referential_integrity> method.   Passing a true is the same thing as setting L<referential_integrity|/referential_integrity> to false, and vice versa.  Similarly, the return value is the logical negation of L<referential_integrity|/referential_integrity>.
 
 =item B<type>
 

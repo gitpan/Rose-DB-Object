@@ -19,7 +19,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.66';
+our $VERSION = '0.68';
 
 our $Debug = 0;
 
@@ -52,6 +52,7 @@ use Rose::Object::MakeMethods::Generic
     allow_auto_initialization  => { default => 0 },
     was_auto_initialized       => { default => 0 },
     initialized_foreign_keys   => { default => 0 },
+    default_load_speculative   => { default => 0 },
   ],
 
   array =>
@@ -72,7 +73,7 @@ use Rose::Class::MakeMethods::Generic
   [
     column_type_classes => { interface => 'get_set_all' },
     _column_type_class   => { interface => 'get_set', hash_key => 'column_type_classes' },
-    delete_column_type_class => { interface => 'delete', hash_key => 'column_type_classes' },
+    _delete_column_type_class => { interface => 'delete', hash_key => 'column_type_classes' },
 
     auto_helper_classes      => { interface => 'get_set_all' },
     delete_auto_helper_class => { interface => 'delete', hash_key => 'auto_helper_classes' },
@@ -1023,6 +1024,12 @@ sub column_type_class
 {
   my($class, $type) = (shift, shift);
   return $class->_column_type_class(lc $type, @_) 
+}
+
+sub delete_column_type_class 
+{
+  my($class, $type) = (shift, shift);
+  return $class->_delete_column_type_class(lc $type, @_) 
 }
 
 sub load_relationship_class
@@ -3265,10 +3272,6 @@ First, auto-initialization cannot generate information that exists only in the m
 
 For example, if a foreign key constraint does not exist, the relationship between rows in two different tables cannot be extracted from the database, and therefore cannot be auto-initialized.
 
-Similarly, in the L<synopsis|/SYNOPSIS> above, the "one to many" relationship between the C<Product> and C<Price> classes cannot be auto-initialized because it lacks an unambiguous analog within the database.  Even assuming that the "prices" table (fronted by the C<Price>) class has a foreign key that points to the "products" table, the lack of a corresponding foreign key in the "products" table that points back to the "prices" table does not necessarily mean that the relationship is "one product to many prices."  It could be that the relationship is really "one product to one price" and the foreign key constraint was omitted from the "products" table for performance reasons (to give just one example).
-
-As it turns out, the relationship really is "one product to many prices", but this is something that only the programmer knows for sure.  Therefore, this information must be specified manually, as shown near the bottom of the L<synopsis|/SYNOPSIS>.
-
 Even within the realm of information that, by all rights, should be available in the database, there are limitations.  Although there is a handy L<DBI> API for extracting metadata from databases, unfortunately, very few DBI drivers support it fully.  Some don't support it at all.  In almost all cases, some manual work is required to (often painfully) extract information from the database's "system tables" or "catalog."
 
 More troublingly, databases do not always provide all the metadata that a human could extract from the series of SQL statement that created the table in the first place.  Sometimes, the information just isn't in the database to be extracted, having been lost in the process of table creation.  Here's just one example.  Consider this MySQL table definition:
@@ -3892,6 +3895,10 @@ See the L<Rose::DB::Object::ConventionManager> documentation for more informatio
 
 Returns the L<Rose::DB>-derived object associated with this metadata object's L<class|/class>.  A fatal error will occur if L<class|/class> is undefined or if the L<Rose::DB> object could not be created.
 
+=item B<default_load_speculative [BOOL]>
+
+Get or set a boolean value that indicates whether or not the L<class|/class> associated with this metadata object will L<load|Rose::DB::Object/load> speculatively by default.  See the documentation for L<Rose::DB::Object>'s L<load()|Rose::DB::Object/load> method for details.  The default value is false.
+
 =item B<delete_column NAME>
 
 Delete the column named NAME.
@@ -4350,6 +4357,18 @@ This is an alias for the C<relationship_types> parameter.
 This is the same as the C<relationship_types> parameter except that it also accepts a boolean value.  If true, then relationships of L<all types|/relationship_type_classes> will be created.  If false, then none will be created.
 
 =back
+
+Assume that this L<class|/class> is called C<Local> and any hypothetical foreign class is called C<Remote>.  Relationships are auto-generated according to the following rules.
+
+=over 4
+
+=item * A L<one-to-many|Rose::DB::Object::Metadata::Relationship::OneToMany> relationship is created between C<Local> and C<Remote> if C<Remote> has a foreign key that points to C<Local>.  This is not done, however, if C<Local> has a L<one-to-one|Rose::DB::Object::Metadata::Relationship::OneToOne> relationship pointing to C<Remote> that references the same columns as the foreign key in C<Remote> that points to C<Local>, or if C<Local> is a map class (according to the L<convention manager|/convention_manager>'s L<is_map_class|Rose::DB::Object::ConventionManager/is_map_class> method).  The relationship name is generated by the L<convention manager|/convention_manager>'s L<auto_relationship_name_one_to_many|Rose::DB::Object::ConventionManager/auto_relationship_name_one_to_many> method.
+
+=item * A L<many-to-many|Rose::DB::Object::Metadata::Relationship::ManyToMany> relationship is created between C<Local> and C<Remote> if there exists a L<map class|Rose::DB::Object::Metadata::Relationship::ManyToMany/map_class> (according to the convention manager's L<is_map_class|Rose::DB::Object::ConventionManager/is_map_class> method) with exactly two foreign keys, one pointing to L<Local> and on pointing to C<Remote>.  The relationship name is generated by creating a L<plural|Rose::DB::Object::ConventionManager/singular_to_plural> version of the name of the foreign key in the map class that points to C<Remote>.
+
+=back
+
+In all cases, if there is an existing, semantically identical relationship, then a new relationship is not auto-generated.  Similarly, any existing methods with the same names are not overridden by methods associated with auto-generated relationships.
 
 =item B<auto_init_unique_keys [PARAMS]>
 

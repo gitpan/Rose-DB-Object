@@ -9,7 +9,7 @@ use Rose::DB::Object::Metadata::Util qw(:all);
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.65';
+our $VERSION = '0.68';
 
 our $Debug = 0;
 
@@ -25,7 +25,7 @@ __PACKAGE__->default_auto_method_types(qw(get_set_on_save delete_on_save));
 
 __PACKAGE__->add_common_method_maker_argument_names
 (
-  qw(hash_key share_db class key_columns foreign_key)
+  qw(hash_key share_db class key_columns foreign_key referential_integrity)
 );
 
 use Rose::Object::MakeMethods::Generic
@@ -33,6 +33,7 @@ use Rose::Object::MakeMethods::Generic
   boolean =>
   [
     'share_db' => { default => 1 },
+    'referential_integrity' => { default => 1 },
   ],
 
   scalar => 'deferred_make_method_args',
@@ -102,6 +103,18 @@ sub foreign_key { $_[0] }
 
 sub type { 'foreign key' }
 
+sub soft 
+{
+  my($self) = shift;
+  
+  if(@_)
+  {
+    $self->referential_integrity(!$_[0]);
+  }
+
+  return ! $self->referential_integrity;
+}
+
 sub is_required
 {
   my($self) = shift;
@@ -159,7 +172,8 @@ sub id
   my $key_columns = $self->key_columns;
 
   return $self->parent->class . ' ' . $self->class . ' ' . 
-    join("\0", map { join("\1", lc $_, lc $key_columns->{$_}) } sort keys %$key_columns);
+    join("\0", map { join("\1", lc $_, lc $key_columns->{$_}) } sort keys %$key_columns) . 
+    join("\0", map { $_ . '=' . ($self->$_() || 0) } qw(referential_integrity));
 }
 
 sub sanity_check
@@ -485,6 +499,10 @@ This method is an alias for the L<auto_method_types|/auto_method_types> method.
 
 Get or set the name of the foreign key.  This name must be unique among all other foreign keys for a given L<Rose::DB::Object>-derived class.
 
+=item B<referential_integrity [BOOL]>
+
+Get or set the boolean value that determines what happens when the L<key columns|/key_columns> have L<defined|perlfunc/defined> values, but the object they point to is not found.  If true, a fatal error will occur.  If false, then the methods that service this foreign key will simply return undef.  The default is true.
+
 =item B<rel_type [TYPE]>
 
 This method is an alias for the L<relationship_type|/relationship_type> method described below.
@@ -496,6 +514,10 @@ Get or set the relationship type represented by this foreign key.  Valid values 
 =item B<share_db [BOOL]>
 
 Get or set the boolean flag that determines whether the L<db|Rose::DB::Object/db> attribute of the current object is shared with the foreign object to be fetched.  The default value is true.
+
+=item B<soft [BOOL]>
+
+This method is the mirror image of the L<referential_integrity|/referential_integrity> method.   Passing a true is the same thing as setting L<referential_integrity|/referential_integrity> to false, and vice versa.  Similarly, the return value is the logical negation of L<referential_integrity|/referential_integrity>.
 
 =item B<type>
 
