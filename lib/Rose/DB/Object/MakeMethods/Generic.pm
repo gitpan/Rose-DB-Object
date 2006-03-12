@@ -1420,7 +1420,7 @@ sub object_by_key
       if($referential_integrity)
       {
         eval { $ret = $obj->load };
-  
+
         if($@ || !$ret)
         {
           $self->error("Could not load $fk_class with key ", 
@@ -1583,7 +1583,7 @@ sub object_by_key
       if($referential_integrity)
       {
         eval { $ret = $obj->load };
-  
+
         if($@ || !$ret)
         {
           $self->error("Could not load $fk_class with key ", 
@@ -2840,7 +2840,7 @@ sub objects_by_map
       }
     }
   }
-  
+
   if($map_record_method && !$map_to_class->can($map_record_method))
   {
     require Rose::DB::Object::Metadata::Relationship::ManyToMany;
@@ -5624,6 +5624,6 @@ John C. Siracusa (siracusa@mindspring.com)
 
 =head1 COPYRIGHT
 
-Copyright (c) 2005 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2006 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

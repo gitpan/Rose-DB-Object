@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.68';
+our $VERSION = '0.69';
 
 our $Debug = 0;
 
@@ -446,6 +446,11 @@ sub _build_clause
 {
   my($dbh, $field, $op, $vals, $not, $field_mod, $bind, $db, $col_meta,
      $force_inline, $set) = @_;
+
+  #if(ref $vals eq 'ARRAY' && @$vals == 1)
+  #{
+  #  $vals = $vals->[0];
+  #}
 
   if(ref $vals eq 'SCALAR')
   {
@@ -1006,8 +1011,6 @@ Array operations:
     # NOT(A = ANY(COLUMN) AND B = ANY(COLUMN))
     '!NAME' => { all_in_array => [ 'A', 'B'] } 
 
-The string "NAME" can take many forms, each of which eventually resolves to a database column (COLUMN in the examples above).
-
 Any of these operations described above can have "_sql" appended to indicate that the corresponding values are to be "inlined" (i.e., included in the SQL query as-is, with no quoting of any kind).  This is useful for comparing two columns.  For example, this query:
 
     query => [ legs => { gt_sql => 'eyes' } ]
@@ -1016,7 +1019,9 @@ would produce this SQL:
 
     SELECT ... FROM animals WHERE legs > eyes
 
-where "legs" and "eyes" are both column names in the "animals" table.
+where "legs" and "eyes" are both left unquoted.
+
+The string "NAME" can take many forms, each of which eventually resolves to a database column (COLUMN in the examples above).
 
 =over 4
 
@@ -1268,6 +1273,6 @@ John C. Siracusa (siracusa@mindspring.com)
 
 =head1 COPYRIGHT
 
-Copyright (c) 2005 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2006 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.
