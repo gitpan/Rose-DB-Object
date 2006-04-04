@@ -19,7 +19,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Column::Scalar;
 use Rose::DB::Object::Metadata::Relationship::OneToOne;
 
-our $VERSION = '0.68';
+our $VERSION = '0.70';
 
 our $Debug = 0;
 
@@ -133,6 +133,8 @@ __PACKAGE__->column_type_classes
   'tinyint'   => 'Rose::DB::Object::Metadata::Column::Integer',
   'smallint'  => 'Rose::DB::Object::Metadata::Column::Integer',
 
+  'bigint'    => 'Rose::DB::Object::Metadata::Column::BigInt',
+
   'serial'    => 'Rose::DB::Object::Metadata::Column::Serial',
   'bigserial' => 'Rose::DB::Object::Metadata::Column::BigSerial',
 
@@ -142,6 +144,8 @@ __PACKAGE__->column_type_classes
   'numeric'   => 'Rose::DB::Object::Metadata::Column::Numeric',
   'decimal'   => 'Rose::DB::Object::Metadata::Column::Numeric',
   'float'     => 'Rose::DB::Object::Metadata::Column::Float',
+
+  'interval'  => 'Rose::DB::Object::Metadata::Column::Interval',
 
   'date'      => 'Rose::DB::Object::Metadata::Column::Date',
   'datetime'  => 'Rose::DB::Object::Metadata::Column::Datetime',
@@ -159,6 +163,9 @@ __PACKAGE__->column_type_classes
 
   'datetime year to second' => 'Rose::DB::Object::Metadata::Column::DatetimeYearToSecond',
   'datetime year to minute' => 'Rose::DB::Object::Metadata::Column::DatetimeYearToMinute',
+
+  'epoch'       => 'Rose::DB::Object::Metadata::Column::Epoch',
+  'epoch hires' => 'Rose::DB::Object::Metadata::Column::Epoch::HiRes',
 
   'array'     => 'Rose::DB::Object::Metadata::Column::Array',
   'set'       => 'Rose::DB::Object::Metadata::Column::Set',
@@ -3408,6 +3415,8 @@ The default mapping of type names to class names is:
   decimal   => Rose::DB::Object::Metadata::Column::Numeric
   float     => Rose::DB::Object::Metadata::Column::Float
 
+  interval  => Rose::DB::Object::Metadata::Column::Interval
+
   date      => Rose::DB::Object::Metadata::Column::Date
   datetime  => Rose::DB::Object::Metadata::Column::Datetime
   timestamp => Rose::DB::Object::Metadata::Column::Timestamp
@@ -3441,6 +3450,9 @@ The default mapping of type names to class names is:
 
   'datetime year to minute' =>
     Rose::DB::Object::Metadata::Column::DatetimeYearToMinute
+
+  'epoch'       => Rose::DB::Object::Metadata::Column::Epoch
+  'epoch hires' => Rose::DB::Object::Metadata::Column::Epoch::HiRes
 
   array     => Rose::DB::Object::Metadata::Column::Array
   set       => Rose::DB::Object::Metadata::Column::Set
