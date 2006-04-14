@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util qw(row_id lazy_column_values_loaded_key);
 
-our $VERSION = '0.701';
+our $VERSION = '0.71';
 
 our $Debug = 0;
 
@@ -266,6 +266,8 @@ sub load
                    join(', ', @key_columns) . ' = ' . join(', ', @key_values));
       $self->{'not_found'} = 1;
 
+      $self->{STATE_IN_DB()} = 0;
+
       my $speculative = 
         exists $args{'speculative'} ? $args{'speculative'} :     
         $meta->default_load_speculative;
@@ -368,6 +370,7 @@ sub load
       $self->error("No such " . ref($self) . ' where ' . 
                    join(', ', @key_columns) . ' = ' . join(', ', @key_values));
       $self->{'not_found'} = 1;
+      $self->{STATE_IN_DB()} = 0;
     }
   };
 
