@@ -12,7 +12,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 
 use Rose::DB::Object::Constants qw(PRIVATE_PREFIX);
 
-our $VERSION = '0.57';
+our $VERSION = '0.711';
 
 our $Debug = 0;
 
@@ -103,11 +103,12 @@ MAKE_MAP_RECORD_METHOD:
 
   sub make_map_record_method
   {
-    my($map_class) = shift;
+    my($map_to_class, $map_record_method, $map_class) = @_;
 
     my $key = MAP_RECORD_ATTR . '_' . $counter++;
 
-    return sub 
+    no strict 'refs';
+    *{"${map_to_class}::$map_record_method"} = sub 
     {
       my($self) = shift;
 
@@ -128,7 +129,11 @@ MAKE_MAP_RECORD_METHOD:
       }
 
       return $self->{$key} ||= $map_class->new;
-    }
+    };
+
+    $map_to_class->meta->map_record_method_key($map_record_method => $key);
+
+    return $key;
   }
 }
 
