@@ -206,12 +206,12 @@ sub init_original_class { ref shift }
 sub reset
 {
   my($self) = shift;
-  
+
   $self->is_initialized(0);
   $self->allow_auto_initialization(0);
   $self->was_auto_initialized(0);
   $self->initialized_foreign_keys(0);
-  
+
   return;
 }
 
@@ -227,7 +227,7 @@ sub clone
 
   # The hard way: Clone.pm plus mucking  
   my $meta = Clone::clone($self);
-  
+
   # Reset all the parent back-links
   foreach my $item (grep { defined } $meta->columns, $meta->primary_key, 
                     $meta->unique_keys, $meta->foreign_keys, 
@@ -2392,9 +2392,6 @@ sub select_columns_sql
 
   return wantarray ? @$list : $list;
 }
-
-
-
 
 sub method_column
 {
