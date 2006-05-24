@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util qw(row_id lazy_column_values_loaded_key);
 
-our $VERSION = '0.726';
+our $VERSION = '0.727';
 
 our $Debug = 0;
 
@@ -1736,7 +1736,7 @@ B<SUBCLASS NOTE:> If you are going to override the L<load|/load> method in your 
     # calling the base class version of the method.
     sub load
     {
-      my $self = $_[0]; # Copy, no shift
+      my $self = $_[0]; # Copy, not shift
 
       ... # Do your stuff
 
@@ -1928,6 +1928,10 @@ L<http://lists.sourceforge.net/lists/listinfo/rose-db-object>
 Although the mailing list is the preferred support mechanism, you can also email the author (see below) or file bugs using the CPAN bug tracking system:
 
 L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object>
+
+=head1 CONTRIBUTORS
+
+Cees Hek
 
 =head1 AUTHOR
 

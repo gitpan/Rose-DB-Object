@@ -14,7 +14,7 @@ our $Debug;
 
 *Debug = \$Rose::DB::Object::Metadata::Debug;
 
-our $VERSION = '0.725';
+our $VERSION = '0.727';
 
 use Rose::Class::MakeMethods::Generic
 (
@@ -846,7 +846,7 @@ sub perl_class_definition
 
   if(%use)
   {
-    $foreign_modules = "\n" . join("\n", map { "use $_;"} sort keys %use);
+    $foreign_modules = "\n\n" . join("\n", map { "use $_;"} sort keys %use);
   }
 
   return<<"EOF";
@@ -854,8 +854,7 @@ package $class;
 
 use strict;
 
-use base qw(@$isa);
-$foreign_modules
+use base qw(@$isa);$foreign_modules
 
 __PACKAGE__->meta->table('@{[ $self->table ]}');
 
