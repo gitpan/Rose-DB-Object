@@ -241,12 +241,12 @@ sub is_ready_to_make_methods
                         "class $target_class.  Please specify one by name ",
                         "with a 'local' parameter in the 'map' hash";
           }
-  
+
           $map_from = $local_rel = $item->name;
-  
+
           my $map_columns = 
             $item->can('column_map') ? $item->column_map : $item->key_columns;
-  
+
           # "local" and "foreign" here are relative to the *mapper* class
           while(my($local_column, $foreign_column) = each(%$map_columns))
           {
@@ -293,7 +293,7 @@ sub is_ready_to_make_methods
 
           my $foreign_method = $map_to_meta->column_accessor_method_name($foreign_column)
             or Carp::croak "Missing accessor method for column '$foreign_column'", 
-                           " in class ", $map_to_class->class;
+                           " in class ", $map_to_meta->class;
 
           # local           foreign
           # Map:color_id => Color:id
