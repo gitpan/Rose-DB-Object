@@ -2013,6 +2013,7 @@ sub get_objects
         $sth->finish      if($sth);
         $db->release_dbh  if($db && $dbh_retained);
         $sth = undef;
+        $db = undef;
       });
 
       return $iterator;

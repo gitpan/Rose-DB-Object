@@ -230,6 +230,7 @@ sub type   { 'scalar' }
 sub column { $_[0] }
 
 sub should_inline_value { 0 }
+sub inline_value_sql { $_[1] }
 
 sub name
 {
@@ -253,7 +254,7 @@ sub name_sql
 
   if(my $db = shift)
   {
-    return $self->{'name_sql'}{$db->{'driver'}} ||= $db->quote_column_name($self->{'name'});
+    return $self->{'name_sql'}{$db->{'driver'}} ||= $db->auto_quote_column_name($self->{'name'});
   }
   else
   {
@@ -261,21 +262,20 @@ sub name_sql
   }
 }
 
+# XXX: Still need a way to format `table`.`column`
 sub select_sql
 {
-  my($self) = shift;
-
-  # Optional args: db, table alias
-
-  if(my $db = shift)
+  my($self, $db, $table) = @_;
+  
+  if($db)
   {
-    if(@_) # table alias arg too
+    if(defined $table)
     {
-      return "$_[0]." . $db->quote_column_name($self->{'name'});
+      $db->auto_quote_column_with_table($self->{'name'}, $table);
     }
     else
     {
-      return $self->{'select_sql'}{$db->{'driver'}} ||= $db->quote_column_name($self->{'name'});
+      return $self->{'select_sql'}{$db->{'driver'}} ||= $db->auto_quote_column_name($self->{'name'});
     }
   }
   else
@@ -283,6 +283,10 @@ sub select_sql
     return $self->{'name'};
   }
 }
+
+sub insert_placeholder_sql { '?' }
+sub update_placeholder_sql { '?' }
+sub query_placeholder_sql  { '?' }
 
 # sub dbi_data_type { () }
 
