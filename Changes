@@ -1,3 +1,14 @@
+0.74 (06.30.2006) - John Siracusa <siracusa@mindspring.com>
+
+    * Added the Time column type.
+    * Added support for the changes_only parameter to the insert() method.
+    * Documented the manager_base_class(es) Loader methods.
+    * Fixed a bug that caused the Loader to refuse to use empty or 
+      undefined class_prefix values.
+    * Fixed a bug that prevented auto_* methods names from working in
+      calls to the setup() method.
+    * Removed redundant @ISA declaration from generated Manager classes.
+
 0.731 (06.12.2006) - John Siracusa <siracusa@mindspring.com>
 
     * Fixed a database handle leak in the get_objects_iterator() method.
