@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util qw(row_id lazy_column_values_loaded_key);
 
-our $VERSION = '0.741';
+our $VERSION = '0.742';
 
 our $Debug = 0;
 
@@ -606,18 +606,18 @@ sub update
       #my($sql, $bind) = 
       #  $meta->update_sql_with_inlining($self, \@key_columns, \@key_values);
 
-      my($sql, $bind);
+      my($sql, $bind, $bind_params);
 
       if($changes_only)
       {
         # No changes to save...
         return $self || 1  unless(%{$self->{MODIFIED_COLUMNS() || {}}});
-        ($sql, $bind) =
+        ($sql, $bind, $bind_params) =
           $meta->update_changes_only_sql_with_inlining($self, \@key_columns);
       }
       else
       {
-        ($sql, $bind) = $meta->update_sql_with_inlining($self, \@key_columns);
+        ($sql, $bind, $bind_params) = $meta->update_sql_with_inlining($self, \@key_columns);
       }
 
       if($Debug)
@@ -627,7 +627,31 @@ sub update
       }
 
       $sth = $dbh->prepare($sql); #, $meta->prepare_update_options);
-      $sth->execute(@$bind, @key_values);
+
+      if($bind_params)
+      {
+        my $i = 1;
+
+        foreach my $value (@$bind)
+        {
+          $sth->bind_param($i, $value, $bind_params->[$i - 1]);
+          $i++;
+        }
+
+        my $kv_idx = 0;
+
+        foreach my $column_name (@key_columns)
+        {
+          my $column = $meta->column($column_name);
+          $sth->bind_param($i++, $key_values[$kv_idx++], $column->dbi_bind_param_attrs($db));
+        }
+
+        $sth->execute;
+      }
+      else
+      {
+        $sth->execute(@$bind, @key_values);
+      }
     }
     else
     {
@@ -636,7 +660,7 @@ sub update
         # No changes to save...
         return $self || 1  unless(%{$self->{MODIFIED_COLUMNS() || {}}});
 
-        my($sql, $bind) = $meta->update_changes_only_sql($self, \@key_columns, $db);
+        my($sql, $bind, $columns) = $meta->update_changes_only_sql($self, \@key_columns, $db);
 
         # $meta->prepare_update_options (defunct)
         my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
@@ -648,7 +672,30 @@ sub update
           warn "$sql - bind params: ", join(', ', @$bind, @key_values), "\n";
         }
 
-        $sth->execute(@$bind, @key_values);
+        if($meta->dbi_requires_bind_param($db))
+        {
+          my $i = 1;
+
+          foreach my $column (@$columns)
+          {
+            my $method = $column->accessor_method_name;
+            $sth->bind_param($i++,  $self->$method(), $column->dbi_bind_param_attrs($db));
+          }
+
+          my $kv_idx = 0;
+
+          foreach my $column_name (@key_columns)
+          {
+            my $column = $meta->column($column_name);
+            $sth->bind_param($i++, $key_values[$kv_idx++], $column->dbi_bind_param_attrs($db));
+          }
+
+          $sth->execute;
+        }
+        else
+        {
+          $sth->execute(@$bind, @key_values);
+        }
       }
       elsif($meta->has_lazy_columns)
       {
@@ -701,9 +748,31 @@ sub update
                         grep { defined } @key_values), "\n";
         }
 
-        $sth->execute(
-          (map { $self->$_() } grep { !$key{$_} } @$method_names), 
-          @key_values);
+        if($meta->dbi_requires_bind_param($db))
+        {
+          my $i = 1;
+
+          foreach my $column (grep { !$key{$_->name} } $meta->columns)
+          {
+            my $method = $column->accessor_method_name;
+            $sth->bind_param($i++,  $self->$method(), $column->dbi_bind_param_attrs($db));
+          }
+
+          foreach my $column_name (@key_columns)
+          {
+            my $column = $meta->column($column_name);
+            my $method = $column->accessor_method_name;
+            $sth->bind_param($i++,  $self->$method(), $column->dbi_bind_param_attrs($db));
+          }
+
+          $sth->execute;
+        }
+        else
+        {
+          $sth->execute(
+            (map { $self->$_() } grep { !$key{$_} } @$method_names), 
+            @key_values);
+        }
       }
     }
     #if($started_new_tx)
@@ -802,21 +871,21 @@ sub insert
 
     if($meta->allow_inline_column_values)
     {
-      my($sql, $bind);
+      my($sql, $bind, $bind_params);
 
       if($args{'on_duplicate_key_update'})
       {
-        ($sql, $bind) = 
+        ($sql, $bind, $bind_params) = 
           $meta->insert_and_on_duplicate_key_update_with_inlining_sql(
             $self, $db, $changes_only);
       }
       elsif($changes_only)
       {
-        ($sql, $bind) = $meta->insert_changes_only_sql_with_inlining($self);
+        ($sql, $bind, $bind_params) = $meta->insert_changes_only_sql_with_inlining($self);
       }
       else
       {
-        ($sql, $bind) = $meta->insert_sql_with_inlining($self);
+        ($sql, $bind, $bind_params) = $meta->insert_sql_with_inlining($self);
       }
 
       if($Debug)
@@ -826,7 +895,23 @@ sub insert
       }
 
       $sth = $dbh->prepare($sql); #, $options);
-      $sth->execute(@$bind);
+
+      if($bind_params)
+      {
+        my $i = 1;
+
+        foreach my $value (@$bind)
+        {
+          $sth->bind_param($i, $value, $bind_params->[$i - 1]);
+          $i++;
+        }
+
+        $sth->execute;
+      }
+      else
+      {
+        $sth->execute(@$bind);
+      }
     }
     else
     {
@@ -834,17 +919,17 @@ sub insert
 
       if($args{'on_duplicate_key_update'} || $changes_only)
       {
-        my($sql, $bind);
+        my($sql, $bind, $columns);
 
         if($args{'on_duplicate_key_update'})
         {
-          ($sql, $bind) = 
+          ($sql, $bind, $columns) = 
             $meta->insert_and_on_duplicate_key_update_sql(
               $self, $db, $changes_only);
         }
         else
         {
-          ($sql, $bind) = $meta->insert_changes_only_sql($self, $db);
+          ($sql, $bind, $columns) = $meta->insert_changes_only_sql($self, $db);
         }
 
         if($Debug)
@@ -857,7 +942,22 @@ sub insert
           $dbh->prepare_cached($sql, undef, 3) : 
           $dbh->prepare($sql);
 
-        $sth->execute(@$bind);
+        if($meta->dbi_requires_bind_param($db))
+        {
+          my $i = 1;
+
+          foreach my $column (@$columns)
+          {
+            my $method = $column->accessor_method_name;
+            $sth->bind_param($i++,  $self->$method(), $column->dbi_bind_param_attrs($db));
+          }
+
+          $sth->execute;
+        }
+        else
+        {
+          $sth->execute(@$bind);
+        }
       }
       else
       {
@@ -873,25 +973,24 @@ sub insert
             "\n";
         }
 
-        $sth->execute(map { $self->$_() } $meta->column_accessor_method_names);
+        #$sth->execute(map { $self->$_() } $meta->column_accessor_method_names);
 
-        # Not ready to cross this bridge yet...
-        #if($meta->needs_data_type_hand_holding($db))
-        #{
-        #  my $i = 1;
-        #
-        #  foreach my $column ($meta->columns)
-        #  {
-        #    my $method = $column->accessor_method_name;
-        #    $sth->bind_param($i++,  $self->$method(), $column->dbi_data_type);
-        #  }
-        # 
-        #  $sth->execute;
-        #}
-        #else
-        #{
-        #  $sth->execute(map { $self->$_() } $meta->column_accessor_method_names);
-        #}
+        if($meta->dbi_requires_bind_param($db))
+        {
+          my $i = 1;
+
+          foreach my $column ($meta->columns)
+          {
+            my $method = $column->accessor_method_name;
+            $sth->bind_param($i++,  $self->$method(), $column->dbi_bind_param_attrs($db));
+          }
+
+          $sth->execute;
+        }
+        else
+        {
+          $sth->execute(map { $self->$_() } $meta->column_accessor_method_names);
+        }
       }
     }
 

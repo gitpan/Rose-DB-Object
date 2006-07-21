@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 208;
+use Test::More tests => 218;
 
 BEGIN 
 {
@@ -20,9 +20,12 @@ our($HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX, $HAVE_SQLITE);
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 82)  unless($HAVE_PG);
+  skip("Postgres tests", 92)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
+
+  # Test the subselect limit code
+  #Rose::DB::Object::Manager->default_limit_with_subselect(1);
 
   TEST_HACK:
   {
@@ -79,11 +82,13 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
       {
         num  => { sql => 'num + 1' },
         code => 'foo',
+        data => "\000\001\002",
       },
       where => 
       [
         name    => { like => 'NoneSuch%' },
-        started => { gt => [ $now, $yesterday, '1/1/2005' ] }
+        started => { gt => [ $now, $yesterday, '1/1/2005' ] },
+        data => { ne => "\000\001\002" },
       ]);
 
   ok(defined $num, "update 1 - $db_type");
@@ -161,6 +166,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
       all => 1,
       set => 
       {
+        data  => "\000\001\003",
         ended => DateTime->new(year => 1999, month => 2, day => 3),
       });
 
@@ -174,7 +180,8 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
   foreach my $obj (@$objs)
   {
-    ok($obj->ended->ymd eq '1999-02-03', "update verify $test_num - $db_type");
+    ok($obj->ended->ymd eq '1999-02-03', "update verify date $test_num - $db_type");
+    ok($obj->data eq "\000\001\003", "update verify data $test_num - $db_type");
   }
 
   # End update tests
@@ -186,6 +193,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
       where => 
       [
         name    => { like => 'NoneSuch%' },
+        data    => "\000\001\003",
         started => { gt => [ $now, $yesterday, '1/1/2005' ] }
       ]);
 
@@ -211,6 +219,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
       [
         name => { like => '%oh%' },
         num  => [ (1 .. 11) ],
+        data => "\000\001\003",
       ]);
 
   ok($num, "delete 7 - $db_type");
@@ -233,6 +242,9 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
   is($num, 0, "count remaining 2 - $db_type");
 
   # End delete tests
+
+  # End test of the subselect limit code
+  #Rose::DB::Object::Manager->default_limit_with_subselect(0);
 }
 
 #
@@ -924,6 +936,7 @@ CREATE TABLE rose_db_object_test
   started  DATE,
   ended    DATE,
   num      INT,
+  data     BYTEA,
 
   UNIQUE(name)
 )
@@ -938,6 +951,7 @@ CREATE TABLE rose_db_object_private.rose_db_object_test
   started  DATE,
   ended    DATE,
   num      INT,
+  data     BYTEA,
 
   UNIQUE(name)
 )
@@ -963,6 +977,7 @@ EOF
       started  => { type => 'date', default => '12/24/1980' },
       ended    => { type => 'date', default => '1/1/2000' },
       num      => { type => 'int' },
+      data     => { type => 'bytea' },
     );
 
     MyPgObject->meta->add_unique_key('name');

@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.74';
+our $VERSION = '0.742';
 
 our $Debug = 0;
 
@@ -130,6 +130,7 @@ __PACKAGE__->column_type_classes
 
   'text'      => 'Rose::DB::Object::Metadata::Column::Text',
   'blob'      => 'Rose::DB::Object::Metadata::Column::Blob',
+  'bytea'     => 'Rose::DB::Object::Metadata::Column::Pg::Bytea',
 
   'bits'      => 'Rose::DB::Object::Metadata::Column::Bitfield',
   'bitfield'  => 'Rose::DB::Object::Metadata::Column::Bitfield',
@@ -906,7 +907,7 @@ sub add_columns
         #$Debug && warn $self->class, " - adding primary key column $name\n";
         $self->add_primary_key_column($name);
       }
-      
+
       my $methods     = delete $info->{'methods'};
       my $add_methods = delete $info->{'add_methods'};
 
@@ -972,7 +973,7 @@ sub add_columns
         $column->alias($alias);
         $self->alias_column($name, $alias);
       }
-      
+
       if(%triggers)
       {
         while(my($event, $value) = each(%triggers))
@@ -1174,7 +1175,7 @@ sub load_column_class
   unless(UNIVERSAL::isa($column_class, 'Rose::DB::Object::Metadata::Column'))
   {
     eval "require $column_class";
-  
+
     Carp::croak "Could not load column class '$column_class' - $@"
       if($@);
   }
@@ -2898,7 +2899,8 @@ sub update_changes_only_sql
       $c->name_sql($db) . ' = ' . $c->query_placeholder_sql($db)
     }
     @$key_columns),
-    [ map { my $m = $_->accessor_method_name; $obj->$m() } @modified ];
+    [ map { my $m = $_->accessor_method_name; $obj->$m() } @modified ],
+    \@modified;
 }
 
 # This is nonsensical right now because the primary key always has to be
@@ -2976,8 +2978,9 @@ sub update_sql_with_inlining
 
   my %key = map { ($_ => 1) } @$key_columns;
 
-  my @bind;
-  my @updates;
+  my(@bind, @updates, @bind_params);
+
+  my $do_bind_params = $self->dbi_requires_bind_param($db);
 
   foreach my $column (grep { !$key{$_} && (!$_->{'lazy'} || 
                              $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } 
@@ -2995,6 +2998,11 @@ sub update_sql_with_inlining
       push(@updates, $column->name_sql($db) . ' = ' .
                      $column->update_placeholder_sql($db));
       push(@bind, $value);
+
+      if($do_bind_params)
+      {
+        push(@bind_params, $column->dbi_bind_param_attrs($db));
+      }
     }
   }
 
@@ -3012,7 +3020,8 @@ sub update_sql_with_inlining
       $c->name_sql($db) . ' = ' . $c->query_placeholder_sql($db)
     }
     @$key_columns),
-    \@bind
+    \@bind,
+    ($do_bind_params ? \@bind_params : ())
   );
 }
 
@@ -3028,8 +3037,9 @@ sub update_changes_only_sql_with_inlining
 
   my $modified = $obj->{MODIFIED_COLUMNS()};
 
-  my @bind;
-  my @updates;
+  my(@bind, @updates, @bind_params);
+
+  my $do_bind_params = $self->dbi_requires_bind_param($db);
 
   foreach my $column (grep { !$key{$_->{'name'}} && $modified->{$_->{'name'}} } $self->columns)
   {
@@ -3045,6 +3055,11 @@ sub update_changes_only_sql_with_inlining
       push(@updates, $column->name_sql($db) . ' = ' .
                      $column->update_placeholder_sql($db));
       push(@bind, $value);
+
+      if($do_bind_params)
+      {
+        push(@bind_params, $column->dbi_bind_param_attrs($db));
+      }
     }
   }
 
@@ -3062,7 +3077,8 @@ sub update_changes_only_sql_with_inlining
       $c->name_sql($db) . ' = ' . $c->query_placeholder_sql($db)
     }
     @$key_columns),
-    \@bind
+    \@bind,
+    ($do_bind_params ? \@bind_params : ())
   );
 }
 
@@ -3110,7 +3126,8 @@ sub insert_changes_only_sql
     join(",\n", map { $_->name_sql($db) } @modified) .
     "\n)\nVALUES\n(\n" . 
     join(",\n", map { $_->insert_placeholder_sql($db) } @modified) . "\n)",
-    [ map { my $m = $_->accessor_method_name; $obj->$m() } @modified ];
+    [ map { my $m = $_->accessor_method_name; $obj->$m() } @modified ],
+    \@modified;
 }
 
 sub insert_columns_placeholders_sql
@@ -3192,7 +3209,8 @@ sub insert_and_on_duplicate_key_update_sql
       $_->name_sql($db) . ' = ' . $_->update_placeholder_sql($db)
     }
     @columns),
-    [ @bind, @bind ];
+    [ @bind, @bind ],
+    [ @columns, @columns ];
 }
 
 sub insert_sql_with_inlining
@@ -3201,8 +3219,9 @@ sub insert_sql_with_inlining
 
   my $db = $obj->db or Carp::croak "Missing db";
 
-  my @bind;
-  my @places;
+  my(@bind, @places, @bind_params);
+
+  my $do_bind_params = $self->dbi_requires_bind_param($db);
 
   foreach my $column ($self->columns)
   {
@@ -3217,16 +3236,26 @@ sub insert_sql_with_inlining
     {
       push(@places, $column->insert_placeholder_sql($db));
       push(@bind, $value);
+
+      if($do_bind_params)
+      {
+        push(@bind_params, $column->dbi_bind_param_attrs($db));
+      }
     }
   }
 
+  if($do_bind_params)
+  {
+
+  }
   return 
   (
     ($self->{'insert_sql_with_inlining_start'}{$db->{'id'}} ||=
     'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n" .
     join(",\n", map { "  $_" } $self->column_names_sql($db)) .
     "\n)\nVALUES\n(\n") . join(",\n", @places) . "\n)",
-    \@bind
+    \@bind,
+    ($do_bind_params ? \@bind_params : ())
   );
 }
 
@@ -3235,6 +3264,8 @@ sub insert_and_on_duplicate_key_update_with_inlining_sql
   my($self, $obj, $db, $changes_only) = @_;
 
   my(@columns, @names);
+
+  my $do_bind_params = $self->dbi_requires_bind_param($db);
 
   if($obj->{STATE_IN_DB()})
   {
@@ -3278,7 +3309,7 @@ sub insert_and_on_duplicate_key_update_with_inlining_sql
     @names = map { $_->name_sql($db) } @columns;
   }
 
-  my(@bind, @places);
+  my(@bind, @places, @bind_params);
 
   foreach my $column (@columns)
   {
@@ -3294,6 +3325,11 @@ sub insert_and_on_duplicate_key_update_with_inlining_sql
     {
       push(@places, [ $name, $column->insert_placeholder_sql($_) ]);
       push(@bind, $value);
+
+      if($do_bind_params)
+      {
+        push(@bind_params, $column->dbi_bind_param_attrs($db));
+      }
     }
   }
 
@@ -3304,7 +3340,8 @@ sub insert_and_on_duplicate_key_update_with_inlining_sql
     "\n)\nVALUES\n(\n" . join(",\n", map { $_->[1] } @places) . "\n)\n" .
     "ON DUPLICATE KEY UPDATE\n" .
     join(",\n", map { "$_->[0] = $_->[1]" } @places),
-    [ @bind, @bind ];
+    [ @bind, @bind ],
+    ($do_bind_params ? \@bind_params : ());
 }
 
 sub insert_changes_only_sql_with_inlining
@@ -3335,8 +3372,9 @@ sub insert_changes_only_sql_with_inlining
     }
   }
 
-  my @bind;
-  my @places;
+  my(@bind, @places, @bind_params);
+
+  my $do_bind_params = $self->dbi_requires_bind_param($db);
 
   foreach my $column (@modified)
   {
@@ -3351,6 +3389,11 @@ sub insert_changes_only_sql_with_inlining
     {
       push(@places, $column->insert_placeholder_sql($db));
       push(@bind, $value);
+
+      if($do_bind_params)
+      {
+        push(@bind_params, $column->dbi_bind_param_attrs($db));
+      }
     }
   }
 
@@ -3359,7 +3402,8 @@ sub insert_changes_only_sql_with_inlining
     'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n" .
     join(",\n", map { $_->name_sql($db) } @modified) .
     "\n)\nVALUES\n(\n" . join(",\n", @places) . "\n)",
-    \@bind
+    \@bind,
+    ($do_bind_params ? \@bind_params : ())
   );
 }
 
@@ -3503,6 +3547,7 @@ sub _clear_column_generated_values
   $self->{'insert_changes_only_sql_prefix'} = undef;
   $self->{'delete_sql'}             = undef;
   $self->{'insert_columns_placeholders_sql'} = undef;
+  $self->{'dbi_requires_bind_param'} = undef;
 }
 
 sub _clear_primary_key_column_generated_values
@@ -3569,6 +3614,31 @@ sub method_name_from_column
   }
 
   return $method_name;
+}
+
+sub dbi_requires_bind_param
+{
+  my($self, $db) = @_;
+
+  return $self->{'dbi_requires_bind_param'}{$db->{'id'}}  
+    if(defined $self->{'dbi_requires_bind_param'}{$db->{'id'}});
+
+  foreach my $column ($self->columns)
+  {
+    if($column->dbi_requires_bind_param($db))
+    {
+      return $self->{'dbi_requires_bind_param'}{$db->{'id'}} = 1;
+    }
+  }
+
+  return $self->{'dbi_requires_bind_param'}{$db->{'id'}} = 0;
+}
+
+sub dbi_bind_params
+{
+  my($self, $sth, $bind, $columns) = @_;
+
+
 }
 
 sub make_manager_class
@@ -4084,6 +4154,7 @@ The default mapping of type names to class names is:
 
   text      => Rose::DB::Object::Metadata::Column::Text
   blob      => Rose::DB::Object::Metadata::Column::Blob
+  bytea     => Rose::DB::Object::Metadata::Column::Pg::Bytea
 
   bits      => Rose::DB::Object::Metadata::Column::Bitfield
   bitfield  => Rose::DB::Object::Metadata::Column::Bitfield
@@ -4552,7 +4623,7 @@ Returns a list of column objects in list context, or a reference to an array of 
 
 =item B<column_accessor_method_name NAME>
 
-Returns the name of the "get" method for the column named NAME.  This is just a shortcut for C<$meta->column(NAME)-E<gt>accessor_method_name>.
+Returns the name of the "get" method for the column named NAME.  This is just a shortcut for C<$meta-E<gt>column(NAME)-E<gt>accessor_method_name>.
 
 =item B<column_accessor_method_names>
 
@@ -4566,7 +4637,7 @@ Note that modifying this map has no effect if L<initialize|/initialize>, L<make_
 
 =item B<column_mutator_method_name NAME>
 
-Returns the name of the "set" method for the column named NAME.  This is just a shortcut for C<$meta->column(NAME)-E<gt>mutator_method_name>.
+Returns the name of the "set" method for the column named NAME.  This is just a shortcut for C<$meta-E<gt>column(NAME)-E<gt>mutator_method_name>.
 
 =item B<column_mutator_method_names>
 
@@ -4584,7 +4655,7 @@ If defined, the subroutine should take four arguments: the metadata object, the 
 
 =item B<column_rw_method_name NAME>
 
-Returns the name of the "get_set" method for the column named NAME.  This is just a shortcut for C<$meta->column(NAME)-E<gt>rw_method_name>.
+Returns the name of the "get_set" method for the column named NAME.  This is just a shortcut for C<$meta-E<gt>column(NAME)-E<gt>rw_method_name>.
 
 =item B<column_rw_method_names>
 

@@ -14,7 +14,7 @@ use Rose::DB::Object::Constants qw(PRIVATE_PREFIX STATE_LOADING STATE_IN_DB);
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.723';
+our $VERSION = '0.742';
 
 our $Debug = 0;
 
@@ -32,12 +32,14 @@ use Rose::Class::MakeMethods::Generic
     '_object_class',
     '_base_name',
     'default_objects_per_page',
+    'default_limit_with_subselect',
     'dbi_prepare_cached',
   ],
 );
 
 __PACKAGE__->error_mode('fatal');
 __PACKAGE__->default_objects_per_page(20);
+__PACKAGE__->default_limit_with_subselect(1);
 __PACKAGE__->dbi_prepare_cached(0);
 
 sub handle_error
@@ -307,6 +309,11 @@ sub get_objects
   my $distinct         = delete $args{'distinct'};
   my $fetch            = delete $args{'fetch_only'};
   my $select           = $args{'select'};
+
+  my $try_subselect_limit = (exists $args{'limit_with_subselect'}) ? 
+    $args{'limit_with_subselect'} : $class->default_limit_with_subselect;
+
+  my $subselect_limit = 0;
 
   # Can't do direct inject with custom select lists
   my $direct_inject = $select ? 0 : delete $args{'inject_results'};
@@ -606,15 +613,11 @@ sub get_objects
   # Pre-process sort_by args
   if(my $sort_by = $args{'sort_by'})
   {
-    # Alter sort_by SQL, replacing table and relationship names with aliases.
-    # This is to prevent databases like Postgres from "adding missing FROM
-    # clause"s.  See: http://sql-info.de/postgresql/postgres-gotchas.html#1_5
     if($num_subtables > 0)
     {
-      my $i = 0;
       $sort_by = [ $sort_by ]  unless(ref $sort_by);
     }
-    else # otherwise, trim t1. prefixes
+    else # trim t1. prefixes
     {
       foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
       {
@@ -693,7 +696,21 @@ sub get_objects
 
         if($args{'limit'})
         {
-          $manual_limit = delete $args{'limit'};
+          if($try_subselect_limit && $db->supports_select_from_subselect && 
+             (!$args{'offset'} || $db->supports_limit_with_offset) && 
+             !$args{'select'})
+          {
+            unless($fetch && @$fetch && $fetch->[0] eq 't1')
+            {
+              $subselect_limit = 1;
+              delete $args{'limit'};
+              delete $args{'offset'};
+            }
+          }
+          else
+          {
+            $manual_limit = delete $args{'limit'};
+          }
         }
 
         # This restriction seems unnecessary now
@@ -724,7 +741,7 @@ sub get_objects
           qq(produce many redundant rows, and the query may be ),
           qq(slow.  If you're sure you want to do this, you can ),
           qq(silence this warning by using the "multi_many_ok" ),
-          qq(parameter);
+          qq(parameter\n);
       }
     }
 
@@ -1215,7 +1232,7 @@ sub get_objects
     delete $args{'offset'};
     delete $args{'sort_by'};
 
-    my($sql, $bind);
+    my($sql, $bind, @bind_params);
 
     my $use_distinct = 0; # Do we have to use DISTINCT to count?
 
@@ -1256,6 +1273,7 @@ sub get_objects
                      meta        => \%meta,
                      db          => $db,
                      pretty      => $Debug,
+                     bind_params => \@bind_params,
                      %args);
     }
 
@@ -1273,7 +1291,24 @@ sub get_objects
       $Debug && warn "$sql\n";
       my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
                                   $dbh->prepare($sql);
-      $sth->execute(@$bind);
+
+      if(@bind_params)
+      {
+        my $i = 1;
+
+        foreach my $value (@$bind)
+        {
+          $sth->bind_param($i, $value, $bind_params[$i - 1]);
+          $i++;
+        }
+
+        $sth->execute;
+      }
+      else
+      {
+        $sth->execute(@$bind);
+      }
+
       $count = $sth->fetchrow_array;
       $sth->finish;
     };
@@ -1371,7 +1406,7 @@ sub get_objects
     Carp::croak "Offset argument is invalid without a limit argument"
       unless($args{'limit'} || $manual_limit);
 
-    if($db->supports_limit_with_offset && !$manual_limit)
+    if($db->supports_limit_with_offset && !$manual_limit && !$subselect_limit)
     {
       $args{'limit'} = $db->format_limit_with_offset($args{'limit'}, $args{'offset'});
       delete $args{'offset'};
@@ -1395,7 +1430,7 @@ sub get_objects
 
   my($count, @objects, $iterator);
 
-  my($sql, $bind);
+  my($sql, $bind, @bind_params);
 
   BUILD_SQL:
   {
@@ -1411,8 +1446,66 @@ sub get_objects
                    joins       => \@joins,
                    meta        => \%meta,
                    db          => $db,
-                   pretty      => $Debug,
+                   pretty      => 1,#$Debug,
+                   bind_params => \@bind_params,
                    %args);
+
+    if($subselect_limit)
+    {
+      my($class, %sub_args) = @_;
+
+      # The sort clause is important, so it can't be deleted, but it 
+      # also can't contain references to any table but t1.
+      if($args{'sort_by'} && $num_subtables > 0)
+      {
+        my @sort_by;
+
+        foreach my $arg (@{$args{'sort_by'}})
+        {
+          push(@sort_by, $arg)  if(index($arg, 't1') == 0);
+        }
+
+        $sub_args{'sort_by'} = \@sort_by;
+      }
+
+      delete $sub_args{'with_objects'};
+
+      $sub_args{'fetch_only'}  = [ 't1' ];
+      $sub_args{'from_and_where_only'} = 1;
+
+      my @t1_bind_params;
+      $sub_args{'bind_params'} = \@t1_bind_params;
+
+      my($t1_sql, $t1_bind) = $class->get_objects_sql(%sub_args);
+
+      my $columns = $sub_args{'select'};
+
+      unless($columns)
+      {
+        my $multi_table = 
+          ($sub_args{'with_objects'} && (!ref $sub_args{'with_objects'} || @{$sub_args{'with_objects'}})) ||
+          ($sub_args{'require_objects'} && (!ref $sub_args{'require_objects'} || @{$sub_args{'require_objects'}}));
+
+        $columns = $multi_table ?
+          join(', ', map { "t1.$_" } @{$columns{$tables[0]}}) :
+          join(', ', map { $_ } @{$columns{$tables[0]}});
+      }
+
+      my $distinct = ($num_with_objects && scalar @has_dups[1 .. $num_with_objects]) ? ' DISTINCT' : '';
+
+      $t1_sql = "SELECT$distinct $columns FROM\n$t1_sql";
+      $t1_sql =~ s/^/    /mg  if($Debug);
+      $t1_sql = $db->format_select_from_subselect($t1_sql);
+
+      $sql =~ s/(\nFROM\n\s*)\S.+\s+t1\b/$1$t1_sql t1/;
+
+      unshift(@$bind, @$t1_bind);
+
+      if(@t1_bind_params)
+      {
+        unshift(@bind_params, @t1_bind_params);
+      }
+    }
   }
 
   if($return_sql)
@@ -1432,7 +1525,22 @@ sub get_objects
 
     $sth->{'RaiseError'} = 1;
 
-    $sth->execute(@$bind);
+    if(@bind_params)
+    {
+      my $i = 1;
+
+      foreach my $value (@$bind)
+      {
+        $sth->bind_param($i, $value, $bind_params[$i - 1]);
+        $i++;
+      }
+
+      $sth->execute;
+    }
+    else
+    {
+      $sth->execute(@$bind);
+    }
 
     my %row;
 
@@ -2489,6 +2597,9 @@ sub delete_objects
   # Yes, I'm re-using get_objects() code like crazy, and often
   # in weird ways.  Shhhh, it's a secret.
 
+  my @bind_params;
+  $args{'bind_params'} = \@bind_params;
+
   my($where, $bind) = 
     $class->get_objects(%args, return_sql => 1, where_only => 1);
 
@@ -2506,7 +2617,23 @@ sub delete_objects
     my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
                                 $dbh->prepare($sql) or die $dbh->errstr;
 
-    $sth->execute(@$bind);
+    if(@bind_params)
+    {
+      my $i = 1;
+
+      foreach my $value (@$bind)
+      {
+        $sth->bind_param($i, $value, $bind_params[$i - 1]);
+        $i++;
+      }
+
+      $sth->execute;
+    }
+    else
+    {
+      $sth->execute(@$bind);
+    }
+
     $count = $sth->rows || 0;
   };
 
@@ -2573,6 +2700,9 @@ sub update_objects
   # Yes, I'm re-using get_objects() code like crazy, and often
   # in weird ways.  Shhhh, it's a secret.
 
+  my @bind_params;
+  $args{'bind_params'} = \@bind_params;
+
   $args{'query'} = $set;
 
   my($set_sql, $set_bind) = 
@@ -2608,7 +2738,23 @@ sub update_objects
     my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
                                 $dbh->prepare($sql) or die $dbh->errstr;
 
-    $sth->execute(@$set_bind, @$where_bind);
+    if(@bind_params)
+    {
+      my $i = 1;
+
+      foreach my $value (@$set_bind, @$where_bind)
+      {
+        $sth->bind_param($i, $value, $bind_params[$i - 1]);
+        $i++;
+      }
+
+      $sth->execute;
+    }
+    else
+    {
+      $sth->execute(@$set_bind, @$where_bind);
+    }
+
     $count = $sth->rows || 0;
   };
 
@@ -3136,6 +3282,10 @@ Class methods are provided for fetching objects all at once, one at a time throu
 
 Get or set a boolean value that indicates whether or not this class will use L<DBI>'s L<prepare_cached|DBI/prepare_cached> method by default (instead of the L<prepare|DBI/prepare> method) when preparing SQL queries.  The default value is false.
 
+=item B<default_limit_with_subselect [BOOL]>
+
+Get or set a boolean value that determines whether or not this class will consider using a sub-query to express C<limit>/C<offset> constraints when fetching sub-objects related through one of the "...-to-many" relationship types.  Not all databases support this syntax, and not all queries can use it even in supported databases.  If this parameter is true, the feature will be used when possible, by default.  The default value is true.
+
 =item B<default_objects_per_page [NUM]>
 
 Get or set the default number of items per page, as returned by the L<get_objects|/get_objects> method when used with the C<page> and/or C<per_page> parameters.  The default value is 20.
@@ -3298,6 +3448,12 @@ The default L<Rose::DB::Object> L<constructor|Rose::DB::Object/new> and the colu
 =item C<limit NUM>
 
 Return a maximum of NUM objects.
+
+=item C<limit_with_subselect BOOL>
+
+This parameter controls whether or not this method will consider using a sub-query to express  C<limit>/C<offset> constraints when fetching sub-objects related through one of the "...-to-many" relationship types.  Not all databases support this syntax, and not all queries can use it even in supported databases.  If this parameter is true, the feature will be used when possible.
+
+The default value is determined by the L<default_limit_with_subselect|/default_limit_with_subselect> class method.
 
 =item C<multi_many_ok BOOL>
 

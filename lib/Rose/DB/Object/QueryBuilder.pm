@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.71';
+our $VERSION = '0.742';
 
 our $Debug = 0;
 
@@ -67,6 +67,8 @@ sub build_select
   my $joins       = $args{'joins'};
   my $set         = delete $args{'set'};
   my $table_map   = delete $args{'table_map'} || {};
+  my $bind_params = $args{'bind_params'};
+  my $from_and_where_only = delete $args{'from_and_where_only'};
 
   $all_columns = $columns  unless(%$all_columns);
 
@@ -166,7 +168,7 @@ sub build_select
   my $multi_table = @$tables > 1 ? 1 : 0;
   my $table_num = 1;
 
-  my($db, %proto); # db object and prototype objects used for formatting values
+  my($db, %proto, $do_bind_params); # db object and prototype objects used for formatting values
 
   foreach my $table (@$tables)
   {
@@ -192,7 +194,14 @@ sub build_select
 
       $obj_meta = $meta->{$obj_class} || $obj_class->meta
         or Carp::confess "No metadata found for class '$obj_class'";
+
+      if($bind_params && !defined $do_bind_params)
+      {
+        $do_bind_params = $obj_meta->dbi_requires_bind_param($db);
+      }
     }
+
+    $bind_params = undef  unless($do_bind_params);
 
     my $query_only_columns = 0;
     my $my_columns     = $columns->{$table};
@@ -313,7 +322,8 @@ sub build_select
           {
             push(@clauses, _build_clause($dbh, $sql_column, $op, $val, $not, 
                                          undef, ($do_bind ? \@bind : undef),
-                                         $db, $col_meta, undef, $set, $placeholder));
+                                         $db, $col_meta, undef, $set, 
+                                         $placeholder, $bind_params));
           }
           elsif(!defined $val)
           {
@@ -330,6 +340,11 @@ sub build_select
             {
               push(@clauses, ($not ? "$not($sql_column = $placeholder)" : "$sql_column = $placeholder"));
               push(@bind, $val);
+
+              if($do_bind_params)
+              {
+                push(@$bind_params, $col_meta->dbi_bind_param_attrs($db));
+              }
             }
             else
             {
@@ -458,7 +473,15 @@ sub build_select
 
     my $prefix_limit = (defined $limit && $use_prefix_limit) ? "$limit " : '';
     $select ||= join(",\n", map { "  $_" } @select_columns);
-    $qs = "SELECT $prefix_limit$distinct\n$select\nFROM\n$from_tables_sql\n";
+
+    if($from_and_where_only)
+    {
+      $qs = "$from_tables_sql\n";
+    }
+    else
+    {
+      $qs = "SELECT $prefix_limit$distinct\n$select\nFROM\n$from_tables_sql\n";
+    }
   }
 
   if($where)
@@ -485,7 +508,7 @@ sub build_select
 sub _build_clause
 {
   my($dbh, $field, $op, $vals, $not, $field_mod, $bind, $db, $col_meta,
-     $force_inline, $set, $placeholder) = @_;
+     $force_inline, $set, $placeholder, $bind_params) = @_;
 
   #if(ref $vals eq 'ARRAY' && @$vals == 1)
   #{
@@ -526,6 +549,11 @@ sub _build_clause
       if($bind && !$should_inline && !$force_inline)
       {
         push(@$bind, $vals);
+
+        if($bind_params)
+        {
+          push(@$bind_params, $col_meta->dbi_bind_param_attrs($db));
+        }
 
         if($op eq 'ANY IN SET' || $op eq 'ALL IN SET')
         {
@@ -590,6 +618,11 @@ sub _build_clause
             {
               push(@$bind, $val);
               push(@new_vals, $placeholder);
+
+              if($bind_params)
+              {
+                push(@$bind_params, $col_meta->dbi_bind_param_attrs($db));
+              }
             }
             else
             {
@@ -618,6 +651,10 @@ sub _build_clause
           join($sep, map
           {
             push(@$bind, $_);
+            if($bind_params)
+            {
+              push(@$bind_params, $col_meta->dbi_bind_param_attrs($db));
+            }
             "$placeholder $field_sql "
           }
           (ref $vals ? @$vals : ($vals))) . ')';
@@ -648,6 +685,11 @@ sub _build_clause
           {
             push(@$bind, $val);
             push(@new_vals, $placeholder);
+
+            if($bind_params)
+            {
+              push(@$bind_params, $col_meta->dbi_bind_param_attrs($db));
+            }
           }
         }
 
@@ -682,7 +724,7 @@ sub _build_clause
 
       if(!$ref_type || $ref_type eq 'SCALAR')
       {
-        push(@clauses, _build_clause($dbh, $field, $sub_op, $vals->{$raw_op}, $not, $field_mod, $bind, $db, $col_meta, $force_inline, $set, $placeholder));
+        push(@clauses, _build_clause($dbh, $field, $sub_op, $vals->{$raw_op}, $not, $field_mod, $bind, $db, $col_meta, $force_inline, $set, $placeholder, $bind_params));
       }
       elsif($ref_type eq 'ARRAY')
       {
@@ -690,7 +732,7 @@ sub _build_clause
 
         foreach my $val (@{$vals->{$raw_op}})
         {
-          push(@clauses, _build_clause($dbh, $field, $sub_op, $val, $tmp_not, $field_mod, $bind, $db, $col_meta, $force_inline, $set, $placeholder));
+          push(@clauses, _build_clause($dbh, $field, $sub_op, $val, $tmp_not, $field_mod, $bind, $db, $col_meta, $force_inline, $set, $placeholder, $bind_params));
         }
       }
       else

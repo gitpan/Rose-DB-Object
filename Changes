@@ -1,9 +1,20 @@
+0.742 (07.21.2006) - John Siracusa <siracusa@mindspring.com>
+
+    * Added support for a more efficient subselect-based limit/offset 
+      implementation for queries that would otherwise have to be
+      scanned through manually.
+    * Added a column class for PostgreSQL's BYTEA column type.
+    * Added support for DBI bind_param() attributes for all column types.
+    * Fixed a bug in the test suite that could cause the TIME(9)
+      column type test to fail in Postgres.
+    * Fixed some POD formatting errors.
+
 0.741 (07.14.2006) - John Siracusa <siracusa@mindspring.com>
 
     * Added end_of_month_mode parameter to the interval column class.
     * Prevented perl_* code generation methods from attempting to 
       auto-initialize missing metadata.
-    * Added name/value pair helper methods.
+    * Added name/value pair, JSON, and YAML helper methods.
     * Tweaked the JOIN syntax for MySQL in order to better accommodate
       MySQL version 5.0.12+.  (Reported by Glenn Gallien)
     * Some small POD corrections.
