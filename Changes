@@ -1,3 +1,26 @@
+0.75 (08.10.2006) - John Siracusa <siracusa@mindspring.com>
+
+    * Added a cascade option to save().
+    * Added auto-detection one one-to-one relationships to the Loader.
+    * The object_class parameter to Manager methods now defaults to the 
+      return value of the object_class() class method.
+    * The soft() and referential_integrity() methods of the ManyToOne and
+      OneToOne relationship classes have been renamed to optional() and
+      required(), respectively.  The old method names still work, but may
+      be removed at some later date.  Also, the default values are now 
+      determined by a new set of rules, rather than a constant.
+    * Passing invalid query parameters to Manager methods will now 
+      cause a fatal error.
+    * Scalar references now work correctly when used in IN(...) queries 
+      built by QueryBuilder.  (Patch by Perrin Harkins)
+    * Fixed a bug that caused get_set_on_save methods to fail for certain
+      kinds of ...-to-one relationships.
+    * Ignore empty "and" and "or" query parameters in QueryBuilder.
+      (Suggested by Jonathan Vanasco)
+    * Fixed a bug that caused update() to fail for tables where all columns
+      are part of the primary key.  (Reported by Danial Pearce)
+    * Minor tweaks to the subselect-based limit/offset code.
+
 0.742 (07.21.2006) - John Siracusa <siracusa@mindspring.com>
 
     * Added support for a more efficient subselect-based limit/offset 

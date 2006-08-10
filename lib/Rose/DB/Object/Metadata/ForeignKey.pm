@@ -9,7 +9,7 @@ use Rose::DB::Object::Metadata::Util qw(:all);
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.68';
+our $VERSION = '0.75';
 
 our $Debug = 0;
 
@@ -40,10 +40,34 @@ use Rose::Object::MakeMethods::Generic
 
   hash =>
   [
-    key_column  => { hash_key  => 'key_columns' },
-    key_columns => { interface => 'get_set_all' },
+    _key_column  => { hash_key  => 'key_columns' },
+    _key_columns => { interface => 'get_set_all' },
   ],
 );
+
+sub key_column
+{
+  my($self) = shift;
+
+  if(@_ > 1)
+  {
+    $self->{'is_required'} = undef;
+  }
+  
+  return $self->_key_column(@_);
+}
+
+sub key_columns
+{
+  my($self) = shift;
+
+  if(@_)
+  {
+    $self->{'is_required'} = undef;
+  }
+  
+  return $self->_key_columns(@_);
+}
 
 *column_map = \&key_columns;
 
@@ -119,6 +143,7 @@ sub is_required
 {
   my($self) = shift;
 
+  return $self->{'required'}     if(defined $self->{'required'});
   return $self->{'is_required'}  if(defined $self->{'is_required'});
 
   my $meta = $self->parent or 
@@ -126,6 +151,8 @@ sub is_required
 
   my $key_columns = $self->key_columns;
 
+  # If any local key column allows null values, then 
+  # the foreign object is not required.
   foreach my $column_name (keys %$key_columns)
   {
     my $column = $meta->column($column_name) 
@@ -173,7 +200,8 @@ sub id
 
   return $self->parent->class . ' ' . $self->class . ' ' . 
     join("\0", map { join("\1", lc $_, lc $key_columns->{$_}) } sort keys %$key_columns) . 
-    join("\0", map { $_ . '=' . ($self->$_() || 0) } qw(referential_integrity));
+    #join("\0", map { $_ . '=' . ($self->$_() || 0) } qw(...));
+    'required=' . $self->referential_integrity;
 }
 
 sub sanity_check
@@ -232,6 +260,8 @@ sub is_ready_to_make_methods
   return $@ ? 0 : 1;
 }
 
+our $DEFAULT_INLINE_LIMIT = 80;
+
 sub perl_hash_definition
 {
   my($self, %args) = @_;
@@ -244,39 +274,58 @@ sub perl_hash_definition
   my $braces = defined $args{'braces'} ? $args{'braces'} : 
                  ($meta ? $meta->default_perl_braces : undef);
 
-  my $indent_txt = ' ' x $indent;
+  my $inline = defined $args{'inline'} ? $args{'inline'} : 0;
+  my $inline_limit = defined $args{'inline'} ? $args{'inline_limit'} : $DEFAULT_INLINE_LIMIT;
 
-  my $def = perl_quote_key($self->name) . ' => ' .
-            ($braces eq 'bsd' ? "\n{\n" : "{\n") .
-            $indent_txt . 'class => ' . perl_quote_value($self->class) . ",\n";
+  my $name_padding = $args{'name_padding'};
+
+  my %attrs = map { $_ => 1 } $self->perl_foreign_key_definition_attributes;
+  my %hash = $self->spec_hash;
+
+  my @delete_keys = grep { !$attrs{$_} } keys %hash;
+  delete @hash{@delete_keys};
 
   my $key_columns = $self->key_columns;
+
+  # Only inline single-pair key column mappings
+  if(keys %$key_columns > 1)
+  {
+    $inline_limit = 1;
+    $inline = 0;
+  }
 
   my $max_len = 0;
   my $min_len = -1;
 
-  foreach my $name (keys %$key_columns)
+  foreach my $name (keys %hash)
   {
     $max_len = length($name)  if(length $name > $max_len);
     $min_len = length($name)  if(length $name < $min_len || $min_len < 0);
   }
 
-  $def .= $indent_txt . 'key_columns => ' . ($braces eq 'bsd' ? "\n" : '');
-
-  my $hash = perl_hashref(hash => $key_columns, indent => $indent * 2, inline => 0);
-
-  for($hash)
+  if(defined $name_padding && $name_padding > 0)
   {
-    s/^/$indent_txt/g;
-    s/\A$indent_txt//;
-    s/\}\Z/$indent_txt}/;
-    s/\A(\s*\{)/$indent_txt$1/  if($braces eq 'bsd');
+    return sprintf('%-*s => ', $name_padding, perl_quote_key($self->name)) .
+           perl_hashref(hash         => \%hash, 
+                        braces       => $braces,
+                        inline       => $inline, 
+                        inline_limit => $inline_limit,
+                        indent       => $indent,
+                        key_padding  => hash_key_padding(\%hash));
   }
-
-  $def .= $hash . ",\n}";
-
-  return $def;
+  else
+  {
+    return perl_quote_key($self->name) . ' => ' .
+           perl_hashref(hash         => \%hash, 
+                        braces       => $braces,
+                        inline       => $inline,
+                        inline_limit => $inline_limit,
+                        indent       => $indent,
+                        key_padding  => hash_key_padding(\%hash));
+  }
 }
+
+sub perl_foreign_key_definition_attributes { qw(class key_columns soft) }
 
 # Some object keys have different names when they appear
 # in hashref-style foreign key specs.  This hash maps
@@ -285,7 +334,8 @@ sub spec_hash_map
 {
   {
     # object key    spec key
-    method_name => 'methods',
+    method_name  => 'methods',
+    _key_columns => 'key_columns',
   }
 }
 
@@ -313,6 +363,22 @@ sub spec_hash
 
   return wantarray ? %spec : \%spec;
 }
+
+sub object_has_foreign_object
+{
+  my($self, $object) = @_;
+  
+  unless($object->isa($self->parent->class))
+  {
+    my $class = $self->parent->class;
+    Carp::croak "Cannot check for foreign object related through the ", $self->name,
+                " foreign key.  Object does not inherit from $class: $object";
+  }
+
+  return $object->{$self->hash_key} || 0;
+}
+
+sub requires_preexisting_parent_object { 0 }
 
 1;
 
@@ -501,7 +567,7 @@ Get or set the name of the foreign key.  This name must be unique among all othe
 
 =item B<referential_integrity [BOOL]>
 
-Get or set the boolean value that determines what happens when the L<key columns|/key_columns> have L<defined|perlfunc/defined> values, but the object they point to is not found.  If true, a fatal error will occur.  If false, then the methods that service this foreign key will simply return undef.  The default is true.
+Get or set the boolean value that determines what happens when the local L<key columns|/key_columns> have L<defined|perlfunc/defined> values, but the object they point to is not found.  If true, a fatal error will occur when the methods that fetch objects through this foreign key are called.  If false, then the methods will simply return undef.  The default is true.
 
 =item B<rel_type [TYPE]>
 

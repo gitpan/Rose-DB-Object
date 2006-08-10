@@ -18,7 +18,7 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.73';
+our $VERSION = '0.75';
 
 our $Debug = 0;
 
@@ -1727,8 +1727,16 @@ sub object_by_key
   my $meta     = $target_class->meta;
   my $fk_pk;
 
-  my $referential_integrity = 
+  my $required = 
+    exists $args->{'required'} ? $args->{'required'} :
     exists $args->{'referential_integrity'} ? $args->{'referential_integrity'} : 1;
+
+  if(exists $args->{'required'} && exists $args->{'referential_integrity'} &&
+    (!$args->{'required'} != !$$args->{'referential_integrity'}))
+  {
+    Carp::croak "The required and referential_integrity parameters conflict. ",
+                "Please pass one or the other, not both.";
+  }
 
   my $fk_columns = $args->{'key_columns'} or die "Missing key columns hash";
   my $share_db   = $args->{'share_db'};
@@ -1806,7 +1814,7 @@ sub object_by_key
 
       my $ret;
 
-      if($referential_integrity)
+      if($required)
       {
         eval { $ret = $obj->load };
 
@@ -1961,7 +1969,7 @@ sub object_by_key
 
       my $ret;
 
-      if($referential_integrity)
+      if($required)
       {
         eval { $ret = $obj->load };
 
@@ -2013,18 +2021,26 @@ sub object_by_key
           }
 
           delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
+          delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'};
           return $self->{$key} = undef;
         }
 
         my $object = __args_to_object($self, $key, $fk_class, \$fk_pk, \@_);
 
-        # Set the foreign key columns
-        while(my($local_column, $foreign_column) = each(%$fk_columns))
-        {
-          my $local_method   = $meta->column_mutator_method_name($local_column);
-          my $foreign_method = $fk_meta->column_accessor_method_name($foreign_column);
+        my $linked_up = 0;
+        
+        if(!$fk->requires_preexisting_parent_object || $self->{STATE_IN_DB()})
+        {   
+          # Set the foreign key columns
+          while(my($local_column, $foreign_column) = each(%$fk_columns))
+          {
+            my $local_method   = $meta->column_mutator_method_name($local_column);
+            my $foreign_method = $fk_meta->column_accessor_method_name($foreign_column);
+  
+            $self->$local_method($object->$foreign_method);
+          }
 
-          $self->$local_method($object->$foreign_method);
+          $linked_up = 1;
         }
 
         # Set the attribute
@@ -2039,6 +2055,18 @@ sub object_by_key
           my $object = $welf->{$key} or return;
 
           my $db;
+
+          unless($linked_up)
+          {
+            while(my($local_column, $foreign_column) = each(%$fk_columns))
+            {
+              my $local_method   = $meta->column_mutator_method_name($local_column);
+              my $foreign_method = $fk_meta->column_accessor_method_name($foreign_column);
+    
+              $object->$foreign_method($self->$local_method)
+                unless(defined $object->$foreign_method);
+            }
+          }
 
           eval
           {
@@ -2088,7 +2116,15 @@ sub object_by_key
           return $welf->{$key};
         };
 
-        $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} = $save_code;
+        if($linked_up)
+        {
+          $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} = $save_code;
+        }
+        else
+        {
+          $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'} = $save_code;
+        }
+
         return $self->{$key};
       }
 
@@ -2126,7 +2162,7 @@ sub object_by_key
 
       my $ret;
 
-      if($referential_integrity)
+      if($required)
       {
         eval { $ret = $obj->load };
 
@@ -2177,7 +2213,8 @@ sub object_by_key
           keys(%$fk_columns); # reset iterator
 
           # If this failed because we haven't saved it yet
-          if(delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'})
+          if(delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} ||
+             delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'})
           {
             # Clear foreign key columns
             foreach my $local_column (keys %$fk_columns)
@@ -2198,7 +2235,7 @@ sub object_by_key
 
       $object->init(%key);
 
-      my($db, $started_new_tx, $deleted, %save_fk, $to_save);
+      my($db, $started_new_tx, $deleted, %save_fk, $to_save_pre, $to_save_post);
 
       eval
       {
@@ -2224,7 +2261,8 @@ sub object_by_key
         }
 
         # Forget about any value we were going to set on save
-        $to_save = delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
+        $to_save_pre  = delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
+        $to_save_post = delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'};
 
         $self->save or die $self->error;
 
@@ -2251,9 +2289,12 @@ sub object_by_key
         }
 
         # Restore any value we were going to set on save
-        $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} = $to_save
-          if($to_save);
+        $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} = $to_save_pre
+          if($to_save_pre);
 
+        $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'} = $to_save_post
+          if($to_save_post);
+          
         $meta->handle_error($self);
         return undef;
       }
@@ -2291,7 +2332,8 @@ sub object_by_key
           keys(%$fk_columns); # reset iterator
 
           # If this failed because we haven't saved it yet
-          if(delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'})
+          if(delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} ||
+             delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'})
           {
             # Clear foreign key columns
             foreach my $local_column (keys %$fk_columns)
@@ -2324,6 +2366,7 @@ sub object_by_key
 
       # Forget about any value we were going to set on save
       delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
+      delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'};
 
       # Clear the foreignobject attribute
       $self->{$key} = undef;
@@ -5613,7 +5656,7 @@ The name of the L<Rose::DB::Object>-derived class of the object to be loaded.  T
 
 =item B<foreign_key OBJECT>
 
-The L<Rose::DB::Object::Metadata::ForeignKey> object that describes the "key" through which the "object_by_key" is fetched.  This is required when using the "delete_now", "delete_on_save", and "get_set_on_save" interfaces.
+The L<Rose::DB::Object::Metadata::ForeignKey> object that describes the "key" through which the "object_by_key" is fetched.  This (or the C<relationship> parameter) is required when using the "delete_now", "delete_on_save", and "get_set_on_save" interfaces.
 
 =item B<hash_key NAME>
 
@@ -5630,6 +5673,22 @@ A reference to a hash that maps column names in the current object to those of t
 =item B<interface NAME>
 
 Choose the interface.  The default is C<get_set>.
+
+=item B<relationship OBJECT>
+
+The L<Rose::DB::Object::Metadata::Relationship>-derived object that describes the relationship through which the object is fetched.  This (or the C<foreign_key> parameter) is required when using the "delete_now", "delete_on_save", and "get_set_on_save" interfaces.
+
+=item B<referential_integrity BOOL>
+
+If true, then a fatal error will occur when a method in one of the "get*" interfaces is called and no related object is found.  The default is determined by the L<referential_integrity|Rose::DB::Object::Metadata::ForeignKey/referential_integrity> attribute of the C<foreign_key> object, or true if no C<foreign_key> parameter is passed.
+
+This parameter conflicts with the C<required> parameter.  Only one of the two should be passed.
+
+=item B<required BOOL>
+
+If true, then a fatal error will occur when a method in one of the "get*" interfaces is called and no related object is found.  The default is determined by the L<required|Rose::DB::Object::Metadata::Relationship::OneToOne/required> attribute of the C<relationship> object, or true if no C<relationship> parameter is passed.
+
+This parameter conflicts with the C<referential_integrity> parameter.  Only one of the two should be passed.
 
 =item B<share_db BOOL>
 

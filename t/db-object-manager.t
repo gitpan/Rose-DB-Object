@@ -55,6 +55,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
       query        =>
       [
         id         => { ge => 1 },
+        id         => [ \'1', \'id' ], #'
         name       => 'John',  
         flag       => 't',
         flag2      => 'f',
@@ -63,7 +64,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
         or         => [ and => [ '!bits' => '00001', bits => { ne => '11111' } ],
                         and => [ bits => { lt => '10101' }, '!bits' => '10000' ] ],
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         fk1        => 2,
         last_modified => { le => 'now' },
@@ -112,7 +113,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
         status     => 'active',
         bits       => '00001',
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         nums       => { all_in_array => [ 1, 3 ] },
         '!nums'    => { all_in_array => [ 1, 5, 9 ] }, 
@@ -146,7 +147,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
         status     => 'active',
         bits       => '00001',
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         last_modified => { le => 'now' },
         date_created  => '2004-03-30 12:34:56',
@@ -182,7 +183,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
         status     => 'active',
         bits       => '00001',
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         last_modified => { le => 'now' },
         date_created  => '2004-03-30 12:34:56',
@@ -213,7 +214,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
         status     => 'active',
         bits       => '00001',
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         last_modified => { le => 'now' },
         date_created  => '2004-03-30 12:34:56',
@@ -464,6 +465,8 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
                               day   => 3)
         },
 
+        or         => [],
+        and        => [],
         save_col   => [ 1, 5, 123 ],
         nums       => [ 4, 5, 6 ],
         fk1        => 1,
@@ -3031,6 +3034,8 @@ SKIP: foreach my $db_type ('mysql')
                               day   => 3)
         },
 
+        or         => [],
+        and        => [],
         save_col   => [ 1, 5, 123 ],
         nums       => [ 4, 5, 6 ],
         fk1        => 1,
@@ -5572,6 +5577,8 @@ SKIP: foreach my $db_type (qw(informix))
                               day   => 3)
         },
 
+        or         => [],
+        and        => [],
         save_col   => [ 1, 5, 123 ],
         nums       => [ 4, 5, 6 ],
         fk1        => 1,
@@ -7798,7 +7805,8 @@ SKIP: foreach my $db_type (qw(sqlite))
       query        =>
       [
         id         => { ge => 1 },
-        name       => 'John',  
+        name       => 'John', 
+        name       => { field => 'LOWER(name)', eq => 'john' },
         flag       => 1,
         flag2      => 0,
         status     => 'active',
@@ -7851,7 +7859,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         status     => 'active',
         bits       => q(b'00001'),
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         last_modified => { le => $o->db->format_timestamp(DateTime->now->add(days => 2)) },
         date_created  => '2004-03-30 12:34:56.000000000',
@@ -7880,7 +7888,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         status     => 'active',
         bits       => q(b'00001'),
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         last_modified => { le => $o->db->format_timestamp(DateTime->now->add(days => 2)) },
         date_created  => '2004-03-30 12:34:56.000000000',
@@ -7916,7 +7924,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         status     => 'active',
         bits       => q(b'00001'),
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         last_modified => { le => $o->db->format_timestamp(DateTime->now->add(days => 2)) },
         date_created  => '2004-03-30 12:34:56.000000000',
@@ -7946,7 +7954,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         status     => 'active',
         bits       => q(b'00001'),
         start      => '2001-01-02',
-        save_col   => [ 1, 5 ],
+        save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         last_modified => { le => $o->db->format_timestamp(DateTime->now->add(days => 2)) },
         date_created  => '2004-03-30 12:34:56.000000000',
@@ -8144,6 +8152,8 @@ SKIP: foreach my $db_type (qw(sqlite))
                               day   => 3)
         },
 
+        or         => [],
+        and        => [],
         save_col   => [ 1, 5, 123 ],
         #nums       => [ 4, 5, 6 ],
         fk1        => 1,

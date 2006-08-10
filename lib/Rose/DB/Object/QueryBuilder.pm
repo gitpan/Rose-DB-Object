@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.742';
+our $VERSION = '0.75';
 
 our $Debug = 0;
 
@@ -98,6 +98,9 @@ sub build_select
     {
       if($query_arg->[$i] =~ /^(?:and|or)$/i)
       {
+        my $query = $query_arg->[$i + 1];
+        next  unless(ref $query && @$query);
+
         my($sql, $bind);
 
         if($do_bind)
@@ -105,7 +108,7 @@ sub build_select
           ($sql, $bind) =
             build_select(%args, 
                          where_only => 1,
-                         query => $query_arg->[$i + 1],
+                         query => $query,
                          logic => uc $query_arg->[$i],
                          set => $set);
 
@@ -116,7 +119,7 @@ sub build_select
           $sql =
             build_select(%args, 
                          where_only => 1,
-                         query => $query_arg->[$i + 1],
+                         query => $query,
                          logic => uc $query_arg->[$i],
                          set => $set);
         }
@@ -353,8 +356,15 @@ sub build_select
             }
           }
         }
+        delete $query{$column_arg};
       }
     }
+  }
+
+  if(%query)
+  {
+    my $s = (scalar keys %query > 1) ? 's' : '';
+    Carp::croak "Invalid query parameter$s: ", join(', ', sort keys %query);
   }
 
   if($clauses_arg)
@@ -597,48 +607,48 @@ sub _build_clause
     {
       if($op eq '=')
       {
-        if($bind)
+        my @new_vals;
+
+        foreach my $val (@$vals)
         {
-          my @new_vals;
+          my $should_inline = 
+            ($db && $col_meta && $col_meta->should_inline_value($db, $val));
 
-          foreach my $val (@$vals)
+          if($should_inline || $force_inline)
           {
-            my $should_inline = 
-              ($db && $col_meta && $col_meta->should_inline_value($db, $val));
-
-            if($should_inline || $force_inline)
+            push(@new_vals, $val);
+          }
+          elsif(ref $val eq 'SCALAR')
+          {
+            push(@new_vals, $$val);
+          }
+          else
+          {
+            if($bind)
             {
-              push(@new_vals, $val);
-            }
-            elsif(ref $val eq 'SCALAR')
-            {
-              push(@new_vals, $$val);
-            }
-            elsif(defined $val)
-            {
-              push(@$bind, $val);
-              push(@new_vals, $placeholder);
-
-              if($bind_params)
+              if(defined $val)
               {
-                push(@$bind_params, $col_meta->dbi_bind_param_attrs($db));
+                push(@$bind, $val);
+                push(@new_vals, $placeholder);
+
+                if($bind_params)
+                {
+                  push(@$bind_params, $col_meta->dbi_bind_param_attrs($db));
+                }
+              }
+              else
+              {
+                push(@new_vals, 'NULL');
               }
             }
             else
             {
-              push(@new_vals, 'NULL');
+              push(@new_vals, $dbh->quote($val));
             }
           }
-
-          return "$field " . ($not ? "$not " : '') . 'IN (' . join(', ', @new_vals) . ')';
         }
 
-        return "$field " . ($not ? "$not " : '') . 'IN (' . join(', ', map 
-               {
-                 ($force_inline || ($db && $col_meta && $col_meta->should_inline_value($db, $_))) ? 
-                 $_ : $dbh->quote($_)
-               }
-               @$vals) . ')';
+        return "$field " . ($not ? "$not " : '') . 'IN (' . join(', ', @new_vals) . ')';
       }
       elsif($op =~ /^(A(?:NY|LL)) IN (SET|ARRAY)$/)
       {
@@ -1006,7 +1016,7 @@ Furthermore, if there is no explicit value for the C<select> parameter, then eac
 
 =item B<query PARAMS>
 
-The query parameters, passed as a reference to an array of name/value pairs.  PARAMS may include an arbitrary list of selection parameters used to modify the "WHERE" clause of the SQL select statement.
+The query parameters, passed as a reference to an array of name/value pairs.  PARAMS may include an arbitrary list of selection parameters used to modify the "WHERE" clause of the SQL select statement.  Any query parameter that is not in one of the forms described below will cause a fatal error.
 
 Valid selection parameters are described below, along with the SQL clause they add to the select statement.
 
@@ -1043,6 +1053,7 @@ Undefined values are translated to the keyword NULL when included in a multi-val
     -------------       ------------
     regex, regexp       REGEXP
     like                LIKE
+    ilike               ILIKE
     rlike               RLIKE
     ne                  <>
     eq                  =

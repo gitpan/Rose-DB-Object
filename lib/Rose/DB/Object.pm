@@ -13,9 +13,10 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Manager;
 use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
-use Rose::DB::Object::Util qw(row_id lazy_column_values_loaded_key);
+use Rose::DB::Object::Util 
+  qw(row_id lazy_column_values_loaded_key has_modified_columns);
 
-our $VERSION = '0.742';
+our $VERSION = '0.75';
 
 our $Debug = 0;
 
@@ -400,6 +401,7 @@ sub load
 
   $self->{STATE_IN_DB()} = 1;
   $self->{LOADED_FROM_DRIVER()} = $db->{'driver'};
+  $self->{MODIFIED_COLUMNS()} = {};
   return $self || 1;
 }
 
@@ -407,11 +409,19 @@ sub save
 {
   my($self, %args) = @_;
 
-  # Keep trigger-encumbered code in separate code path
-  if($self->{ON_SAVE_ATTR_NAME()})
+  my $meta = $self->meta;
+
+  my $cascade =
+    exists $args{'cascade'} ? $args{'cascade'} :
+    $meta->default_cascade_save;
+
+  # Keep trigger-encumbered and cascade code in separate code path
+  if($self->{ON_SAVE_ATTR_NAME()} || $cascade)
   {
-    my $db  = $self->db or return 0;
+    my $db  = $args{'db'} || $self->db || return 0;
     my $ret = $db->begin_work;
+
+    $args{'db'} ||= $db;
 
     unless($ret)
     {
@@ -423,7 +433,6 @@ sub save
 
     eval
     {
-      my $meta = $self->meta;
       my %did_set;
 
       #
@@ -494,6 +503,19 @@ sub save
           $code->() or die $self->error;
         }
       }
+      
+      if($cascade)
+      {
+        foreach my $fk ($meta->foreign_keys)
+        {
+          # Don't save if this object was just set above
+          next  if($todo->{'fk'}{$fk->name}{'set'});
+
+          my $foreign_object = $fk->object_has_foreign_object($self) || next;
+          $Debug && warn "$self - save foreign ", $fk->name, " - $foreign_object\n";
+          $foreign_object->save(%args)  if(has_modified_columns($foreign_object));
+        }
+      }
 
       # Relationships
       foreach my $rel_name (keys %{$todo->{'rel'}})
@@ -513,6 +535,23 @@ sub save
         if($code  = $todo->{'rel'}{$rel_name}{'add'})
         {
           $code->() or die $self->error;
+        }
+      }
+
+      if($cascade)
+      {
+        foreach my $rel ($meta->relationships)
+        {
+          # Don't save if this object was just set above
+          next  if($todo->{'rel'}{$rel->name}{'set'});
+
+          my $related_objects = $rel->object_has_related_objects($self) || next;
+          
+          foreach my $related_object (@$related_objects)
+          {
+            $Debug && warn "$self - save related ", $rel->name, " - $related_object\n";
+            $related_object->save(%args)  if(has_modified_columns($related_object));
+          }
         }
       }
 
@@ -569,6 +608,9 @@ sub update
   my @key_columns = $meta->primary_key_column_names;
   my @key_methods = $meta->primary_key_column_accessor_names;
   my @key_values  = grep { defined } map { $self->$_() } @key_methods;
+
+  # Special case for tables where all columns are part of the primary key
+  return $self || 1  if(@key_columns == $meta->num_columns);
 
   # See comment below
   #my $null_key  = 0;
@@ -1799,7 +1841,7 @@ For each "many to many" relationship, all of the rows in the "mapping table" tha
 
 For each "one to one" relationship or foreign key with a "one to one" L<relationship type|Rose::DB::Object::Metadata::ForeignKey/relationship_type>, all of the rows in the foreign table that reference the current object will deleted in "delete" mode, or will have the column(s) that reference the current object set to NULL in "null" mode.
 
-In all modes, if the L<db|/db> is not currently in a transaction (i.e., if L<AutoCommit|Rose::DB/autocommit> is turned off), a new transaction is started.  If any part of the cascaded delete fails, the transaction is rolled back.
+In all modes, if the L<db|/db> is not currently in a transaction, a new transaction is started.  If any part of the cascaded delete fails, the transaction is rolled back.
 
 =item C<prepare_cached BOOL>
 
@@ -1910,6 +1952,24 @@ Save the current object to the database table.  In the absence of PARAMS, if the
 PARAMS are name/value pairs.  Valid parameters are:
 
 =over 4
+
+=item C<cascade BOOL>
+
+If true, then sub-objects related to this object through a foreign key or relationship that have been previously loaded using methods called on this object and that contain unsaved changes will be L<saved|/save> after the parent object is saved.  This proceeds recursively through all sub-objects.  (All other parameters to the original call to L<save|/save> are also passed on when saving sub-objects.)
+
+All database operations are done within a single transaction.  If the L<db|/db> is not currently in a transaction, a new transaction is started.  If any part of the cascaded save fails, the transaction is rolled back.
+
+If omitted, the default value of this parameter is determined by the L<metadata object|/meta>'s L<default_cascade_save|Rose::DB::Object::Metadata/default_cascade_save> class method, which returns false by default.
+
+Example:
+
+    $p = Product->new(id => 123)->load;
+
+    print join(', ', $p->colors); # related Color objects loaded
+    $p->colors->[0]->code('zzz'); # one Color object is modified
+
+    # The Product object and the modified Color object are saved
+    $p->save(cascade => 1);
 
 =item C<changes_only BOOL>
 
@@ -2075,6 +2135,8 @@ Although the mailing list is the preferred support mechanism, you can also email
 L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object>
 
 =head1 CONTRIBUTORS
+
+Perrin Harkins
 
 Cees Hek
 

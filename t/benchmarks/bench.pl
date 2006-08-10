@@ -2133,8 +2133,9 @@ WHERE
   p.name LIKE 'Product %2%' AND
   p.id <= @{[ 500_000 + $Iterations ]} AND
   p.id >= 500000
-LIMIT @{[ MAX_LIMIT ]}
 EOF
+
+      #LIMIT @{[ MAX_LIMIT ]}
 
       $sth->execute;
       my %row;
@@ -2169,7 +2170,7 @@ EOF
         my $n = $p->{'cat_name'};
         die  unless($n =~ /\S/);
         my $cn = $p->{'cn_name'};
-        die  unless($cn =~ /^CN /);
+        die  unless(index($cn, 'CN ') == 0);
       }
     }
   }
@@ -2194,8 +2195,8 @@ EOF
             name => { like => 'Product %2%' },
           ],
           with_objects    => [ 'code_names' ],
-          require_objects => [ 'category' ],
-          limit => MAX_LIMIT);
+          require_objects => [ 'category' ]);
+          #limit => MAX_LIMIT);
       die unless(@$ps);
 
       if($Debug && !$printed)
@@ -2209,8 +2210,13 @@ EOF
         my $cat = $p->category;
         my $n = $cat->name;
         die  unless($n =~ /\S/);
-        my $cn = $p->code_names->[0];
-        die  unless($cn->name =~ /^CN /);
+        
+        foreach my $cn ($p->code_names)
+        {
+          die  unless(index($cn->name, 'CN ') == 0);
+        }
+
+        #print "R P $p->{'id'} C $cat->{'name'} CN ", scalar(@{[ $p->code_names ]}), "\n";
       }
     }
   }
@@ -2227,7 +2233,9 @@ EOF
           name => { -like => 'Product %2%' },
           id   => { '<=' => 200_000 + $Iterations,
                     '>=' => 200_000 } 
-        }, { limit_dialect => $Limit_Dialect, limit => MAX_LIMIT });
+        }
+        #{ limit_dialect => $Limit_Dialect, limit => MAX_LIMIT }
+        );
 
       die unless(@p);
 
@@ -2242,8 +2250,11 @@ EOF
         my $cat = $p->category_id;
         my $n = $cat->name;
         die  unless($n =~ /\S/);
-        my $cn = ($p->code_names)[0];
-        die  unless($cn->name =~ /^CN /);
+
+        foreach my $cn ($p->code_names)
+        {
+          die  unless(index($cn->name, 'CN ') == 0);
+        }
       }
     }
   }
@@ -2260,7 +2271,9 @@ EOF
           name => { -like => 'Product %2%' },
           id   => { '<=' => 400_000 + $Iterations,
                     '>=' => 400_000 } 
-        }, { prefetch => [ 'category_id' ], limit_dialect => $Limit_Dialect, limit => MAX_LIMIT });
+        }, { prefetch => [ 'category_id' ], 
+        #limit_dialect => $Limit_Dialect, limit => MAX_LIMIT 
+        });
 
       die unless(@p);
 
@@ -2275,8 +2288,11 @@ EOF
         my $cat = $p->category_id;
         my $n = $cat->name;
         die  unless($n =~ /\S/);
-        my $cn = ($p->code_names)[0];
-        die  unless($cn->name =~ /^CN /);
+
+        foreach my $cn ($p->code_names)
+        {
+          die  unless(index($cn->name, 'CN ') == 0);
+        }
       }
     }
   }
@@ -2298,7 +2314,8 @@ EOF
         {
           prefetch => [ 'code_names', 'category_id' ],
           software_limit => 1,
-          rows => MAX_LIMIT,
+          # prefetch ...-to-many is broken in DBIC
+          #rows => MAX_LIMIT,
         });
       die unless(@p);
 
@@ -2314,8 +2331,13 @@ EOF
         my $n = $cat->name;
         die  unless($n =~ /\S/);
         my $rs = $p->code_names;
-        my $cn = $rs->next;
-        die  unless($cn->name =~ /^CN /);
+
+        foreach my $cn ($rs->all)
+        {
+          die  unless(index($cn->name, 'CN ') == 0);
+        }
+
+        #print "D P ", $p->id, " C ", $cat->name, " CN $rs\n";
       }
     }
   }
@@ -4036,8 +4058,9 @@ WHERE
   p.name LIKE 'Product %2%' AND
   p.id <= @{[ 500_000 + $Iterations ]} AND
   p.id >= 500000
-LIMIT @{[ MAX_LIMIT ]}
 EOF
+
+      # LIMIT @{[ MAX_LIMIT ]}
 
       $sth->execute;
       my %row;
@@ -4072,7 +4095,7 @@ EOF
         my $n = $p->{'cat_name'};
         die  unless($n =~ /\S/);
         my $cn = $p->{'cn_name'};
-        die  unless($cn =~ /^CN /);
+        die  unless(index($cn, 'CN ') == 0);
       }
     }
   }
@@ -4098,7 +4121,8 @@ EOF
           ],
           with_objects    => [ 'code_names' ],
           require_objects => [ 'category' ],
-          limit => MAX_LIMIT);
+          #limit => MAX_LIMIT
+          );
       die unless(@$ps);
 
       if($Debug && !$printed)
@@ -4112,8 +4136,11 @@ EOF
         my $cat = $p->category;
         my $n = $cat->name;
         die  unless($n =~ /\S/);
-        my $cn = $p->code_names->[0];
-        die  unless($cn->name =~ /^CN /);
+
+        foreach my $cn ($p->code_names)
+        {
+          die  unless(index($cn->name, 'CN ') == 0);
+        }
       }
     }
   }
@@ -4130,7 +4157,9 @@ EOF
           name => { -like => 'Product %2%' },
           id   => { '<=' => 200_000 + $Iterations,
                     '>=' => 200_000 } 
-        }, { limit_dialect => $Limit_Dialect, limit => MAX_LIMIT });
+        }, 
+        #{ limit_dialect => $Limit_Dialect, limit => MAX_LIMIT }
+        );
       die unless(@p);
 
       if($Debug && !$printed)
@@ -4144,8 +4173,11 @@ EOF
         my $cat = $p->category_id;
         my $n = $cat->name;
         die  unless($n =~ /\S/);
-        my $cn = ($p->code_names)[0];
-        die  unless($cn->name =~ /^CN /);
+
+        foreach my $cn ($p->code_names)
+        {
+          die  unless(index($cn->name, 'CN ') == 0);
+        }
       }
     }
   }
@@ -4162,7 +4194,9 @@ EOF
           name => { -like => 'Product %2%' },
           id   => { '<=' => 400_000 + $Iterations,
                     '>=' => 400_000 } 
-        }, { prefetch => [ 'category_id' ], limit_dialect => $Limit_Dialect, limit => MAX_LIMIT });
+        }, { prefetch => [ 'category_id' ], 
+        #limit_dialect => $Limit_Dialect, limit => MAX_LIMIT 
+        });
 
       die unless(@p);
 
@@ -4177,8 +4211,11 @@ EOF
         my $cat = $p->category_id;
         my $n = $cat->name;
         die  unless($n =~ /\S/);
-        my $cn = ($p->code_names)[0];
-        die  unless($cn->name =~ /^CN /);
+
+        foreach my $cn ($p->code_names)
+        {
+          die  unless(index($cn->name, 'CN ') == 0);
+        }
       }
     }
   }
@@ -4200,7 +4237,8 @@ EOF
         {
           prefetch => [ 'category_id', 'code_names' ], 
           software_limit => 1,
-          rows => MAX_LIMIT,
+          # prefetch ...-to-many is broken in DBIC
+          #rows => MAX_LIMIT,
         });
 
       die unless(@p);
@@ -4217,8 +4255,11 @@ EOF
         my $n = $cat->name;
         die  unless($n =~ /\S/);
         my $rs = $p->code_names;
-        my $cn = $rs->next;
-        die  unless($cn->name =~ /^CN /);
+
+        foreach my $cn ($rs->all)
+        {
+          die  unless(index($cn->name, 'CN ') == 0);
+        }
       }
     }
   }

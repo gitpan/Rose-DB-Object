@@ -10,7 +10,7 @@ use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Object;
 our @ISA = qw(Rose::DB::Object::Metadata::Object);
 
-our $VERSION = '0.722';
+our $VERSION = '0.75';
 
 #
 # Class data
@@ -130,7 +130,7 @@ sub init_method_maker_info
         {
           next  unless($subclass_info->{$type});
 
-          foreach my $attr (qw(class type))
+          foreach my $attr (qw(class type interface))
           {
             next  if(!$subclass_info->{$type}{$attr} ||
                      defined $info->{$type}{$attr});  

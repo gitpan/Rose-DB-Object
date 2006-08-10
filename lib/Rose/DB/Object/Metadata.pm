@@ -63,6 +63,7 @@ use Rose::Object::MakeMethods::Generic
     auto_load_related_classes   => { default => 1 },
     default_update_changes_only => { default => 0 },
     default_insert_changes_only => { default => 0 },
+    default_cascade_save        => { default => 0 },
   ],
 
   array =>
@@ -830,6 +831,12 @@ sub columns
   return wantarray ?
     (sort { $a->name cmp $b->name } values %{$self->{'columns'} ||= {}}) :
     [ sort { $a->name cmp $b->name } values %{$self->{'columns'} ||= {}} ];
+}
+
+sub num_columns
+{
+  my($self) = shift;
+  return $self->{'num_columns'} ||= scalar(@{$self->columns});
 }
 
 sub nonlazy_columns
@@ -2141,7 +2148,7 @@ sub retry_deferred_relationships
       $relationship->make_methods(%$args);
 
       # Reassign to list in case we rebuild above
-      $self->relationship($relationship->name => $relationship);
+      $relationship->parent->relationship($relationship->name => $relationship);
     }
     else
     {
@@ -3145,8 +3152,12 @@ sub insert_and_on_duplicate_key_update_sql
 
   if($obj->{STATE_IN_DB()})
   {
+    my %seen;
+
     @columns = $changes_only ?
-      (map { $self->column($_) } keys %{$obj->{MODIFIED_COLUMNS()} || {}}) :
+      (map { $self->column($_) } grep { !$seen{$_}++ }  
+       ($self->primary_key_column_names, 
+        keys %{$obj->{MODIFIED_COLUMNS()} || {}})) :
       (grep { (!$_->{'lazy'} || $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } 
        $self->columns);
 
@@ -3269,8 +3280,12 @@ sub insert_and_on_duplicate_key_update_with_inlining_sql
 
   if($obj->{STATE_IN_DB()})
   {
+    my %seen;
+
     @columns = $changes_only ?
-      (map { $self->column($_) } keys %{$obj->{MODIFIED_COLUMNS()} || {}}) :
+      (map { $self->column($_) } grep { !$seen{$_}++ }  
+       ($self->primary_key_column_names, 
+        keys %{$obj->{MODIFIED_COLUMNS()} || {}})) :
       (grep { (!$_->{'lazy'} || $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } 
        $self->columns);
 
@@ -3516,6 +3531,7 @@ sub _clear_column_generated_values
   $self->{'fq_table'}               = undef;
   $self->{'fq_table_sql'}           = undef;
   $self->{'column_names'}           = undef;
+  $self->{'num_columns'}            = undef;
   $self->{'nonlazy_column_names'}   = undef;
   $self->{'lazy_column_names'}      = undef;
   $self->{'get_column_sql_tmpl'}    = undef;
@@ -4436,7 +4452,7 @@ Example:
       Rose::DB::Object::Metadata::ForeignKey->new(...),
     );
 
-For each foreign key added, a corresponding relationship with the same name is added if it does not already exist.  The relationship type is determined by the value o fthe foreign key object's L<relationship|Rose::DB::Object::Metadata::ForeignKey/relationship_type> attribute.  The default is "many to one".  The class of the relationship is chosen by calling L<relationship_type_class|/relationship_type_class> with the relationship type as an argument.
+For each foreign key added, a corresponding relationship with the same name is added if it does not already exist.  The relationship type is determined by the value of the foreign key object's L<relationship|Rose::DB::Object::Metadata::ForeignKey/relationship_type> attribute.  The default is "many to one".  The class of the relationship is chosen by calling L<relationship_type_class|/relationship_type_class> with the relationship type as an argument.
 
 =item B<add_primary_key_column COLUMN>
 
@@ -4678,6 +4694,10 @@ See the L<Rose::DB::Object::ConventionManager> documentation for more informatio
 =item B<db>
 
 Returns the L<Rose::DB>-derived object associated with this metadata object's L<class|/class>.  A fatal error will occur if L<class|/class> is undefined or if the L<Rose::DB> object could not be created.
+
+=item B<default_cascade_save [BOOL]>
+
+Get or set a boolean value that indicates whether or not the L<class|/class> associated with this metadata object will L<save|Rose::DB::Object/save> related objects when the parent object is L<saved|Rose::DB::Object/save>.  See the documentation for L<Rose::DB::Object>'s L<save()|Rose::DB::Object/save> method for details.  The default value is false.
 
 =item B<default_load_speculative [BOOL]>
 

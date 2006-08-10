@@ -210,6 +210,7 @@ foreach my $db_type (qw(mysql pg informix sqlite))
   if($Have_YAML)
   {
     local $YAML::Syck::SortKeys = 1;
+    $YAML::Syck::SortKeys = 1; # quiet stupid perl 5.6.x warning
     my $yaml = $o->column_values_as_yaml;
     is($yaml, "--- \nage: 6\nid: 2\nlaz: Z2\nname: Alex3\n",
        "column_values_as_yaml() - $db_type");
@@ -245,6 +246,8 @@ foreach my $db_type (qw(mysql pg informix sqlite))
     ok(1, "skip column_values_as_json() - $db_type");
     ok(1, "skip init_with_json() - $db_type");
   }
+  
+  # has_loaded_related() tesed in db-object-relationship.t
 }
 
 BEGIN
