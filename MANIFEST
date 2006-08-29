@@ -78,6 +78,7 @@ lib/Rose/DB/Object/Util.pm
 Makefile.PL
 MANIFEST
 t/00-warning.t
+t/auto-setup.t
 t/benchmarks/bench.pl
 t/benchmarks/lib/MyTest/CDBI/Base.pm
 t/benchmarks/lib/MyTest/CDBI/Complex/Category.pm
@@ -135,6 +136,7 @@ t/db-object-loader-3.t
 t/db-object-loader-4.t
 t/db-object-loader-5.t
 t/db-object-loader-6.t
+t/db-object-loader-7.t
 t/db-object-manager-bulk-ops.t
 t/db-object-manager.t
 t/db-object-mapper.t
@@ -188,5 +190,6 @@ t/spot-check-06.t
 t/spot-check-07.t
 t/spot-check-08.t
 t/spot-check-09.t
+t/spot-check-10.t
 t/test-lib.pl
 META.yml                                 Module meta-data (added by MakeMaker)

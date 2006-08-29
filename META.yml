@@ -1,7 +1,7 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         Rose-DB-Object
-version:      0.75
+version:      0.751
 version_from: lib/Rose/DB/Object.pm
 installdirs:  site
 requires:
@@ -14,7 +14,7 @@ requires:
     File::Spec:                    0
     Math::BigInt:                  0
     Rose::DateTime::Util:          0.53
-    Rose::DB:                      0.722
+    Rose::DB:                      0.724
     Rose::Object:                  0.81
     Scalar::Util:                  0
     Test::More:                    0

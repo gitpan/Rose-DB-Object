@@ -16,7 +16,9 @@ use Rose::DB::Object::Metadata::Util qw(perl_hashref);
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.74';
+our $VERSION = '0.751';
+
+our $Debug = 0;
 
 use Rose::Object::MakeMethods::Generic
 (
@@ -483,6 +485,9 @@ sub make_classes
 
   my $db = delete $args{'db'};
 
+  $args{'stay_connected'} = 1;
+  $args{'passive'} = 1  unless(exists $args{'passive'});
+
   my $include_views = exists $args{'include_views'} ? 
     delete $args{'include_views'} : $self->include_views;
 
@@ -522,8 +527,25 @@ sub make_classes
             "or object attributes";
     }
 
-    $include = qr($include)  if(defined $include);
-    $exclude = qr($exclude)  if(defined $exclude);
+    if(defined $include)
+    {
+      if(ref $include eq 'ARRAY')
+      {
+        $include = '(?i)\A(?:' . join('|', map { quotemeta } @$include) . ')\z'
+      }
+
+      $include = qr((?i)$include);
+    }
+
+    if(defined $exclude)
+    {
+      if(ref $exclude eq 'ARRAY')
+      {
+        $exclude = '(?i)\A(?:' . join('|', map { quotemeta } @$exclude) . ')\z'
+      }
+
+      $exclude = qr((?i)$exclude);
+    }
 
     $filter = sub 
     {
@@ -769,8 +791,6 @@ sub make_classes
   my %list_args;
   $list_args{'include_views'} = 1  if($include_views);
 
-  my $cm_class = ref $cm;
-
   # Iterate over tables, creating RDBO classes for each
   foreach my $table ($db->list_tables(%list_args))
   {
@@ -779,6 +799,8 @@ sub make_classes
 
     # Skip tables with no primary keys
     next  unless($db->has_primary_key($table));
+
+    $Debug && warn "Loader loading table: $table\n";
 
     my $obj_class = $class_prefix . $cm->table_to_class($table);
 
@@ -792,6 +814,8 @@ sub make_classes
     }
 
     my $meta = $obj_class->meta;
+
+    $meta->db($db);
 
     if($pre_init_hook)
     {
@@ -826,7 +850,7 @@ sub make_classes
     $meta->post_init_hook($post_init_hook);
 
     $meta->table($table);
-    $meta->convention_manager($cm_class->new);
+    $meta->convention_manager($cm->clone);
 
     $meta->auto_initialize(%args);
 
@@ -846,7 +870,20 @@ sub make_classes
     }
   }
 
-  $classes[0]->meta_class->clear_all_dbs  if(@classes);
+  if(@classes)
+  {
+    my $meta = $classes[0]->meta;
+
+    # Retry deferred stuff: two passes
+    for(1 .. 2)
+    {
+      $meta->retry_deferred_tasks;
+      $meta->retry_deferred_foreign_keys;
+      $meta->retry_deferred_relationships;
+    }
+
+    $classes[0]->meta_class->clear_all_dbs;
+  }
 
   if(%save)
   {
@@ -1088,13 +1125,15 @@ Get or set the L<schema|Rose::DB/schema> for the database connection.
 
 Get or set the L<username|Rose::DB/username> used to connect to the database.
 
-=item B<exclude_tables REGEX>
+=item B<exclude_tables [ REGEX | ARRAYREF ]>
 
-Table names that match REGEX will be skipped during calls to the L<make_classes|/make_classes> method.  Tables without primary keys are automatically skipped.
+Get or set a regular expression or reference to an array of table names to exclude.  Table names that match REGEX or are contained in ARRAYREF will be skipped by default during calls to the L<make_classes|/make_classes> method.  Tables without primary keys are automatically (and always) skipped.
+
+Table names are compared to REGEX and the names in ARRAYREF in a case-insensitive manner.  To override this in the case of the REGEX, add C<(?-i)> to the front of the REGEX.  Otherwise, use the L<filter_tables|/filter_tables> method instead.
 
 =item B<filter_tables CODEREF>
 
-A reference to a subroutine that takes a single table name argument and returns true if the table should be processed by default during calls to the L<make_classes|/make_classes> method, false if the table should be skipped.  The C<$_> variable will also be set to the table name before the call to CODEREF.  
+Get or set a reference to a subroutine that takes a single table name argument and returns true if the table should be processed by default during calls to the L<make_classes|/make_classes> method, false if the table should be skipped.  The C<$_> variable will also be set to the table name before the call to CODEREF.  
 
 This attribute should not be combined with the L<exclude_tables|/exclude_tables> or L<include_tables|/include_tables> attributes.
 
@@ -1102,9 +1141,11 @@ This attribute should not be combined with the L<exclude_tables|/exclude_tables>
 
 Given the name of a L<Rose::DB::Object>-derived class, returns a class name for a L<Rose::DB::Object::Manager>-derived class to manage such objects.  The default implementation calls the L<auto_manager_class_name|Rose::DB::Object::ConventionManager/auto_manager_class_name> method on the L<convention_manager|/convention_manager> object.
 
-=item B<include_tables REGEX>
+=item B<include_tables [ REGEX | ARRAYREF ]>
 
-Table names that do not match REGEX will be skipped by default during calls to the L<make_classes|/make_classes> method.  Tables without primary keys are automatically (and always) skipped.
+Get or set a regular expression or reference to an array of table names to include.  Table names that do not match REGEX or are not contained in ARRAYREF will be skipped by default during calls to the L<make_classes|/make_classes> method.  Tables without primary keys are automatically (and always) skipped.  
+
+Table names are compared to REGEX and the names in ARRAYREF in a case-insensitive manner.  To override this in the case of the REGEX, add C<(?-i)> to the front of the REGEX.  Otherwise, use the L<filter_tables|/filter_tables> method instead.
 
 =item B<include_views BOOL>
 
@@ -1124,13 +1165,17 @@ The L<Rose::DB>-derived object used to connect to the database.  This object wil
 
 The name of the L<Rose::DB>-derived class used to construct a L<db|/db> object if one has not been set via the parameter or object attribute of the same name.  Defaults to the value of the loader object's L<db_class|/db_class> attribute.
 
-=item B<include_tables REGEX>
+=item B<include_tables [ REGEX | ARRAYREF ]>
 
-Table names that do not match REGEX will be skipped.  Defaults to the value of the loader object's L<include_tables|/include_tables> attribute.  Tables without primary keys are automatically (and always) skipped.
+Table names that do not match REGEX or are not contained in ARRAYREF will be skipped.  Defaults to the value of the loader object's L<include_tables|/include_tables> attribute.  Tables without primary keys are automatically (and always) skipped.
 
-=item B<exclude_tables REGEX>
+Table names are compared to REGEX and the names in ARRAYREF in a case-insensitive manner.  To override this in the case of the REGEX, add C<(?-i)> to the front of the REGEX.  Otherwise, use the C<filter_tables> parameter instead.
 
-Table names that match REGEX will be skipped.  Defaults to the value of the loader object's L<exclude_tables|/exclude_tables> attribute.  Tables without primary keys are automatically skipped.
+=item B<exclude_tables [ REGEX | ARRAYREF ]>
+
+Table names that match REGEX or are contained in ARRAYREF will be skipped.  Defaults to the value of the loader object's L<exclude_tables|/exclude_tables> attribute.  Tables without primary keys are automatically (and always) skipped.
+
+Table names are compared to REGEX and the names in ARRAYREF in a case-insensitive manner.  To override this in the case of the REGEX, add C<(?-i)> to the front of the REGEX.  Otherwise, use the C<filter_tables> parameter instead.
 
 =item B<filter_tables CODEREF>
 

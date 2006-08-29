@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.742';
+our $VERSION = '0.751';
 
 our $Debug = 0;
 
@@ -50,6 +50,7 @@ use Rose::Object::MakeMethods::Generic
     'primary_key',
     'column_name_to_method_name_mapper',
     'original_class',
+    'auto_prime_caches',
   ],
 
   boolean => 
@@ -211,6 +212,8 @@ sub new
 
 sub init_original_class { ref shift }
 
+sub init_auto_prime_caches { $ENV{'MOD_PERL'} ? 1 : 0 }
+
 sub reset
 {
   my($self) = shift;
@@ -355,6 +358,7 @@ sub setup
   return 1  if($self->is_initialized);
 
   my $init_args = [];
+  my $auto_init = 0;
 
   PAIR: while(@_)
   {
@@ -373,15 +377,25 @@ sub setup
       $self->init_auto_helper;
     }
 
-    unless($self->can($method))
-    {
-      Carp::croak "Invalid parameter name: '$method'";
-    }
-
     if($method eq 'initialize')
     {
       $init_args = ref $args ? $args : [ $args ];
       next PAIR;
+    }
+    elsif($method eq 'auto_initialize' || $method eq 'auto')
+    {
+      unless($method eq 'auto' && !ref $args)
+      {
+        $init_args = ref $args ? $args : [ $args ];
+      }
+
+      $auto_init = 1;
+      next PAIR;
+    }
+
+    unless($self->can($method))
+    {
+      Carp::croak "Invalid parameter name: '$method'";
     }
 
     if(ref $args eq 'ARRAY')
@@ -405,7 +419,14 @@ sub setup
     }
   }
 
-  $self->initialize(@$init_args);
+  if($auto_init)
+  {
+    $self->auto_initialize(@$init_args);
+  }
+  else
+  {
+    $self->initialize(@$init_args);
+  }
 
   return 1;
 }
@@ -1428,10 +1449,13 @@ sub initialize
 
   $self->register_class;
 
-  # Retry deferred stuff
-  $self->retry_deferred_tasks;
-  $self->retry_deferred_foreign_keys;
-  $self->retry_deferred_relationships;
+  unless($args{'passive'})
+  {
+    # Retry deferred stuff
+    $self->retry_deferred_tasks;
+    $self->retry_deferred_foreign_keys;
+    $self->retry_deferred_relationships;
+  }
 
   $self->refresh_lazy_column_tracking;
 
@@ -1451,6 +1475,8 @@ sub initialize
       $sub->($self, @_);
     }
   }
+
+  $self->prime_caches  if($self->auto_prime_caches);
 
   return;
 }
@@ -1937,7 +1963,8 @@ sub retry_deferred_foreign_keys
   {
     my $meta = $class->meta;
     next  unless($meta->allow_auto_initialization && $meta->has_outstanding_metadata_tasks);
-    $self->auto_init_relationships(restore_types => 1);
+    $self->auto_init_relationships(%{ $self->auto_init_args || {} }, 
+                                   restore_types => 1);
   }
 }
 
@@ -2555,7 +2582,7 @@ sub method_column
 
   unless(defined $self->{'method_columns'})
   {
-    foreach my $column ($self->column_names)
+    foreach my $column ($self->columns)
     {
       foreach my $type ($column->defined_method_types)
       {
@@ -2863,8 +2890,8 @@ sub update_sql
   my %key = map { ($_ => 1) } @$key_columns;
 
   no warnings;
-  return ($self->{'update_sql_prefix'}{$db->{'id'}} ||=
-    'UPDATE ' . $self->fq_table_sql($db) . " SET \n") .
+  return ($self->{'update_sql_prefix'}{$db->{'id'}} ||
+          $self->init_update_sql_prefix($db)) .
     join(",\n", map 
     {
       '    ' . $_->name_sql($db) . ' = ' . $_->update_placeholder_sql($db)
@@ -2879,6 +2906,13 @@ sub update_sql
       $c->name_sql($db) . ' = ' . $c->query_placeholder_sql($db)
     }
     @$key_columns);
+}
+
+sub init_update_sql_prefix
+{
+  my($self, $db) = @_;
+  return $self->{'update_sql_prefix'}{$db->{'id'}} =
+         'UPDATE ' . $self->fq_table_sql($db) . " SET \n";
 }
 
 sub update_changes_only_sql
@@ -3018,8 +3052,8 @@ sub update_sql_with_inlining
   no warnings;
   return 
   (
-    ($self->{'update_sql_with_inlining_start'}{$db->{'id'}} ||= 
-     'UPDATE ' . $self->fq_table_sql($db) . " SET \n") .
+    ($self->{'update_sql_with_inlining_start'}{$db->{'id'}} || 
+     $self->init_update_sql_with_inlining_start($db)) .
     join(",\n", @updates) . "\nWHERE " . 
     join(' AND ', map 
     {
@@ -3030,6 +3064,13 @@ sub update_sql_with_inlining
     \@bind,
     ($do_bind_params ? \@bind_params : ())
   );
+}
+
+sub init_update_sql_with_inlining_start
+{
+  my($self, $db) = @_;
+  return $self->{'update_sql_with_inlining_start'}{$db->{'id'}} = 
+         'UPDATE ' . $self->fq_table_sql($db) . " SET \n";
 }
 
 sub update_changes_only_sql_with_inlining
@@ -3128,13 +3169,21 @@ sub insert_changes_only_sql
   }
 
   no warnings;
-  return ($self->{'insert_changes_only_sql_prefix'}{$db->{'id'}} ||=
-    'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n") .
+  return ($self->{'insert_changes_only_sql_prefix'}{$db->{'id'}} ||
+          $self->init_insert_changes_only_sql_prefix($db)) .
     join(",\n", map { $_->name_sql($db) } @modified) .
     "\n)\nVALUES\n(\n" . 
     join(",\n", map { $_->insert_placeholder_sql($db) } @modified) . "\n)",
     [ map { my $m = $_->accessor_method_name; $obj->$m() } @modified ],
     \@modified;
+}
+
+sub init_insert_changes_only_sql_prefix
+{
+  my($self, $db) = @_;
+  return $self->{'insert_changes_only_sql_prefix'}{$db->{'id'}} =
+         'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n";
+;
 }
 
 sub insert_columns_placeholders_sql
@@ -3255,19 +3304,23 @@ sub insert_sql_with_inlining
     }
   }
 
-  if($do_bind_params)
-  {
-
-  }
   return 
   (
-    ($self->{'insert_sql_with_inlining_start'}{$db->{'id'}} ||=
-    'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n" .
-    join(",\n", map { "  $_" } $self->column_names_sql($db)) .
-    "\n)\nVALUES\n(\n") . join(",\n", @places) . "\n)",
+    ($self->{'insert_sql_with_inlining_start'}{$db->{'id'}} ||
+     $self->init_insert_sql_with_inlining_start($db)) .
+    join(",\n", @places) . "\n)",
     \@bind,
     ($do_bind_params ? \@bind_params : ())
   );
+}
+
+sub init_insert_sql_with_inlining_start
+{
+  my($self, $db) = @_;
+  $self->{'insert_sql_with_inlining_start'}{$db->{'id'}} =
+    'INSERT INTO ' . $self->fq_table_sql($db) . "\n(\n" .
+    join(",\n", map { "  $_" } $self->column_names_sql($db)) .
+    "\n)\nVALUES\n(\n";
 }
 
 sub insert_and_on_duplicate_key_update_with_inlining_sql
@@ -3439,22 +3492,8 @@ sub get_column_value
   my $db  = $object->db or Carp::confess $object->error;
   my $dbh = $db->dbh or Carp::confess $db->error;
 
-  my $sql = $self->{'get_column_sql_tmpl'};
-
-  unless($sql)
-  {
-    my $key_columns = $self->primary_key_column_names;
-    my %key = map { ($_ => 1) } @$key_columns;  
-
-    $sql = $column->{'get_column_sql_tmpl'}{$db->{'id'}} = 
-      'SELECT __COLUMN__ FROM ' . $self->fq_table_sql($db) . ' WHERE ' .
-      join(' AND ', map 
-      {
-        my $c = $self->column($_);
-        $c->name_sql($db) . ' = ' . $c->query_placeholder_sql($db)
-      }
-      @$key_columns);
-  }
+  my $sql = $self->{'get_column_sql_tmpl'}{$db->{'id'}} || 
+            $self->init_get_column_sql_tmpl($db);
 
   $sql =~ s/__COLUMN__/$column->name_sql/e;
 
@@ -3483,6 +3522,23 @@ sub get_column_value
   return $value;
 }
 
+sub init_get_column_sql_tmpl
+{
+  my($self, $db) = @_;
+
+  my $key_columns = $self->primary_key_column_names;
+  my %key = map { ($_ => 1) } @$key_columns;  
+
+  return $self->{'get_column_sql_tmpl'}{$db->{'id'}} = 
+    'SELECT __COLUMN__ FROM ' . $self->fq_table_sql($db) . ' WHERE ' .
+    join(' AND ', map 
+    {
+      my $c = $self->column($_);
+      $c->name_sql($db) . ' = ' . $c->query_placeholder_sql($db)
+    }
+    @$key_columns);
+}
+
 sub refresh_lazy_column_tracking
 {
   my($self) = shift;
@@ -3502,6 +3558,64 @@ sub has_lazy_columns
   my($self) = shift;
   return $self->{'has_lazy_columns'}  if(defined $self->{'has_lazy_columns'});
   return $self->{'has_lazy_columns'} = grep { $_->lazy } $self->columns;
+}
+
+sub prime_all_caches
+{
+  my($class) = shift;
+
+  foreach my $obj_class ($class->registered_classes)
+  {
+    $obj_class->meta->prime_caches();
+  }
+}
+
+sub prime_caches
+{
+  my($self) = shift;
+
+  my @methods =
+    qw(column_names num_columns nonlazy_column_names lazy_column_names
+       column_rw_method_names column_accessor_method_names
+       nonlazy_column_accessor_method_names column_mutator_method_names
+       nonlazy_column_mutator_method_names nonlazy_column_db_value_hash_keys
+       primary_key_column_db_value_hash_keys column_db_value_hash_keys
+       column_accessor_method_names column_mutator_method_names
+       column_rw_method_names dbi_requires_bind_param);
+
+  foreach my $method (@methods)
+  {
+    $self->$method();
+  }
+
+  my $db = $self->class->init_db;
+
+  $self->method_column('nonesuch');
+  $self->fq_primary_key_sequence_names(db => $db);
+
+  @methods =
+    qw(fq_table fq_table_sql init_get_column_sql_tmpl delete_sql
+       primary_key_sequence_names insert_sql 
+       init_insert_sql_with_inlining_start
+       init_insert_changes_only_sql_prefix init_update_sql_prefix
+       init_update_sql_with_inlining_start column_names_string_sql
+       nonlazy_column_names_string_sql select_nonlazy_columns_string_sql
+       select_columns_string_sql select_columns_sql);
+
+  foreach my $method (@methods)
+  {
+    $self->$method($db);
+  }
+
+  @methods = undef; # reclaim memory?
+
+  foreach my $key ($self->primary_key, $self->unique_keys)
+  {
+    foreach my $method (qw(update_all_sql load_sql load_all_sql))
+    {
+      $self->update_all_sql(scalar $key->columns, $db);
+    }
+  }
 }
 
 sub _clear_table_generated_values
@@ -3535,7 +3649,6 @@ sub _clear_column_generated_values
   $self->{'nonlazy_column_names'}   = undef;
   $self->{'lazy_column_names'}      = undef;
   $self->{'get_column_sql_tmpl'}    = undef;
-  $self->{'columns_names_sql'}      = undef;
   $self->{'column_names_string_sql'} = undef;
   $self->{'nonlazy_column_names_string_sql'}      = undef;
   $self->{'column_rw_method_names'}               = undef;
@@ -3648,13 +3761,6 @@ sub dbi_requires_bind_param
   }
 
   return $self->{'dbi_requires_bind_param'}{$db->{'id'}} = 0;
-}
-
-sub dbi_bind_params
-{
-  my($self, $sth, $bind, $columns) = @_;
-
-
 }
 
 sub make_manager_class
@@ -4143,6 +4249,10 @@ This hybrid approach to metadata population strikes a good balance between upfro
 
 =over 4
 
+=item B<auto_prime_caches [BOOL]>
+
+Get or set a boolean value that indicates whether or not the L<prime_caches|/prime_caches> method will be called from within the L<initialize|/initialize> method.  The default is true if the C<MOD_PERL> environment variable (C<$ENV{'MOD_PERL'}>) is set to a true value, false otherwise.
+
 =item B<clear_all_dbs>
 
 Clears the L<db|/db> attribute of the metadata object for each L<registered class|/registered_classes>.
@@ -4271,6 +4381,10 @@ Returns (or creates, if needed) the single L<Rose::DB::Object::Metadata> object 
 This class method should return a reference to a subroutine that maps column names to method names, or false if it does not want to do any custom mapping.  The default implementation returns zero (0).
 
 If defined, the subroutine should take four arguments: the metadata object, the column name, the column method type, and the method name that would be used if the mapper subroutine did not exist.  It should return a method name.
+
+=item B<prime_all_caches>
+
+Call L<prime_caches|/prime_caches> on all L<registered_classes|/registered_classes>.
 
 =item B<relationship_type_class TYPE>
 
@@ -4821,6 +4935,8 @@ If any column name in the primary key or any of the unique keys does not exist i
 
 ARGS, if any, are passed to the call to L<make_methods|/make_methods> that actually creates the methods.
 
+If L<auto_prime_caches|/auto_prime_caches> is true, then the L<prime_caches|/prime_caches> method will be called at the end of the initialization process.
+
 =item B<is_initialized [BOOL]>
 
 Get or set a boolean value that indicates whether or not this L<class|/class> was L<initialize|/initialize>d.  A successful call to the L<initialize|/initialize> method will automatically set this flag to true.
@@ -4977,6 +5093,10 @@ Get or set the list of database sequence names used to populate the primary key 
 
 If you do not set this value, it will be derived for you based on the name of the primary key columns.  In the common case, you do not need to be concerned about this method.  If you are using the built-in SERIAL or AUTO_INCREMENT types in your database for your primary key columns, everything should just work.
 
+=item B<prime_caches>
+
+By default, secondary metadata derived from the attributes of this object is created and cached on demand.  Call this method to pre-cache this metadata all at once.  This method is useful when running in an environment like L<mod_perl> where it's advantageous to load as much data as possible on start-up.
+
 =item B<relationship NAME [, RELATIONSHIP | HASHREF]>
 
 Get or set the relationship named NAME.  If just NAME is passed, the L<Rose::DB::Object::Metadata::Relationship>-derived relationship object for that NAME is returned.  If no such relationship exists, undef is returned.
@@ -5042,9 +5162,29 @@ will result in this method call:
 
 (Note that these method names are I<singular>.  This exception does I<not> apply to the I<plural> variants, "L<unique_keys|/unique_keys>" and "L<add_unique_keys|/add_unique_keys>".)
 
-Method names may appear more than once in PARAMS.  The methods are called in the order that they appear in PARAMS, with the exception of the L<initialize|/initialize> method, which is always called last.  If "initialize" is not one of the method names, then it will be called automatically (with no arguments) at the end.  If you do not want to pass any arguments to the  L<initialize|/initialize> method, standard practice is to omit it.
+Method names may appear more than once in PARAMS.  The methods are called in the order that they appear in PARAMS, with the exception of the L<initialize|/initialize> (or L<auto_initialize|/auto_initialize>) method, which is always called last.
 
-Here's an example L<setup()|/setup> method call, followed by the equivalent "long-hand" implementation.
+If "initialize" is not one of the method names, then it will be called automatically (with no arguments) at the end.  If you do not want to pass any arguments to the L<initialize|/initialize> method, standard practice is to omit it.
+
+If "auto_initialize" is one of the method names, then the  L<auto_initialize|/auto_initialize> method will be called instead of the L<initialize|/initialize> method.  This is useful if you want to manually set up a few pieces of metadata, but want the auto-initialization system to set up the rest.
+
+The name "auto" is considered equivalent to "auto_initialize", but any arguments are ignored unless they are encapsulated in a reference to an array.  For example, these are equivalent:
+
+    $meta->setup(
+      table => 'mytable',
+      # Call auto_initialize() with no arguments
+      auto_initialize => [],
+    );
+
+    # This is another way of writing the same thing as the above
+    $meta->setup(
+      table => 'mytable',
+      # The value "1" is ignored because it's not an arrayref,
+      # so auto_initialize() will be called with no arguments.
+      auto => 1,
+    );
+
+Finally, here's a full example of a L<setup()|/setup> method call followed by the equivalent "long-hand" implementation.
 
     $meta->setup
     (
@@ -5199,6 +5339,12 @@ PARAMS are optional name/value pairs.  When applicable, these parameters are pas
 
 =over 4
 
+=item B<include_map_class_relationships BOOL>
+
+By default, if a class is a L<map class|Rose::DB::Object::Metadata::Relationship::ManyToMany/map_class> (according to the L<is_map_class|Rose::DB::Object::ConventionManager/is_map_class> method of the L<convention manager|/convention_manager>), then relationships directly between that class and the current L<class|/class> will not be created.  Set this parameter to true to allow such relationships to be created.
+
+B<Note:> If some classes that are not actually map classes are being skipped, you should not use this parameter to force them to be included.  It's more appropriate to make your own custom L<convention manager|Rose::DB::Object::ConventionManager> subclass and then override the L<is_map_class|Rose::DB::Object::ConventionManager/is_map_class> method to make the correct determination.
+
 =item B<replace_existing BOOL>
 
 If true, then the auto-generated columns, unique keys, foreign keys, and relationships entirely replace any existing columns, unique keys, foreign keys, and relationships, respectively.
@@ -5244,6 +5390,12 @@ Auto-retrieve the names of the columns that make up the primary key for this tab
 Auto-populate the list of L<relationships|/relationships> for this L<class|/class>.  PARAMS are optional name/value pairs.
 
 =over 4
+
+=item B<include_map_class_relationships BOOL>
+
+By default, if a class is a L<map class|Rose::DB::Object::Metadata::Relationship::ManyToMany/map_class> (according to the L<is_map_class|Rose::DB::Object::ConventionManager/is_map_class> method of the L<convention manager|/convention_manager>), then relationships directly between that class and the current L<class|/class> will not be created.  Set this parameter to true to allow such relationships to be created.
+
+B<Note:> If some classes that are not actually map classes are being skipped, you should not use this parameter to force them to be included.  It's more appropriate to make your own custom L<convention manager|Rose::DB::Object::ConventionManager> subclass and then override the L<is_map_class|Rose::DB::Object::ConventionManager/is_map_class> method to make the correct determination.
 
 =item C<replace_existing BOOL> 
 
@@ -5608,7 +5760,7 @@ The name of the manager class.  Defaults to the L<object class|/class> with "::M
 
 =item * isa CLASSES
 
-The name of a single class or a reference to an array of class names to be included in the C<@ISA> array for the manager class.  One of these classes must inherit from L<Rose::DB::Object::Manager>.  Defaults to C<Rose::DB::Object::Manager>.
+The name of a single class or a reference to an array of class names to be included in the C<@ISA> array for the manager class.  One of these classes must inherit from L<Rose::DB::Object::Manager>.  Defaults to L<Rose::DB::Object::Manager>.
 
 =back
 

@@ -12,7 +12,7 @@ BEGIN
 
 our %Have;
 
-our @Tables = qw(vendors Products prices Colors product_color_map);
+our @Tables = qw(vendor product price color product_color_map);
 our $Include_Tables = join('|', @Tables);
 
 SETUP:
@@ -20,8 +20,18 @@ SETUP:
   package My::DB;
   our @ISA = qw(Rose::DB);
 
+  package My::DB::Object::Metadata;
+  our @ISA = qw(Rose::DB::Object::Metadata);    
+  sub make_column_methods
+  {
+    my($self) = shift;
+    $JCS::Called_For{$self->class}++;
+    $self->SUPER::make_column_methods(@_);
+  }
+
   package My::DB::Object;
   our @ISA = qw(Rose::DB::Object);
+  sub meta_class { 'My::DB::Object::Metadata' }
   sub foo_bar { 123 }
 
   package MyWeirdClass;
@@ -33,9 +43,13 @@ SETUP:
 # Tests
 #
 
+# We'll need to clear the registry since we're using DSN instead
+our $real_registry  = Rose::DB->registry;
+our $empty_registry = Rose::DB::Registry->new;
+
 my $i = 1;
 
-foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
+foreach my $db_type (qw(mysql pg_with_schema pg informix sqlite))
 {
   SKIP:
   {
@@ -46,28 +60,39 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
 
   $i++;
 
-  My::DB->default_type($db_type);
+  Rose::DB->registry($real_registry);
   Rose::DB::Object::Metadata->unregister_all_classes;
 
   my $class_prefix = ucfirst($db_type eq 'pg_with_schema' ? 'pgws' : $db_type);
 
   #$Rose::DB::Object::Metadata::Debug = 1;
 
+  my $db = My::DB->new($db_type);
+
   my $loader = 
     Rose::DB::Object::Loader->new(
-      db           => My::DB->new,
+      db_dsn       => $db->dsn,
+      db_schema    => $db->schema,
+      db_username  => $db->username,
+      db_password  => $db->password,
       base_classes => [ qw(My::DB::Object MyWeirdClass) ],
       class_prefix => $class_prefix);
+
+  # XXX: This is the important part of this test
+  $loader->convention_manager->tables_are_singular(1);
+
+  Rose::DB->registry($empty_registry);
 
   my @classes = $loader->make_classes(include_tables => $Include_Tables);
 
   #foreach my $class (@classes)
   #{
-  #  next  unless($class->isa('Rose::DB::Object'));
-  #  print $class->meta->perl_class_definition, "\n";
+  #  print $class->meta->perl_class_definition if($class->can('meta'));
   #}
 
   my $product_class = $class_prefix . '::Product';
+
+  ok($JCS::Called_For{$product_class}, "custom metadata - $db_type");
 
   ##
   ## Run tests
@@ -75,7 +100,7 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
 
   my $p = $product_class->new(name => "Sled $i");
 
-  is($p->db->class, 'My::DB', "db 1 - $db_type");
+  ok($p->db->class =~ /^${class_prefix}::DB::AutoBase\d+$/, "db 1 - $db_type");
 
   ok($p->isa('My::DB::Object'), "base class 1 - $db_type");
   ok($p->isa('MyWeirdClass'), "base class 2 - $db_type");
@@ -83,23 +108,12 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
   is($p->baz, 456, "baz 1 - $db_type");
 
   if($db_type eq 'pg_with_schema')
-  {    
+  {
     is($p->db->schema, lc 'Rose_db_object_private', "schema - $db_type");
   }
   else
   {
     ok(1, "schema - $db_type");
-  }
-
-  if($db_type =~ /^pg/)
-  {
-    is($p->meta->column('id')->perl_hash_definition, 
-       q(id => { type => 'serial', not_null => 1 }),
-        "perl_hash_definition - $db_type");
-  }
-  else
-  {
-    ok(1, "perl_hash_definition - $db_type");  
   }
 
   $p->vendor(name => "Acme $i");
@@ -167,23 +181,23 @@ BEGIN
       local $dbh->{'PrintError'} = 0;
 
       $dbh->do('DROP TABLE product_color_map CASCADE');
-      $dbh->do('DROP TABLE colors CASCADE');
-      $dbh->do('DROP TABLE prices CASCADE');
-      $dbh->do('DROP TABLE products CASCADE');
-      $dbh->do('DROP TABLE vendors CASCADE');
+      $dbh->do('DROP TABLE color CASCADE');
+      $dbh->do('DROP TABLE price CASCADE');
+      $dbh->do('DROP TABLE product CASCADE');
+      $dbh->do('DROP TABLE vendor CASCADE');
 
       $dbh->do('DROP TABLE Rose_db_object_private.product_color_map CASCADE');
-      $dbh->do('DROP TABLE Rose_db_object_private.colors CASCADE');
-      $dbh->do('DROP TABLE Rose_db_object_private.prices CASCADE');
-      $dbh->do('DROP TABLE Rose_db_object_private.products CASCADE');
-      $dbh->do('DROP TABLE Rose_db_object_private.vendors CASCADE');
+      $dbh->do('DROP TABLE Rose_db_object_private.color CASCADE');
+      $dbh->do('DROP TABLE Rose_db_object_private.price CASCADE');
+      $dbh->do('DROP TABLE Rose_db_object_private.product CASCADE');
+      $dbh->do('DROP TABLE Rose_db_object_private.vendor CASCADE');
 
       $dbh->do('DROP SCHEMA Rose_db_object_private CASCADE');
       $dbh->do('CREATE SCHEMA Rose_db_object_private');
     }
 
     $dbh->do(<<"EOF");
-CREATE TABLE vendors
+CREATE TABLE vendor
 (
   id    SERIAL NOT NULL PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
@@ -193,13 +207,13 @@ CREATE TABLE vendors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products
+CREATE TABLE product
 (
   id      SERIAL NOT NULL PRIMARY KEY,
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
-  vendor_id  INT REFERENCES vendors (id),
+  vendor_id  INT REFERENCES vendor (id),
 
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
             CHECK(status IN ('inactive', 'active', 'defunct')),
@@ -212,10 +226,10 @@ CREATE TABLE products
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE prices
+CREATE TABLE price
 (
   id          SERIAL NOT NULL PRIMARY KEY,
-  product_id  INT NOT NULL REFERENCES products (id),
+  product_id  INT NOT NULL REFERENCES product (id),
   region      CHAR(2) NOT NULL DEFAULT 'US',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
@@ -224,7 +238,7 @@ CREATE TABLE prices
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE colors
+CREATE TABLE color
 (
   id    SERIAL NOT NULL PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
@@ -236,15 +250,15 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE product_color_map
 (
-  product_id  INT NOT NULL REFERENCES products (id),
-  color_id    INT NOT NULL REFERENCES colors (id),
+  product_id  INT NOT NULL REFERENCES product (id),
+  color_id    INT NOT NULL REFERENCES color (id),
 
   PRIMARY KEY(product_id, color_id)
 )
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE Rose_db_object_private.vendors
+CREATE TABLE Rose_db_object_private.vendor
 (
   id    SERIAL NOT NULL PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
@@ -254,13 +268,13 @@ CREATE TABLE Rose_db_object_private.vendors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE Rose_db_object_private.products
+CREATE TABLE Rose_db_object_private.product
 (
   id      SERIAL NOT NULL PRIMARY KEY,
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
-  vendor_id  INT REFERENCES vendors (id),
+  vendor_id  INT REFERENCES Rose_db_object_private.vendor (id),
 
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
             CHECK(status IN ('inactive', 'active', 'defunct')),
@@ -273,10 +287,10 @@ CREATE TABLE Rose_db_object_private.products
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE Rose_db_object_private.prices
+CREATE TABLE Rose_db_object_private.price
 (
   id          SERIAL NOT NULL PRIMARY KEY,
-  product_id  INT NOT NULL REFERENCES products (id),
+  product_id  INT NOT NULL REFERENCES Rose_db_object_private.product (id),
   region      CHAR(2) NOT NULL DEFAULT 'US',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
@@ -285,7 +299,7 @@ CREATE TABLE Rose_db_object_private.prices
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE Rose_db_object_private.colors
+CREATE TABLE Rose_db_object_private.color
 (
   id    SERIAL NOT NULL PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
@@ -297,8 +311,8 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE Rose_db_object_private.product_color_map
 (
-  product_id  INT NOT NULL REFERENCES products (id),
-  color_id    INT NOT NULL REFERENCES colors (id),
+  product_id  INT NOT NULL REFERENCES Rose_db_object_private.product (id),
+  color_id    INT NOT NULL REFERENCES Rose_db_object_private.color (id),
 
   PRIMARY KEY(product_id, color_id)
 )
@@ -324,15 +338,15 @@ EOF
       local $dbh->{'PrintError'} = 0;
 
       $dbh->do('DROP TABLE product_color_map CASCADE');
-      $dbh->do('DROP TABLE colors CASCADE');
-      $dbh->do('DROP TABLE prices CASCADE');
-      $dbh->do('DROP TABLE products CASCADE');
-      $dbh->do('DROP TABLE vendors CASCADE');
+      $dbh->do('DROP TABLE color CASCADE');
+      $dbh->do('DROP TABLE price CASCADE');
+      $dbh->do('DROP TABLE product CASCADE');
+      $dbh->do('DROP TABLE vendor CASCADE');
     }
 
     # Foreign key stuff requires InnoDB support
     $dbh->do(<<"EOF");
-CREATE TABLE vendors
+CREATE TABLE vendor
 (
   id    INT AUTO_INCREMENT PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
@@ -347,7 +361,7 @@ EOF
     # check to make sure an InnoDB table was really created.
     my $db_name = $db->database;
     my $sth = $dbh->prepare("SHOW TABLE STATUS FROM `$db_name` LIKE ?");
-    $sth->execute('vendors');
+    $sth->execute('vendor');
     my $info = $sth->fetchrow_hashref;
 
     unless(lc $info->{'Type'} eq 'innodb' || lc $info->{'Engine'} eq 'innodb')
@@ -361,7 +375,7 @@ EOF
     $Have{'mysql'} = 1;
 
     $dbh->do(<<"EOF");
-CREATE TABLE products
+CREATE TABLE product
 (
   id      INT AUTO_INCREMENT PRIMARY KEY,
   name    VARCHAR(255) NOT NULL,
@@ -378,13 +392,13 @@ CREATE TABLE products
   UNIQUE(name),
   INDEX(vendor_id),
 
-  FOREIGN KEY (vendor_id) REFERENCES vendors (id) ON DELETE NO ACTION
+  FOREIGN KEY (vendor_id) REFERENCES vendor (id) ON DELETE NO ACTION ON UPDATE SET NULL
 )
 TYPE=InnoDB
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE prices
+CREATE TABLE price
 (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   product_id  INT NOT NULL,
@@ -394,13 +408,13 @@ CREATE TABLE prices
   UNIQUE(product_id, region),
   INDEX(product_id),
 
-  FOREIGN KEY (product_id) REFERENCES products (id) ON UPDATE NO ACTION
+  FOREIGN KEY (product_id) REFERENCES product (id)
 )
 TYPE=InnoDB
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE colors
+CREATE TABLE color
 (
   id    INT AUTO_INCREMENT PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
@@ -421,8 +435,8 @@ CREATE TABLE product_color_map
   INDEX(color_id),
   INDEX(product_id),
 
-  FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE NO ACTION,
-  FOREIGN KEY (color_id) REFERENCES colors (id) ON UPDATE NO ACTION
+  FOREIGN KEY (product_id) REFERENCES product (id),
+  FOREIGN KEY (color_id) REFERENCES color (id)
 )
 TYPE=InnoDB
 EOF
@@ -450,14 +464,14 @@ EOF
       local $dbh->{'PrintError'} = 0;
 
       $dbh->do('DROP TABLE product_color_map CASCADE');
-      $dbh->do('DROP TABLE colors CASCADE');
-      $dbh->do('DROP TABLE prices CASCADE');
-      $dbh->do('DROP TABLE products CASCADE');
-      $dbh->do('DROP TABLE vendors CASCADE');
+      $dbh->do('DROP TABLE color CASCADE');
+      $dbh->do('DROP TABLE price CASCADE');
+      $dbh->do('DROP TABLE product CASCADE');
+      $dbh->do('DROP TABLE vendor CASCADE');
     }
 
     $dbh->do(<<"EOF");
-CREATE TABLE vendors
+CREATE TABLE vendor
 (
   id    SERIAL NOT NULL PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
@@ -467,13 +481,13 @@ CREATE TABLE vendors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products
+CREATE TABLE product
 (
   id      SERIAL NOT NULL PRIMARY KEY,
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) DEFAULT 0.00 NOT NULL,
 
-  vendor_id  INT REFERENCES vendors (id),
+  vendor_id  INT REFERENCES vendor (id),
 
   status  VARCHAR(128) DEFAULT 'inactive' NOT NULL
             CHECK(status IN ('inactive', 'active', 'defunct')),
@@ -486,10 +500,10 @@ CREATE TABLE products
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE prices
+CREATE TABLE price
 (
   id          SERIAL NOT NULL PRIMARY KEY,
-  product_id  INT NOT NULL REFERENCES products (id),
+  product_id  INT NOT NULL REFERENCES product (id),
   region      CHAR(2) DEFAULT 'US' NOT NULL,
   price       DECIMAL(10,2) DEFAULT 0.00 NOT NULL,
 
@@ -498,7 +512,7 @@ CREATE TABLE prices
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE colors
+CREATE TABLE color
 (
   id    SERIAL NOT NULL PRIMARY KEY,
   name  VARCHAR(255) NOT NULL,
@@ -510,8 +524,8 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE product_color_map
 (
-  product_id  INT NOT NULL REFERENCES products (id),
-  color_id    INT NOT NULL REFERENCES colors (id),
+  product_id  INT NOT NULL REFERENCES product (id),
+  color_id    INT NOT NULL REFERENCES color (id),
 
   PRIMARY KEY(product_id, color_id)
 )
@@ -540,14 +554,14 @@ EOF
       local $dbh->{'PrintError'} = 0;
 
       $dbh->do('DROP TABLE product_color_map');
-      $dbh->do('DROP TABLE colors');
-      $dbh->do('DROP TABLE prices');
-      $dbh->do('DROP TABLE products');
-      $dbh->do('DROP TABLE vendors');
+      $dbh->do('DROP TABLE color');
+      $dbh->do('DROP TABLE price');
+      $dbh->do('DROP TABLE product');
+      $dbh->do('DROP TABLE vendor');
     }
 
     $dbh->do(<<"EOF");
-CREATE TABLE vendors
+CREATE TABLE vendor
 (
   id    INTEGER PRIMARY KEY AUTOINCREMENT,
   name  VARCHAR(255) NOT NULL,
@@ -557,13 +571,13 @@ CREATE TABLE vendors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products
+CREATE TABLE product
 (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) DEFAULT 0.00 NOT NULL,
 
-  vendor_id  INT REFERENCES vendors (id),
+  vendor_id  INT REFERENCES vendor (id),
 
   status  VARCHAR(128) DEFAULT 'inactive' NOT NULL
             CHECK(status IN ('inactive', 'active', 'defunct')),
@@ -576,10 +590,10 @@ CREATE TABLE products
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE prices
+CREATE TABLE price
 (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  product_id  INT NOT NULL REFERENCES products (id),
+  product_id  INT NOT NULL REFERENCES product (id),
   region      CHAR(2) DEFAULT 'US' NOT NULL,
   price       DECIMAL(10,2) DEFAULT 0.00 NOT NULL,
 
@@ -588,7 +602,7 @@ CREATE TABLE prices
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE colors
+CREATE TABLE color
 (
   id    INTEGER PRIMARY KEY AUTOINCREMENT,
   name  VARCHAR(255) NOT NULL,
@@ -600,8 +614,8 @@ EOF
     $dbh->do(<<"EOF");
 CREATE TABLE product_color_map
 (
-  product_id  INT NOT NULL REFERENCES products (id),
-  color_id    INT NOT NULL REFERENCES colors (id),
+  product_id  INT NOT NULL REFERENCES product (id),
+  color_id    INT NOT NULL REFERENCES color (id),
 
   PRIMARY KEY(product_id, color_id)
 )
@@ -615,6 +629,8 @@ END
 {
   # Delete test table
 
+  Rose::DB->registry($real_registry);
+
   if($Have{'pg'})
   {
     # Postgres
@@ -622,16 +638,16 @@ END
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE product_color_map CASCADE');
-    $dbh->do('DROP TABLE colors CASCADE');
-    $dbh->do('DROP TABLE prices CASCADE');
-    $dbh->do('DROP TABLE products CASCADE');
-    $dbh->do('DROP TABLE vendors CASCADE');
+    $dbh->do('DROP TABLE color CASCADE');
+    $dbh->do('DROP TABLE price CASCADE');
+    $dbh->do('DROP TABLE product CASCADE');
+    $dbh->do('DROP TABLE vendor CASCADE');
 
     $dbh->do('DROP TABLE Rose_db_object_private.product_color_map CASCADE');
-    $dbh->do('DROP TABLE Rose_db_object_private.colors CASCADE');
-    $dbh->do('DROP TABLE Rose_db_object_private.prices CASCADE');
-    $dbh->do('DROP TABLE Rose_db_object_private.products CASCADE');
-    $dbh->do('DROP TABLE Rose_db_object_private.vendors CASCADE');
+    $dbh->do('DROP TABLE Rose_db_object_private.color CASCADE');
+    $dbh->do('DROP TABLE Rose_db_object_private.price CASCADE');
+    $dbh->do('DROP TABLE Rose_db_object_private.product CASCADE');
+    $dbh->do('DROP TABLE Rose_db_object_private.vendor CASCADE');
 
     $dbh->do('DROP SCHEMA Rose_db_object_private CASCADE');
 
@@ -645,10 +661,10 @@ END
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE product_color_map CASCADE');
-    $dbh->do('DROP TABLE colors CASCADE');
-    $dbh->do('DROP TABLE prices CASCADE');
-    $dbh->do('DROP TABLE products CASCADE');
-    $dbh->do('DROP TABLE vendors CASCADE');
+    $dbh->do('DROP TABLE color CASCADE');
+    $dbh->do('DROP TABLE price CASCADE');
+    $dbh->do('DROP TABLE product CASCADE');
+    $dbh->do('DROP TABLE vendor CASCADE');
 
     $dbh->disconnect;
   }
@@ -660,10 +676,10 @@ END
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE product_color_map CASCADE');
-    $dbh->do('DROP TABLE colors CASCADE');
-    $dbh->do('DROP TABLE prices CASCADE');
-    $dbh->do('DROP TABLE products CASCADE');
-    $dbh->do('DROP TABLE vendors CASCADE');
+    $dbh->do('DROP TABLE color CASCADE');
+    $dbh->do('DROP TABLE price CASCADE');
+    $dbh->do('DROP TABLE product CASCADE');
+    $dbh->do('DROP TABLE vendor CASCADE');
 
     $dbh->disconnect;
   }
@@ -675,10 +691,10 @@ END
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE product_color_map');
-    $dbh->do('DROP TABLE colors');
-    $dbh->do('DROP TABLE prices');
-    $dbh->do('DROP TABLE products');
-    $dbh->do('DROP TABLE vendors');
+    $dbh->do('DROP TABLE color');
+    $dbh->do('DROP TABLE price');
+    $dbh->do('DROP TABLE product');
+    $dbh->do('DROP TABLE vendor');
 
     $dbh->disconnect;
   }

@@ -14,7 +14,7 @@ use Rose::DB::Object::Constants qw(PRIVATE_PREFIX STATE_LOADING STATE_IN_DB);
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.75';
+our $VERSION = '0.751';
 
 our $Debug = 0;
 
@@ -380,58 +380,49 @@ sub get_objects
       $use_redundant_join_conditions = $db->likes_redundant_join_conditions;
     }
 
-    # Don't honor the with_objects parameter when counting, since the
-    # count is of the rows from the "main" table (t1) only.
-    if($count_only)
+    if(ref $with_objects) # copy argument (shallow copy)
     {
-      $with_objects = undef;
+      $with_objects = [ @$with_objects ];
     }
     else
     {
-      if(ref $with_objects) # copy argument (shallow copy)
-      {
-        $with_objects = [ @$with_objects ];
-      }
-      else
-      {
-        $with_objects = [ $with_objects ];
-      }
-
-      # Expand multi-level arguments
-      if(first { index($_, '.') >= 0 } @$with_objects)
-      {
-        my @with_objects;
-
-        foreach my $arg (@$with_objects)
-        {
-          next  if($seen_rel{$arg});
-
-          if(index($arg, '.') < 0)
-          {
-            $seen_rel{$arg} = 'with';
-            push(@with_objects, $arg);
-          }
-          else
-          {
-            my @expanded = ($arg);
-            $seen_rel{$arg} = 'with';
-
-            while($arg =~ s/\.([^.]+)$//)
-            {
-              next  if($seen_rel{$arg}++);
-              unshift(@expanded, $arg);
-            }
-
-            push(@with_objects, @expanded);          
-          }
-        }
-
-        $with_objects = \@with_objects;
-      }
-
-      $num_with_objects = @$with_objects;
-      %with_objects = map { $_ => 1 } @$with_objects;
+      $with_objects = [ $with_objects ];
     }
+
+    # Expand multi-level arguments
+    if(first { index($_, '.') >= 0 } @$with_objects)
+    {
+      my @with_objects;
+
+      foreach my $arg (@$with_objects)
+      {
+        next  if($seen_rel{$arg});
+
+        if(index($arg, '.') < 0)
+        {
+          $seen_rel{$arg} = 'with';
+          push(@with_objects, $arg);
+        }
+        else
+        {
+          my @expanded = ($arg);
+          $seen_rel{$arg} = 'with';
+
+          while($arg =~ s/\.([^.]+)$//)
+          {
+            next  if($seen_rel{$arg}++);
+            unshift(@expanded, $arg);
+          }
+
+          push(@with_objects, @expanded);          
+        }
+      }
+
+      $with_objects = \@with_objects;
+    }
+
+    $num_with_objects = @$with_objects;
+    %with_objects = map { $_ => 1 } @$with_objects;
   }
 
   if($require_objects)
@@ -1448,7 +1439,7 @@ sub get_objects
                    joins       => \@joins,
                    meta        => \%meta,
                    db          => $db,
-                   pretty      => 1,#$Debug,
+                   pretty      => $Debug,
                    bind_params => \@bind_params,
                    %args);
 
@@ -1470,7 +1461,8 @@ sub get_objects
         $sub_args{'sort_by'} = \@sort_by;
       }
 
-      delete $sub_args{'with_objects'};
+      # Not safe to delete this if the query references columns in these tables
+      #delete $sub_args{'with_objects'};
 
       $sub_args{'fetch_only'}  = [ 't1' ];
       $sub_args{'from_and_where_only'} = 1;
@@ -1493,7 +1485,7 @@ sub get_objects
           join(', ', map { $_ } @{$columns{$tables[0]}});
       }
 
-      my $distinct = ($num_with_objects && scalar @has_dups[1 .. $num_with_objects]) ? ' DISTINCT' : '';
+      my $distinct = ($num_with_objects && scalar @{[ @has_dups[1 .. $num_with_objects] ]}) ? ' DISTINCT' : '';
 
       $t1_sql = "SELECT$distinct $columns FROM\n$t1_sql";
       $t1_sql =~ s/^/    /mg  if($Debug);
@@ -2968,109 +2960,105 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
 
   use base 'Rose::DB::Object';
 
-  __PACKAGE__->meta->table('categories');
-
-  __PACKAGE__->meta->columns
+  __PACKAGE__->meta->setup
   (
-    id          => { type => 'int', primary_key => 1 },
-    name        => { type => 'varchar', length => 255 },
-    description => { type => 'text' },
-  );
+    table   => 'categories',
+    columns =>
+    [
+      id          => { type => 'int', primary_key => 1 },
+      name        => { type => 'varchar', length => 255 },
+      description => { type => 'text' },
+    ],
 
-  __PACKAGE__->meta->add_unique_key('name');
-  __PACKAGE__->meta->initialize;
+    unique_key => 'name',
+  );
 
   ...
 
   package CodeName;
 
-  use Product;
-
   use base 'Rose::DB::Object';
 
-  __PACKAGE__->meta->table('code_names');
-
-  __PACKAGE__->meta->columns
+  __PACKAGE__->meta->setup
   (
-    id          => { type => 'int', primary_key => 1 },
-    product_id  => { type => 'int' },
-    name        => { type => 'varchar', length => 255 },
-    applied     => { type => 'date', not_null => 1 },
-  );
+    table   => 'code_names',
+    columns =>
+    [
+      id          => { type => 'int', primary_key => 1 },
+      product_id  => { type => 'int' },
+      name        => { type => 'varchar', length => 255 },
+      applied     => { type => 'date', not_null => 1 },
+    ],
 
-  __PACKAGE__->foreign_keys
-  (
-    product =>
-    {
-      class       => 'Product',
-      key_columns => { product_id => 'id' },
-    },
+    foreign_keys =>
+    [
+      product =>
+      {
+        class       => 'Product',
+        key_columns => { product_id => 'id' },
+      },
+    ],
   );
-
-  __PACKAGE__->meta->initialize;
 
   ...
 
   package Product;
 
-  use Category;
-  use CodeName;
-
   use base 'Rose::DB::Object';
 
-  __PACKAGE__->meta->table('products');
-
-  __PACKAGE__->meta->columns
+  __PACKAGE__->meta->setup
   (
-    id          => { type => 'int', primary_key => 1 },
-    name        => { type => 'varchar', length => 255 },
-    description => { type => 'text' },
-    category_id => { type => 'int' },
-    region_num  => { type => 'int' },
+    table   => 'products',
+    columns =>
+    [
+      id          => { type => 'int', primary_key => 1 },
+      name        => { type => 'varchar', length => 255 },
+      description => { type => 'text' },
+      category_id => { type => 'int' },
+      region_num  => { type => 'int' },
 
-    status => 
-    {
-      type      => 'varchar', 
-      check_in  => [ 'active', 'inactive' ],
-      default   => 'inactive',
-    },
-
-    start_date  => { type => 'datetime' },
-    end_date    => { type => 'datetime' },
-
-    date_created  => { type => 'timestamp', default => 'now' },  
-    last_modified => { type => 'timestamp', default => 'now' },
-  );
-
-  __PACKAGE__->meta->add_unique_key('name');
-
-  __PACKAGE__->meta->foreign_keys
-  (
-    category =>
-    {
-      class       => 'Category',
-      key_columns =>
+      status => 
       {
-        category_id => 'id',
-      }
-    },
-  );
-
-  __PACKAGE__->meta->relationships
-  (
-    code_names =>
-    {
-      type  => 'one to many',
-      class => 'CodeName',
-      column_map   => { id => 'product_id' },
-      manager_args => 
-      {
-        sort_by => CodeName->meta->table . '.applied DESC',
+        type      => 'varchar', 
+        check_in  => [ 'active', 'inactive' ],
+        default   => 'inactive',
       },
-    }
-  );
 
-  __PACKAGE__->meta->initialize;
+      start_date  => { type => 'datetime' },
+      end_date    => { type => 'datetime' },
+
+      date_created  => { type => 'timestamp', default => 'now' },  
+      last_modified => { type => 'timestamp', default => 'now' },
+    ],
+
+    unique_key => 'name',
+
+    foreign_keys =>
+    [
+      category =>
+      {
+        class       => 'Category',
+        key_columns =>
+        {
+          category_id => 'id',
+        }
+      },
+    ],
+
+    relationships =>
+    [
+      code_names =>
+      {
+        type  => 'one to many',
+        class => 'CodeName',
+        column_map   => { id => 'product_id' },
+        manager_args => 
+        {
+          sort_by => CodeName->meta->table . '.applied DESC',
+        },
+      },
+    ],
+  );
 
   ...
 
@@ -3080,8 +3068,7 @@ Rose::DB::Object::Manager - Fetch multiple Rose::DB::Object-derived objects from
 
   package Product::Manager;
 
-  use Rose::DB::Object::Manager;
-  our @ISA = qw(Rose::DB::Object::Manager);
+  use base 'Rose::DB::Object::Manager';
 
   sub object_class { 'Product' }
 
@@ -3599,8 +3586,6 @@ B<Note:> the C<with_objects> list currently cannot be used to simultaneously fet
 =item B<get_objects_count [PARAMS]>
 
 Accepts the same arguments as L<get_objects|/get_objects>, but just returns the number of objects that would have been fetched, or undef if there was an error.
-
-Note that the C<with_objects> parameter is ignored by this method, since it counts the number of primary objects, irrespective of how many sub-objects exist for each primary object.  If you want to count the number of primary objects that have sub-objects matching certain criteria, use the C<require_objects> parameter instead.
 
 =item B<get_objects_from_sql [ SQL | PARAMS ]>
 

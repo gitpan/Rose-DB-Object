@@ -14,7 +14,7 @@ our $Debug;
 
 *Debug = \$Rose::DB::Object::Metadata::Debug;
 
-our $VERSION = '0.75';
+our $VERSION = '0.751';
 
 use Rose::Class::MakeMethods::Generic
 (
@@ -40,6 +40,8 @@ use Rose::Object::MakeMethods::Generic
     'column_alias_generator',
     'foreign_key_name_generator',
   ],
+  
+  scalar => 'auto_init_args',
 );
 
 __PACKAGE__->relationship_type_ranks
@@ -1256,7 +1258,7 @@ sub auto_init_one_to_one_relationships
 
     # Also don't add add one to one relationships between a class
     # and one of its map classes
-    if($cm->is_map_class($class))
+    if($cm->is_map_class($class) && !$args{'include_map_class_relationships'})
     {
       $Debug && warn "$f_class - Refusing to make one to one relationship ",
                      "to map class to $class\n";
@@ -1312,6 +1314,15 @@ sub auto_init_one_to_many_relationships
     # key's columns.  If found, don't try to make the one to many rel.
     REL: foreach my $rel ($f_meta->relationships)
     {
+      if($rel->can('map_class'))
+      {
+        next  unless($rel->map_class eq $class);
+      }
+      else
+      {
+        next  unless($rel->class eq $class);
+      }
+
       if($rel->type eq 'one to one' && !$rel->foreign_key)
       {
         my $skip = 1;
@@ -1367,7 +1378,7 @@ sub auto_init_one_to_many_relationships
 
     # Also don't add add one to many relationships between a class
     # and one of its map classes
-    if($cm->is_map_class($class))
+    if($cm->is_map_class($class) && !$args{'include_map_class_relationships'})
     {
       $Debug && warn "$f_class - Refusing to make one to many relationship ",
                      "to map class to $class\n";
@@ -1462,6 +1473,8 @@ sub auto_initialize
   my($self) = shift;
   my(%args) = @_;
 
+  $self->auto_init_args({ %args });
+
   $self->allow_auto_initialization(1);
 
   $self->auto_init_columns(@_);
@@ -1469,14 +1482,18 @@ sub auto_initialize
   $self->auto_init_unique_keys(@_);
   $self->auto_init_foreign_keys(@_);
   $self->auto_init_relationships(@_);
-  $self->initialize;
+  $self->initialize(@_);
 
-  for(1 .. 2) # two passes are required to catch everything
-  {
-    $self->retry_deferred_foreign_keys;
-    $self->retry_deferred_relationships;
-    $self->retry_deferred_tasks;
-  }
+  # Don't seem to need this anymore...
+  #unless($args{'passive'})
+  #{
+  #  for(1 .. 2) # two passes are required to catch everything
+  #  {
+  #    $self->retry_deferred_foreign_keys;
+  #    $self->retry_deferred_relationships;
+  #    $self->retry_deferred_tasks;
+  #  }
+  #}
 
   unless($args{'stay_connected'})
   {

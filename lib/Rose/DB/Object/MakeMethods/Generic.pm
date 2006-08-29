@@ -18,7 +18,7 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.75';
+our $VERSION = '0.751';
 
 our $Debug = 0;
 
@@ -2637,6 +2637,9 @@ sub objects_by_key
             # the current transaction
             $object->db($db); 
 
+            # Map object to parent
+            $object->init(%map);
+
             # Try to load the object if doesn't appear to exist already.
             # If anything was delete above, we have to try loading no
             # matter what.
@@ -2646,11 +2649,15 @@ sub objects_by_key
 
               # It's okay if this fails (e.g., if the primary key is undefined)
               local $dbh->{'PrintError'} = 0;
-              eval { $object->load(speculative => 1) };
+              eval
+              {
+                if($object->load(speculative => 1))
+                {
+                  # Re-map object to parent
+                  $object->init(%map);
+                }
+              };
             }
-
-            # Map object to parent
-            $object->init(%map);
 
             # Save the object
             $object->save or die $object->error;
@@ -2852,6 +2859,9 @@ sub objects_by_key
             # the current transaction
             $object->db($db); 
 
+            # Map object to parent
+            $object->init(%map);
+
             # Try to load the object if doesn't appear to exist already.
             # If anything was delete above, we have to try loading no
             # matter what.
@@ -2861,11 +2871,15 @@ sub objects_by_key
 
               # It's okay if this fails (e.g., if the primary key is undefined)
               local $dbh->{'PrintError'} = 0;
-              eval { $object->load(speculative => 1) };
+              eval
+              {
+                if($object->load(speculative => 1))
+                {
+                  # Re-map object to parent
+                  $object->init(%map);
+                }
+              };
             }
-
-            # Map object to parent
-            $object->init(%map);
 
             # Save the object
             $object->save or die $object->error;
