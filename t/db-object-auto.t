@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 266;
+use Test::More tests => 270;
 
 BEGIN 
 {
@@ -489,7 +489,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 62)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 66)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -520,6 +520,19 @@ SKIP: foreach my $db_type ('informix')
 
   ok($o->save, "save() 1 - $db_type");
   ok($o->load, "load() 1 - $db_type");
+
+  $o->htmin('8:01:12pm');
+  $o->htsec('5:56:55.1234am');
+  $o->htfr1('13:45:56.59999');
+  $o->htfr5('01:02:03.123456');
+
+  $o->save;
+  $o->load;
+
+  is($o->htmin, '20:01:00', "datetime hour to minute - $db_type");
+  is($o->htsec, '05:56:55', "datetime hour to second - $db_type");
+  is($o->htfr1, '13:45:56.5', "datetime hour to fraction(1) - $db_type");
+  is($o->htfr5, '01:02:03.12345', "datetime hour to fraction(5) - $db_type");
 
   is(ref $o->other_date, 'DateTime', 'other_date 1');
   is(ref $o->other_datetime, 'DateTime', 'other_datetime 1');
@@ -1005,7 +1018,11 @@ CREATE TABLE Rose_db_object_test
   frac2          DATETIME YEAR TO FRACTION(2),
   frac3          DATETIME YEAR TO FRACTION(3),
   frac4          DATETIME YEAR TO FRACTION(4),
-  frac5          DATETIME YEAR TO FRACTION(5)
+  frac5          DATETIME YEAR TO FRACTION(5),
+  htmin          DATETIME HOUR TO MINUTE,
+  htsec          DATETIME HOUR TO SECOND,
+  htfr1          DATETIME HOUR TO FRACTION(1),
+  htfr5          DATETIME HOUR TO FRACTION(5)
 )
 EOF
 
@@ -1062,7 +1079,7 @@ EOF
 
     # No native support for bit types in Informix
     MyInformixObject->meta->column(bits => { type => 'bitfield', bits => 5, default => 101 });
-
+    
     # No native support for array types in Informix
     MyInformixObject->meta->column(nums => { type => 'array' });
 

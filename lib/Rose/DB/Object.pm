@@ -16,7 +16,7 @@ use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util 
   qw(row_id lazy_column_values_loaded_key has_modified_columns);
 
-our $VERSION = '0.751';
+our $VERSION = '0.752';
 
 our $Debug = 0;
 
@@ -2146,6 +2146,8 @@ Although the mailing list is the preferred support mechanism, you can also email
 L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object>
 
 =head1 CONTRIBUTORS
+
+Graham Barr
 
 Perrin Harkins
 

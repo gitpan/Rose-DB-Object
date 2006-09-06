@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.751';
+our $VERSION = '0.752';
 
 our $Debug = 0;
 
@@ -1138,26 +1138,10 @@ sub add_relationships
       my $type = $info->{'type'} or 
         Carp::croak "Missing type parameter for relationship '$name'";
 
-      my $relationship_class = $class->relationship_type_class($type)
-        or Carp::croak "No relationship class set for relationship type '$type'";
-
-      unless($self->relationship_class_is_loaded($relationship_class))
-      {
-        $self->load_relationship_class($relationship_class);
-      }
-
-      $Debug && warn $self->class, " - adding $name $relationship_class\n";
-      my $relationship = $self->{'relationships'}{$name} = 
-        $self->convention_manager->auto_relationship($name, $relationship_class, $info) ||
-        $relationship_class->new(%$info, name => $name);
-
-      unless($relationship)
-      {
-        Carp::croak "$class - Incomplete relationship specification could not be ",
-                    "completed by convention manager: $name";
-      }
-
-      $relationship->parent($self);
+      my $relationship = $self->{'relationships'}{$name} =
+        $self->_build_relationship(name => $name,
+                                   type => $type,
+                                   info => $info);
 
       # Set or add auto-created method names
       if($methods || $add_methods)
@@ -1190,6 +1174,40 @@ sub add_relationships
       Carp::croak "Invalid relationship name or specification: $_[0]";
     }
   }
+}
+
+sub _build_relationship
+{
+  my($self, %args) = @_;
+
+  my $class = ref $self;
+  my $name = $args{'name'} or Carp::croak "Missing name parameter";
+  my $info = $args{'info'} or Carp::croak "Missing info parameter";
+  my $type = $args{'type'} or 
+    Carp::croak "Missing type parameter for relationship '$name'";
+
+  my $relationship_class = $class->relationship_type_class($type)
+    or Carp::croak "No relationship class set for relationship type '$type'";
+
+  unless($self->relationship_class_is_loaded($relationship_class))
+  {
+    $self->load_relationship_class($relationship_class);
+  }
+
+  $Debug && warn $self->class, " - adding $name $relationship_class\n";
+  my $relationship =  
+    $self->convention_manager->auto_relationship($name, $relationship_class, $info) ||
+    $relationship_class->new(%$info, name => $name);
+
+  unless($relationship)
+  {
+    Carp::croak "$class - Incomplete relationship specification could not be ",
+                "completed by convention manager: $name";
+  }
+
+  $relationship->parent($self);
+  
+  return $relationship;
 }
 
 sub add_relationship { shift->add_relationships(@_) }
@@ -1963,7 +1981,7 @@ sub retry_deferred_foreign_keys
   {
     my $meta = $class->meta;
     next  unless($meta->allow_auto_initialization && $meta->has_outstanding_metadata_tasks);
-    $self->auto_init_relationships(%{ $self->auto_init_args || {} }, 
+    $meta->auto_init_relationships(%{ $meta->auto_init_args || {} }, 
                                    restore_types => 1);
   }
 }
@@ -3581,7 +3599,7 @@ sub prime_caches
        nonlazy_column_mutator_method_names nonlazy_column_db_value_hash_keys
        primary_key_column_db_value_hash_keys column_db_value_hash_keys
        column_accessor_method_names column_mutator_method_names
-       column_rw_method_names dbi_requires_bind_param);
+       column_rw_method_names);
 
   foreach my $method (@methods)
   {
@@ -3594,8 +3612,8 @@ sub prime_caches
   $self->fq_primary_key_sequence_names(db => $db);
 
   @methods =
-    qw(fq_table fq_table_sql init_get_column_sql_tmpl delete_sql
-       primary_key_sequence_names insert_sql 
+    qw(dbi_requires_bind_param fq_table fq_table_sql init_get_column_sql_tmpl 
+       delete_sql primary_key_sequence_names insert_sql 
        init_insert_sql_with_inlining_start
        init_insert_changes_only_sql_prefix init_update_sql_prefix
        init_update_sql_with_inlining_start column_names_string_sql
@@ -3900,13 +3918,16 @@ sub init_auto_helper
   {
     my $class = ref($self) || $self;
 
-    eval 'use ' . $self->auto_helper_class;
+    my $auto_helper_class = $self->auto_helper_class;
 
-    Carp::croak "Could not load ", $self->auto_helper_class, " - $@"  if($@);
+    no strict 'refs';
+    unless(${"${auto_helper_class}::VERSION"})
+    {
+      eval "use $auto_helper_class";
+      Carp::croak "Could not load '$auto_helper_class' - $@"  if($@);
+    }
 
     $self->original_class($class);
-
-    my $auto_helper_class = $self->auto_helper_class;
 
     REBLESS: # Do slightly evil re-blessing magic
     {
