@@ -16,7 +16,7 @@ use Rose::DB::Object::Metadata::Util qw(perl_hashref);
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.752';
+our $VERSION = '0.753';
 
 our $Debug = 0;
 
@@ -301,12 +301,15 @@ sub db_class
     croak "Illegal class name: $db_class";
   }
 
-  eval "require $db_class";
-
-  no strict 'refs';
-  if(!$@ && @{"${db_class}::ISA"} && !UNIVERSAL::isa($db_class, 'Rose::DB'))
+  unless(UNIVERSAL::isa($db_class, 'Rose::DB'))
   {
-    croak "Not a Rose::DB-derived class: $db_class";
+    eval "require $db_class";
+
+    no strict 'refs';
+    if(!$@ && @{"${db_class}::ISA"} && !UNIVERSAL::isa($db_class, 'Rose::DB'))
+    {
+      croak "Not a Rose::DB-derived class: $db_class";
+    }
   }
 
   if(my $db = $self->db)
@@ -616,20 +619,23 @@ sub make_classes
 
     if($db_class)
     {
-      eval "require $db_class";
-
-      if($@)
+      unless(UNIVERSAL::isa($db_class, 'Rose::DB'))
       {
-        # Failed to load existing module
-        unless($@ =~ /^Can't locate $db_class\.pm/)
+        eval "require $db_class";
+  
+        if($@)
         {
-          croak "Could not load db class '$db_class' - $@";
+          # Failed to load existing module
+          unless($@ =~ /^Can't locate $db_class\.pm/)
+          {
+            croak "Could not load db class '$db_class' - $@";
+          }
+  
+          # Make the class
+          no strict 'refs';
+          @{"${db_class}::ISA"} = qw(Rose::DB);
+          $db_class->registry(clone(Rose::DB->registry));
         }
-
-        # Make the class
-        no strict 'refs';
-        @{"${db_class}::ISA"} = qw(Rose::DB);
-        $db_class->registry(clone(Rose::DB->registry));
       }
     }
     else

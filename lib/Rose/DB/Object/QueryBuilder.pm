@@ -11,12 +11,15 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.75';
+our $VERSION = '0.753';
 
 our $Debug = 0;
 
-my %OP_MAP = 
+our %OP_MAP = 
 (
+  similar    => 'SIMILAR TO',
+  match      => '~',
+  imatch     => '~*',
   regex      => 'REGEXP',
   regexp     => 'REGEXP',
   like       => 'LIKE',
@@ -39,6 +42,10 @@ my %OP_MAP =
 );
 
 @OP_MAP{map { $_ . '_sql' } keys %OP_MAP} = values(%OP_MAP);
+
+our %Op_Arg_PassThru = map { $_ => 1 } 
+  qw(similar match imatch regex regexp like ilike rlike in_set any_in_set all_in_set
+     in_array any_in_array all_in_array);
 
 BEGIN { eval { require DBI::Const::GetInfoType }; }
 use constant SQL_DBMS_VER => $DBI::Const::GetInfoType::GetInfoType{'SQL_DBMS_VER'} || 18;
@@ -429,7 +436,7 @@ sub build_select
           unless($joins->[$i]{'conditions'});
 
         push(@joined_tables, 
-             "  $joins->[$i]{'type'} $tables_sql->[$i - 1] t$i ON(" .
+             "  $joins->[$i]{'type'} $tables_sql->[$i - 1] t$i ON (" .
              join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
 
         $i++;
@@ -773,11 +780,7 @@ sub _format_value
 
   if(!ref $value || $asis)
   {
-    unless($col_meta->type eq 'set' && ref $store eq 'HASH' && 
-           (($param eq 'in_set' || $param eq 'all_in_set' || 
-             $param eq 'any_in_set') ||
-            ($param eq 'in_array' || $param eq 'all_in_array' || 
-             $param eq 'any_in_array')))
+    unless(ref $store eq 'HASH' && $Op_Arg_PassThru{$param})
     {
       if($col_meta->manager_uses_method)
       {
@@ -811,7 +814,7 @@ sub _format_value
     }
   }
   elsif(ref $value eq 'HASH')
-  {    
+  {
     foreach my $key (keys %$value)
     {
       next  if($key =~ /_?sql$/); # skip inline values
@@ -1052,6 +1055,9 @@ Undefined values are translated to the keyword NULL when included in a multi-val
 
     OP                  SQL operator
     -------------       ------------
+    similar             SIMILAR TO
+    match               ~
+    imatch              ~*
     regex, regexp       REGEXP
     like                LIKE
     ilike               ILIKE
@@ -1116,6 +1122,14 @@ would produce this SQL:
     SELECT ... FROM animals WHERE legs > eyes
 
 where "legs" and "eyes" are both left unquoted.
+
+The same NAME string may be repeated multiple times.  (This is the primary reason that the query is a reference to an I<array> of name/value pairs, rather than a reference to a hash, which would only allow each NAME once.)  Example:
+
+    query =>
+    [
+      age => { gt => 10 },
+      age => { lt => 20 },
+    ]
 
 The string "NAME" can take many forms, each of which eventually resolves to a database column (COLUMN in the examples above).
 
@@ -1220,7 +1234,9 @@ which returns an SQL statement something like this:
       AND
       (title LIKE '%million%' OR title LIKE '%resident%')
 
-If you have a column named "and" or "or", you'll have to use the fully-qualified (table.column) or alias-qualified (tN.column) forms in order to address the column.
+The C<and> and C<or> keywords can be used multiple times within a query (just like all other NAME specifiers described earlier) and can be arbitrarily nested.
+
+If you have a column named "and" or "or", you'll have to use the fully-qualified (table.column) or alias-qualified (tN.column) forms in order to address that column.
 
 If C<query_is_sql> is false or omitted, all of the parameter values are passed through the C<parse_value()> and C<format_value()> methods of their corresponding L<Rose::DB::Object::Metadata::Column>-dervied column objects.
 
