@@ -38,7 +38,9 @@ sub parse_value
 {
   my($self, $db) = (shift, shift);
 
-  my $dt = $db->parse_datetime(@_);
+  $self->parse_error(undef);
+
+  my $dt = (defined $_[0]) ? $db->parse_datetime(@_) : undef;
 
   if($dt)
   {
@@ -47,7 +49,13 @@ sub parse_value
   }
   else
   {
-    $dt = Rose::DateTime::Util::parse_date($_[0], $self->time_zone || $db->server_time_zone)
+    $dt = Rose::DateTime::Util::parse_date($_[0], $self->time_zone || $db->server_time_zone);
+
+    if(my $error = Rose::DateTime::Util->error)
+    {
+      $self->parse_error("Could not parse value '$_[0]' for column $self: $error")
+        if(defined $_[0]);
+    }
   }
 
   return $dt;
@@ -83,15 +91,15 @@ This class inherits from L<Rose::DB::Object::Metadata::Column::Date>. Inherited 
 
 =item C<get_set>
 
-L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime', ...>
+L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime', interface =E<gt> 'get_set', ...>
 
 =item C<get>
 
-L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime', ...>
+L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime', interface =E<gt> 'get', ...>
 
-=item C<get_set>
+=item C<set>
 
-L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime', ...>
+L<Rose::DB::Object::MakeMethods::Date>, L<datetime|Rose::DB::Object::MakeMethods::Date/datetime>, C<type =E<gt> 'datetime', interface =E<gt> 'set', ...>
 
 =back
 

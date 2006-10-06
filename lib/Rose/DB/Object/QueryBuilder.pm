@@ -72,6 +72,7 @@ sub build_select
   my $clauses_arg = delete $args{'clauses'};  
   my $pretty      = exists $args{'pretty'} ? $args{'pretty'} : $Debug;
   my $joins       = $args{'joins'};
+  my $hints       = $args{'hints'} || {};
   my $set         = delete $args{'set'};
   my $table_map   = delete $args{'table_map'} || {};
   my $bind_params = $args{'bind_params'};
@@ -418,13 +419,26 @@ sub build_select
         # Main table gets treated specially
         if($i == 1)
         {
-          $primary_table = "  $tables_sql->[$i - 1] t$i";
+          #$primary_table = "  $tables_sql->[$i - 1] t$i";
+          if($db)
+          {
+            $primary_table = '  ' . 
+              $db->format_table_with_alias($tables_sql->[$i - 1], "t$i", $hints);
+          }
+          else
+          {
+            $primary_table = "  $tables_sql->[$i - 1] t$i";
+          }
+
           $i++;
           next;
         }
         elsif(!$joins->[$i])
         {
-          push(@normal_tables, "  $tables_sql->[$i - 1] t$i");
+          #push(@normal_tables, "  $tables_sql->[$i - 1] t$i");
+          push(@normal_tables, '  ' .
+            $db->format_table_with_alias($tables_sql->[$i - 1], "t$i", 
+                                         $joins->[$i]{'hints'}));
           $i++;
           next;
         }
@@ -435,9 +449,19 @@ sub build_select
         Carp::croak "Missing join conditions for table '$table'"
           unless($joins->[$i]{'conditions'});
 
-        push(@joined_tables, 
-             "  $joins->[$i]{'type'} $tables_sql->[$i - 1] t$i ON (" .
-             join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+        if($db)
+        {
+          push(@joined_tables, "  $joins->[$i]{'type'} " .
+            $db->format_table_with_alias($tables_sql->[$i - 1], "t$i", 
+                                         $joins->[$i]{'hints'}) .
+            " ON (" . join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+        }
+        else
+        {
+          push(@joined_tables, 
+               "  $joins->[$i]{'type'} $tables_sql->[$i - 1] t$i ON (" .
+               join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+        }
 
         $i++;
       }
@@ -787,9 +811,18 @@ sub _format_value
         $object->$set_method($value);
         $value = $object->$get_method();
       }
-      else
+      elsif(defined $value)
       {
-        $value = $col_meta->format_value($db, $col_meta->parse_value($db, $value))
+        my $parsed_value = $col_meta->parse_value($db, $value);
+
+        # XXX: Every column class should support parse_error(), but for now
+        # XXX: the undef check should cover those that don't
+        if(defined $value && !defined $parsed_value) #|| $col_meta->parse_error)
+        {
+          Carp::croak $col_meta->parse_error;
+        }
+
+        $value = $col_meta->format_value($db, $parsed_value)
           if(defined $value);
       }
     }
@@ -828,9 +861,18 @@ sub _format_value
       $object->$set_method($value);
       $value = $object->$get_method();
     }
-    else
+    elsif(defined $value)
     {
-      $value = $col_meta->format_value($db, $col_meta->parse_value($db, $value))
+      my $parsed_value = $col_meta->parse_value($db, $value);
+
+      # XXX: Every column class should support parse_error(), but for now
+      # XXX: the undef check should cover those that don't
+      if(defined $value && !defined $parsed_value) #|| $col_meta->parse_error)
+      {
+        Carp::croak $col_meta->parse_error;
+      }
+
+      $value = $col_meta->format_value($db, $parsed_value)
         if(defined $value);
     }
   }

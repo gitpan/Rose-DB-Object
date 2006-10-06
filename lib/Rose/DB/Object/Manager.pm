@@ -310,12 +310,15 @@ sub get_objects
   my $skip_first       = delete $args{'skip_first'} || 0;
   my $distinct         = delete $args{'distinct'};
   my $fetch            = delete $args{'fetch_only'};
+  my $hints            = delete $args{'hints'} || {};
   my $select           = $args{'select'};
+
+  $args{'hints'} = $hints->{'t1'} || $hints;
 
   my $try_subselect_limit = (exists $args{'limit_with_subselect'}) ? 
     $args{'limit_with_subselect'} : $class->default_limit_with_subselect;
-  
-  
+
+
   my $subselect_limit = 0;
 
   # Can't do direct inject with custom select lists
@@ -859,6 +862,7 @@ sub get_objects
             #push(@{$joins[$i]{'conditions'}}, "$tables[0].$local_column = $tables[-1].$foreign_column");
 
             $joins[$i]{'type'} = 'LEFT OUTER JOIN';
+            $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
 
             # MySQL is stupid about using its indexes when "JOIN ... ON (...)"
             # conditions are the only ones given, so the code below adds some
@@ -888,17 +892,18 @@ sub get_objects
             {
               # Aliased table names
               push(@{$joins[$i]{'conditions'}}, "t${parent_tn}.$local_column = t$i.$foreign_column");
-  
+
               # Fully-qualified table names
               #push(@{$joins[$i]{'conditions'}}, "$tables[$parent_tn - 1].$local_column = $tables[-1].$foreign_column");
-  
+
               $joins[$i]{'type'} = 'JOIN';  
+              $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
             }
             else # implicit join with no ON clause
             {
               # Aliased table names
               push(@$clauses, "t${parent_tn}.$local_column = t$i.$foreign_column");
-  
+
               # Fully-qualified table names
               #push(@$clauses, "$tables[$parent_tn - 1].$local_column = $tables[-1].$foreign_column");
             }
@@ -1049,6 +1054,7 @@ sub get_objects
             #push(@{$joins[$i]{'conditions'}}, "$tables[-1].$local_column = $tables[$parent_tn - 1].$foreign_column");
 
             $joins[$i]{'type'} = 'LEFT OUTER JOIN';
+            $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
           }
           else
           {
@@ -1056,17 +1062,18 @@ sub get_objects
             {
               # Aliased table names
               push(@{$joins[$i]{'conditions'}}, "t$i.$local_column = t${parent_tn}.$foreign_column");
-  
+
               # Fully-qualified table names
               #push(@{$joins[$i]{'conditions'}}, "$tables[-1].$local_column = $tables[$parent_tn - 1].$foreign_column");
-  
+
               $joins[$i]{'type'} = 'JOIN';
+              $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
             }
             else # implicit join with no ON clause
             {
               # Aliased table names
               push(@$clauses, "t$i.$local_column = t${parent_tn}.$foreign_column");
-  
+
               # Fully-qualified table names
               #push(@$clauses, "$tables[-1].$local_column = $tables[$parent_tn - 1].$foreign_column");
             }
@@ -1151,6 +1158,7 @@ sub get_objects
             #push(@{$joins[$i]{'conditions'}}, "$tables[-2].$local_column = $tables[-1].$foreign_column");
 
             $joins[$i]{'type'} = 'LEFT JOIN';
+            $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
           }
           else
           {
@@ -1158,17 +1166,18 @@ sub get_objects
             {
               # Aliased table names
               push(@{$joins[$i]{'conditions'}}, 't' . ($i - 1) . ".$local_column = t$i.$foreign_column");
-  
+
               # Fully-qualified table names
               #push(@{$joins[$i]{'conditions'}}, "$tables[-2].$local_column = $tables[-1].$foreign_column");
-  
+
               $joins[$i]{'type'} = 'JOIN';
+              $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
             }
             else # implicit join with no ON clause
             {
               # Aliased table names
               push(@$clauses, 't' . ($i - 1) . ".$local_column = t$i.$foreign_column");
-  
+
               # Fully-qualified table names
               #push(@$clauses, "$tables[-2].$local_column = $tables[-1].$foreign_column");
             }
@@ -1273,7 +1282,7 @@ sub get_objects
       if(defined $tn)
       {
         my $meta = $meta{$classes{$tables[$tn - 1]}};
-  
+
         if($meta->column($column) && (my $alias = $meta->column($column)->alias))
         {
           $item .= ' AS ' . $alias;
@@ -1296,7 +1305,7 @@ sub get_objects
 
         my $tn = $1 || 1;
         my $meta = $meta{$classes{$tables[$tn - 1]}};
-        
+
         my $prefix = $num_subtables ? "t$tn." : '';
 
         foreach my $column ($meta->columns)
@@ -1311,7 +1320,7 @@ sub get_objects
           }
         }
       }
-  
+
       $select = \@select;
     }
 

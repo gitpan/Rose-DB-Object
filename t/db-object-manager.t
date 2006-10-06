@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 3035;
+use Test::More tests => 3039;
 
 BEGIN 
 {
@@ -21,7 +21,7 @@ our($HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX, $HAVE_SQLITE);
 
 SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 {
-  skip("Postgres tests", 768)  unless($HAVE_PG);
+  skip("Postgres tests", 769)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -99,6 +99,18 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
   $o4->name('Bob');
 
   ok($o4->save, "object save() 4 - $db_type");
+
+  eval
+  {
+    $objs = 
+      MyPgObjectManager->get_objectz(
+        query  =>
+        [
+          date_created => '205-1-2', # invalid date
+        ]);
+  };
+  
+  ok($@, "Invalid date - $db_type");
 
   $objs = 
     MyPgObjectManager->get_objectz(
@@ -2824,7 +2836,7 @@ EOF
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 768)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 769)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -2887,6 +2899,18 @@ SKIP: foreach my $db_type ('mysql')
   $o4->name('Bob');
 
   ok($o4->save, "object save() 4 - $db_type");
+
+  eval
+  {
+    $objs = 
+      MySQLiteObject->get_objectz(
+        query  =>
+        [
+          date_created => '205-1-2', # invalid date
+        ]);
+  };
+  
+  ok($@, "Invalid date - $db_type");
 
   $objs = 
     MyMySQLObjectManager->get_objectz(
@@ -3076,7 +3100,9 @@ SKIP: foreach my $db_type ('mysql')
         't1.id'    => { ge => 2 },
         't1.name'  => { like => '%tt%' },
       ],
-      require_objects => [ 'other_obj', 'bb1', 'bb2' ]);
+      require_objects => [ 'other_obj', 'bb1', 'bb2' ],
+      hints   => { t2 => { ignore_index => 'rose_db_object_other_idx', 
+                           use_index =>  'rose_db_object_other_idx2' } },);
 
   ok(ref $objs->[0]->{'other_obj'} eq 'MyMySQLOtherObject', "foreign object 2 - $db_type");
   is($objs->[0]->other_obj->k2, 2, "foreign object 3 - $db_type");
@@ -3171,6 +3197,8 @@ SKIP: foreach my $db_type ('mysql')
         date_created  => '5/10/2002 10:34:56 am'
       ],
       clauses => [ "LOWER(status) LIKE 'w%'" ],
+      hints   => { nicks => { force_index => 'rose_db_object_nicks_idx' },
+                   t1 => { ignore_index => 'rose_db_object_test_idx' } },
       sort_by => 'id');
 
   is(ref $objs, 'ARRAY', "get_objects() with many 1 - $db_type");
@@ -3225,6 +3253,7 @@ SKIP: foreach my $db_type ('mysql')
         last_modified => { le => '6/6/2020' }, # XXX: breaks in 2020!
         date_created  => '5/10/2002 10:34:56 am'
       ],
+      hints   => { ignore_index => 'rose_db_object_test_idx' },
       clauses => [ "LOWER(status) LIKE 'w%'" ],
       sort_by => 'id');
 
@@ -5459,7 +5488,7 @@ EOF
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 731)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 732)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -5526,6 +5555,18 @@ SKIP: foreach my $db_type (qw(informix))
   $o4->name('Bob');
 
   ok($o4->save, "object save() 4 - $db_type");
+
+  eval
+  {
+    $objs = 
+      MyInformixObjectManager->get_objectz(
+        query  =>
+        [
+          date_created => '205-1-2', # invalid date
+        ]);
+  };
+  
+  ok($@, "Invalid date - $db_type");
 
   $objs = 
     MyInformixObjectManager->get_objectz(
@@ -8161,7 +8202,7 @@ EOF
 
 SKIP: foreach my $db_type (qw(sqlite))
 {
-  skip("SQLite tests", 766)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 767)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
@@ -8179,7 +8220,7 @@ SKIP: foreach my $db_type (qw(sqlite))
                           date_created  => '2004-03-30 12:34:56');
 
   ok($o->save, "object save() 1 - $db_type");
-
+      
   my $objs = 
     MySQLiteObject->get_objectz(
       share_db     => 1,
@@ -8228,6 +8269,18 @@ SKIP: foreach my $db_type (qw(sqlite))
   $o4->name('Bob');
 
   ok($o4->save, "object save() 4 - $db_type");
+
+  eval
+  {
+    $objs = 
+      MySQLiteObject->get_objectz(
+        query  =>
+        [
+          date_created => '205-1-2', # invalid date
+        ]);
+  };
+  
+  ok($@, "Invalid date - $db_type");
 
   $objs = 
     MySQLiteObjectManager->get_objectz(
@@ -11405,6 +11458,14 @@ CREATE TABLE rose_db_object_other
 EOF
 
     $dbh->do(<<"EOF");
+CREATE INDEX rose_db_object_other_idx ON rose_db_object_other (name)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE INDEX rose_db_object_other_idx2 ON rose_db_object_other (k1)
+EOF
+
+    $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_bb
 (
   id    INT NOT NULL PRIMARY KEY,
@@ -11476,6 +11537,10 @@ CREATE TABLE rose_db_object_test
 EOF
 
     $dbh->do(<<"EOF");
+CREATE INDEX rose_db_object_test_idx ON rose_db_object_test (name)
+EOF
+
+    $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_nick_types2
 (
   id    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -11500,6 +11565,10 @@ CREATE TABLE rose_db_object_nicks
   nick  VARCHAR(32),
   type_id INT REFERENCES rose_db_object_nick_types (id)
 )
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE INDEX rose_db_object_nicks_idx ON rose_db_object_nicks (nick)
 EOF
 
     $dbh->do(<<"EOF");

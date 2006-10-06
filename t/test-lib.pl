@@ -131,7 +131,7 @@ BEGIN
 
   my $version = $DBD::SQLite::VERSION || 0;
 
-  unless($ENV{'RDBO_NO_SQLITE'} || $version < 1.11)
+  unless($ENV{'RDBO_NO_SQLITE'} || $version < 1.11 || $version == 1.13)
   {
     #unlink("$Bin/sqlite.db");
 
@@ -285,16 +285,16 @@ EOF
     {
       die "Missing InnoDB support";
     }
-    
+
     $dbh->do('DROP TABLE rdbo_innodb_test');
   };
-  
+
   if($@)
   {
     warn $@  unless($@ =~ /Missing InnoDB support/);
     return 0;
   }
-  
+
   return 1;
 }
 
