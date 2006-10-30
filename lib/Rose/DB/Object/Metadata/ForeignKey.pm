@@ -9,7 +9,7 @@ use Rose::DB::Object::Metadata::Util qw(:all);
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.75';
+our $VERSION = '0.756';
 
 our $Debug = 0;
 
@@ -523,9 +523,9 @@ This is an alias for the L<key_columns|/key_columns> method.
 
 If passed a local column name LOCAL, return the corresponding column name in the foreign table.  If passed both a local column name LOCAL and a foreign column name FOREIGN, set the local/foreign mapping and return the foreign column name.
 
-=item B<key_columns [HASH | HASHREF]>
+=item B<key_columns [ HASH | HASHREF ]>
 
-Get or set a reference to a hash that maps local column names to foreign column names in the table referenced by the foreign key.
+Get or set a hash that maps local column names to foreign column names in the table referenced by the foreign key.  Returns a reference to a hash in scalar context, or a list of key/value pairs in list context.
 
 =item B<make_methods PARAMS>
 

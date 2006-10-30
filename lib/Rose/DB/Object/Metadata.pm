@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.755';
+our $VERSION = '0.756';
 
 our $Debug = 0;
 
@@ -2943,6 +2943,8 @@ sub update_changes_only_sql
 
   my @modified = map { $self->column($_) } grep { !$key{$_} } keys %{$obj->{MODIFIED_COLUMNS()} || {}};
 
+  return  unless(@modified);
+
   no warnings;
   return ($self->{'update_sql_prefix'}{$db->{'id'}} ||=
     'UPDATE ' . $self->fq_table_sql($db) . " SET \n") .
@@ -3128,6 +3130,8 @@ sub update_changes_only_sql_with_inlining
       }
     }
   }
+
+  return  unless(@updates);
 
   my $i = 0;
 
@@ -5480,13 +5484,15 @@ The default column alias generator simply appends the string "_col" to the end o
 
 =item B<foreign_key_name_generator [CODEREF]>
 
-Get or set the code reference to the subroutine used to generate L<foreign key|Rose::DB::Object::Metadata::ForeignKey> names.  The subroutine should take two arguments: a metadata object and a L<Rose::DB::Object::Metadata::ForeignKey> object.  It should return a name for the foreign key.
+Get or set the code reference to the subroutine used to generate L<foreign key|Rose::DB::Object::Metadata::ForeignKey> names.  B<Note:> This code will only be called if the L<convention_manager|/convention_manager>'s L<auto_foreign_key_name|Rose::DB::Object::ConventionManager/auto_foreign_key_name> method fails to (or declines to) produce a defined foreign key name.
+
+The subroutine should take two arguments: a metadata object and a L<Rose::DB::Object::Metadata::ForeignKey> object.  It should return a name for the foreign key.
 
 Each foreign key must have a name that is unique within the class.  By default, this name will also be the name of the method generated to access the object referred to by the foreign key, so it must be unique among method names in the class as well.
 
 The default foreign key name generator uses the following algorithm:
 
-If the foreign key has only one column, and if the name of that column ends with an optional underscore and the name of the referenced column, then that part of the column name is removed and the remaining string is used as the foreign key name.  For example, given the following tables:
+If the foreign key has only one column, and if the name of that column ends with an underscore and the name of the referenced column, then that part of the column name is removed and the remaining string is used as the foreign key name.  For example, given the following tables:
 
     CREATE TABLE categories
     (

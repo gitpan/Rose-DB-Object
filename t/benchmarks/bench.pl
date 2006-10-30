@@ -64,6 +64,8 @@ GetOptions(\%Opt, 'help',
                   'innodb|mysql-uses-innodb',
                   'simple-and-complex',
                   'hi-res-time',
+                  'no-rdbo|nordbo',
+                  'no-readline',
                   'database|db=s') or Usage();
 
 Usage()  if($Opt{'help'});
@@ -71,6 +73,7 @@ Usage()  if($Opt{'help'});
 our $Debug = $Opt{'debug'} || 0;
 our $CPU_Time = $Opt{'cpu-time'} || $Default_CPU_Time;
 $CPU_Time = -$CPU_Time  if($CPU_Time > 0);
+our $No_RDBO = $Opt{'no-rdbo'} || 0;
 
 unless($Opt{'time'} || $Opt{'time-and-compare'})
 {
@@ -92,12 +95,12 @@ our %Limit_Dialect =
 (
   pg       => 'LimitOffset',
   mysql    => 'LimitXY',
-  sqlite   => 'LimitYX',
+  sqlite   => 'LimitOffset',
   informix => 'First',
 );
 
 # DBIx::Class schema objects
-our($DBIC_Simple_Code_RS, $DBIC_Simple_CodeName_RS, 
+our($Schema, $DBIC_Simple_Code_RS, $DBIC_Simple_CodeName_RS, 
     $DBIC_Simple_Category_RS, $DBIC_Simple_Product_RS,
     $DBIC_Complex_Code_RS, $DBIC_Complex_CodeName_RS,
     $DBIC_Complex_Category_RS, $DBIC_Complex_Product_RS);
@@ -128,7 +131,7 @@ EOF
     {
       my $len = 0;
 
-      foreach my $class ('Rose::DB::Object', @Cmp_To)
+      foreach my $class (($No_RDBO ? () : 'Rose::DB::Object'), @Cmp_To)
       {
         $len = length($class)  if(length($class) > $len);
       }
@@ -136,7 +139,7 @@ EOF
       printf("%-*s  Version\n", $len, 'Module');
       printf("%-*s  -------\n", $len, '-' x $len);
 
-      foreach my $class (sort(('Rose::DB::Object', @Cmp_To)))
+      foreach my $class (sort((($No_RDBO ? () : 'Rose::DB::Object'), @Cmp_To)))
       {
         no strict 'refs';
         printf("%-*s  " . ${"${class}::VERSION"} . "\n", $len, $class);
@@ -147,25 +150,28 @@ EOF
 
     Rose::DB->default_type($db_type);
 
-    require MyTest::RDBO::Simple::Code;
-    require MyTest::RDBO::Simple::CodeName;
-    require MyTest::RDBO::Simple::Category;
-    require MyTest::RDBO::Simple::Product;
-
-    if($Opt{'simple'} || $Opt{'simple-and-complex'})
+    unless($No_RDBO)
     {
-      require MyTest::RDBO::Simple::Product::Manager;
-      require MyTest::RDBO::Simple::Category::Manager;
-    }
+      require MyTest::RDBO::Simple::Code;
+      require MyTest::RDBO::Simple::CodeName;
+      require MyTest::RDBO::Simple::Category;
+      require MyTest::RDBO::Simple::Product;
 
-    if($Opt{'complex'} || $Opt{'simple-and-complex'})
-    {
-      require MyTest::RDBO::Complex::Code;
-      require MyTest::RDBO::Complex::CodeName;
-      require MyTest::RDBO::Complex::Category;
-      require MyTest::RDBO::Complex::Product;
-      require MyTest::RDBO::Complex::Product::Manager;
-      require MyTest::RDBO::Complex::Category::Manager;
+      if($Opt{'simple'} || $Opt{'simple-and-complex'})
+      {
+        require MyTest::RDBO::Simple::Product::Manager;
+        require MyTest::RDBO::Simple::Category::Manager;
+      }
+
+      if($Opt{'complex'} || $Opt{'simple-and-complex'})
+      {
+        require MyTest::RDBO::Complex::Code;
+        require MyTest::RDBO::Complex::CodeName;
+        require MyTest::RDBO::Complex::Category;
+        require MyTest::RDBO::Complex::Product;
+        require MyTest::RDBO::Complex::Product::Manager;
+        require MyTest::RDBO::Complex::Category::Manager;
+      }
     }
 
     $DB  = Rose::DB->new;
@@ -220,12 +226,12 @@ EOF
       require MyTest::DBIC::Simple::Category;
       require MyTest::DBIC::Simple::Product;
 
-      my $schema = MyTest::DBIC::Base->schema_instance;
+      $Schema = MyTest::DBIC::Base->schema_instance;
 
-      $DBIC_Simple_Code_RS     = $schema->resultset('MyTest::DBIC::Simple::Code');      
-      $DBIC_Simple_CodeName_RS = $schema->resultset('MyTest::DBIC::Simple::CodeName');      
-      $DBIC_Simple_Category_RS = $schema->resultset('MyTest::DBIC::Simple::Category');      
-      $DBIC_Simple_Product_RS  = $schema->resultset('MyTest::DBIC::Simple::Product');      
+      $DBIC_Simple_Code_RS     = $Schema->resultset('MyTest::DBIC::Simple::Code');      
+      $DBIC_Simple_CodeName_RS = $Schema->resultset('MyTest::DBIC::Simple::CodeName');      
+      $DBIC_Simple_Category_RS = $Schema->resultset('MyTest::DBIC::Simple::Category');      
+      $DBIC_Simple_Product_RS  = $Schema->resultset('MyTest::DBIC::Simple::Product');      
 
       if($Opt{'complex'} || $Opt{'simple-and-complex'})
       {
@@ -234,10 +240,10 @@ EOF
         require MyTest::DBIC::Complex::Category;
         require MyTest::DBIC::Complex::Product;
 
-        $DBIC_Complex_Code_RS     = $schema->resultset('MyTest::DBIC::Complex::Code');      
-        $DBIC_Complex_CodeName_RS = $schema->resultset('MyTest::DBIC::Complex::CodeName');      
-        $DBIC_Complex_Category_RS = $schema->resultset('MyTest::DBIC::Complex::Category');      
-        $DBIC_Complex_Product_RS  = $schema->resultset('MyTest::DBIC::Complex::Product');   
+        $DBIC_Complex_Code_RS     = $Schema->resultset('MyTest::DBIC::Complex::Code');      
+        $DBIC_Complex_CodeName_RS = $Schema->resultset('MyTest::DBIC::Complex::CodeName');      
+        $DBIC_Complex_Category_RS = $Schema->resultset('MyTest::DBIC::Complex::Category');      
+        $DBIC_Complex_Product_RS  = $Schema->resultset('MyTest::DBIC::Complex::Product');   
       }
 
       #MyTest::DBIC::Base->refresh;
@@ -285,7 +291,7 @@ Usage: $prog --help | [--skip-intro] [--cpu-time <num>]
        [--time | --compare | --time-and-compare]
        [--simple | --complex | --simple-and-complex]
        [--iterations <num>] [--hi-res-time] [--innodb]
-       [--benchmarks-match <regex>]
+       [--no-rdbo] [--no-readline] [--benchmarks-match <regex>]
 
 --benchmarks-match <regex>
 
@@ -295,12 +301,13 @@ Usage: $prog --help | [--skip-intro] [--cpu-time <num>]
 
 --compare-to | --cmp <modules>
 
-    Benchmark against <modules>, which is a comma-separated list of
-    one or more for the following: 
+    Benchmark Rose::DB::Object against <modules>, which is a comma-
+    separated list of one or more for the following: 
 
         @{[join(', ', @Cmp_To)]}
 
     The special value "all" can be used to specify all available modules.
+    (To exclude Rose::DB::Object, see the --no-rdbo option below.)
 
 --database <db>
 
@@ -327,6 +334,16 @@ Usage: $prog --help | [--skip-intro] [--cpu-time <num>]
 
     The number of iterations to use for benchmarks that must be run a
     predictible number of times.  The default is $Default_Iterations.
+
+--no-rdbo
+
+    Do not automatically include Rose::DB::Object in the list of modules
+    to benchmark.  Note: Rose::DB must still be installed, since it provides
+    the DBI database handle used during the tests.
+
+--no-readline
+
+    Do not use the Term::ReadLine library.
 
 --time
 --compare
@@ -604,6 +621,8 @@ sub Init_PM
 
 sub Init_Term
 {
+  return  if($Opt{'no-readline'});
+
   eval { require Term::ReadLine };
 
   return  if($@);
@@ -619,7 +638,6 @@ sub Init_Term
   {
     # Get rid of that underlining crap
     $Term->ornaments(0);
-
     ($Term->OUT) ? select($Term->OUT) : select(STDOUT);
   }
 }
@@ -677,6 +695,37 @@ sub Prompt
   return $response;
 }
 
+sub Refresh_DBs
+{
+  $Debug && warn "Reconnect to database...\n";
+
+  $DB  = Rose::DB->new;
+  $DBH = Rose::DB->new->retain_dbh;
+
+  if(UNIVERSAL::isa('MyTest::CDBI::Base', 'Class::DBI') &&
+     MyTest::CDBI::Base->can('db_Main'))
+  {
+    my $dbh = MyTest::CDBI::Base->db_Main;
+    $dbh->{'CachedKids'} = {};
+    $dbh->disconnect;
+  }
+
+  if(UNIVERSAL::isa('MyTest::CDBI::Sweet::Base', 'Class::DBI::Sweet') &&
+     MyTest::CDBI::Sweet::Base->can('db_Main'))
+  {
+    my $dbh = MyTest::CDBI::Sweet::Base->db_Main;
+    $dbh->{'CachedKids'} = {};
+    $dbh->disconnect;
+  }
+
+  if($Schema)
+  {
+    my $dbh = $Schema->storage->dbh;
+    $dbh->{'CachedKids'} = {};
+    $dbh->disconnect;
+  }
+}
+
 use constant MAX_CODE_NAMES_RANGE => 10;
 use constant MIN_CODE_NAMES       => 1;
 
@@ -713,16 +762,19 @@ sub Insert_Code_Names
     my $sth = $dbh->prepare($sql);
 
     # RDBO
-    foreach my $i (1 .. $Iterations)
+    unless($No_RDBO)
     {
-      foreach my $n (1 .. (int rand(MAX_CODE_NAMES_RANGE) + MIN_CODE_NAMES))
+      foreach my $i (1 .. $Iterations)
       {
-        $sth->execute($i + 100_000, "CN 1x$n $i")  if($simple);
-        $sth->execute($i + 1_100_000, "CN 1.1x$n $i")  if($complex);
+        foreach my $n (1 .. (int rand(MAX_CODE_NAMES_RANGE) + MIN_CODE_NAMES))
+        {
+          $sth->execute($i + 100_000, "CN 1x$n $i")  if($simple);
+          $sth->execute($i + 1_100_000, "CN 1.1x$n $i")  if($complex);
+        }
       }
-    }
 
-    print '.';
+      print '.';
+    }
 
     # CDBI
     if($cmp{'Class::DBI'})
@@ -790,6 +842,10 @@ sub Insert_Code_Names
     {
       $dbh->do('analyze');
     }
+    elsif($db->driver eq 'sqlite')
+    {
+      Refresh_DBs();
+    }
   }
 }
 
@@ -821,6 +877,11 @@ EOF
     $dbh->do(<<"EOF");
 CREATE INDEX rose_db_object_test_code_names_pid_idx ON rose_db_object_test_code_names (product_id)
 EOF
+  }
+
+  if($DB->driver eq 'sqlite')
+  {
+    Refresh_DBs();
   }
 }
 
@@ -860,6 +921,11 @@ EOF
     $dbh->do(<<"EOF");
 DELETE FROM rose_db_object_test_code_names
 EOF
+  }
+
+  if($DB->driver eq 'sqlite')
+  {
+    Refresh_DBs();
   }
 }
 
@@ -3201,7 +3267,7 @@ EOF
         name        => "Product $i",
         category_id => 2,
         status      => 'temp',
-        published   => \'2005-01-02 12:34:56' }); #\'
+        published   => \'2005-01-02 12:34:56' }); 
       $i++;
     }
   }
@@ -3643,7 +3709,7 @@ EOF
       #my $p = MyTest::DBIC::Complex::Product->find($i + 3_300_000);
       my $p = $DBIC_Complex_Product_RS->single({ id => $i + 3_300_000 });
       $p->name($p->name . ' updated');
-      $p->published(\'2004-01-02 12:34:55'); #\'
+      $p->published(\'2004-01-02 12:34:55');
       $p->update;
       $i++;
     }
@@ -5011,7 +5077,8 @@ sub Bench
 
   my %filtered_tests;
 
-  my $db_regex = '\b(?:RDBO.*|' . join('|', map { $Cmp_Abbreviation{$_} } @Cmp_To) . ')\b';
+  my $db_regex = ($No_RDBO ? '\b(?:' : '\b(?:RDBO.*|') . 
+                 join('|', map { $Cmp_Abbreviation{$_} } @Cmp_To) . ')\b';
   $db_regex = qr($db_regex);
 
   if(($name =~ /^Simple:/ &&  !($Opt{'simple'} || $Opt{'simple-and-complex'})) ||
@@ -5483,6 +5550,19 @@ sub Check_DB
     $Have_DB{'mysql'} = 1;
   }
 
+  # SQLite
+
+  eval 
+  {
+    $dbh = Rose::DB->new('sqlite_admin')->retain_dbh()
+      or die Rose::DB->error;
+  };
+
+  if(!$@ && $dbh)
+  {
+    $Have_DB{'sqlite'} = 1;
+  }
+
   # Informix
 
   eval 
@@ -5739,6 +5819,114 @@ EOF
   }
 
   #
+  # SQLite
+  #
+
+  if($init{'sqlite'})
+  {
+    $dbh = Rose::DB->new('sqlite_admin')->retain_dbh()
+      or die Rose::DB->error;
+
+    # Drop existing table and create schema, ignoring errors
+    {
+      local $dbh->{'RaiseError'} = 0;
+      local $dbh->{'PrintError'} = 0;
+      $dbh->do('DROP TABLE rose_db_object_test_code_names');
+      $dbh->do('DROP TABLE rose_db_object_test_products');
+      $dbh->do('DROP TABLE rose_db_object_test_categories');
+      $dbh->do('DROP TABLE rose_db_object_test_codes');
+    }
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_test_codes
+(
+  k1    INT NOT NULL,
+  k2    INT NOT NULL,
+  k3    INT NOT NULL,
+  code  VARCHAR(32),
+
+  PRIMARY KEY(k1, k2, k3)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_test_categories
+(
+  id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  name  VARCHAR(255) NOT NULL
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_test_products
+(
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  name           VARCHAR(255) NOT NULL,
+  category_id    INT REFERENCES rose_db_object_test_categories (id),
+  status         VARCHAR(32) DEFAULT 'active',
+  fk1            INT,
+  fk2            INT,
+  fk3            INT,
+  published      DATETIME,
+  last_modified  DATETIME,
+  date_created   DATETIME
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE rose_db_object_test_code_names
+(
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id  INT NOT NULL REFERENCES rose_db_object_test_products (id),
+  name        VARCHAR(32),
+
+  UNIQUE(name)
+)
+EOF
+
+    foreach my $i (1 .. 10)
+    {
+      $dbh->do(<<"EOF");
+INSERT INTO rose_db_object_test_codes (k1, k2, k3, code) VALUES
+  ($i, @{[$i + 1]}, @{[$i + 2]}, 'MYCODE$i')
+EOF
+    }
+
+    foreach my $i (1 .. 10)
+    {
+      $dbh->do(<<"EOF");
+INSERT INTO rose_db_object_test_categories (name) VALUES ('Cat $i')
+EOF
+    }
+
+    foreach my $i (1 .. 10)
+    {
+      $dbh->do(<<"EOF");
+INSERT INTO rose_db_object_test_products
+(
+  name,
+  category_id,
+  status,
+  fk1,
+  fk2,
+  fk3
+)
+VALUES
+(
+  'Product $i',
+  $i,
+  '@{[ rand > .25 ? 'active' : 'disabled' ]}',
+  $i,
+  @{[$i + 1]},
+  @{[$i + 2]}
+)
+EOF
+    }
+
+    $Inited_DB{'sqlite'} = 1;
+  }
+
+  #
   # Informix
   #
 
@@ -5869,7 +6057,6 @@ END
 
   if($Inited_DB{'pg'})
   {
-    # Postgres
     my $dbh = Rose::DB->new('pg')->retain_dbh()
       or die Rose::DB->error;
 
@@ -5883,8 +6070,20 @@ END
 
   if($Inited_DB{'mysql'})
   {
-    # MySQL
     my $dbh = Rose::DB->new('mysql')->retain_dbh()
+      or die Rose::DB->error;
+
+    $dbh->do('DROP TABLE rose_db_object_test_code_names');
+    $dbh->do('DROP TABLE rose_db_object_test_products');
+    $dbh->do('DROP TABLE rose_db_object_test_categories');
+    $dbh->do('DROP TABLE rose_db_object_test_codes');
+
+    $dbh->disconnect;
+  }
+
+  if($Inited_DB{'sqlite'})
+  {
+    my $dbh = Rose::DB->new('sqlite_admin')->retain_dbh()
       or die Rose::DB->error;
 
     $dbh->do('DROP TABLE rose_db_object_test_code_names');
@@ -5897,7 +6096,6 @@ END
 
   if($Inited_DB{'informix'})
   {
-    # Informix
     my $dbh = Rose::DB->new('informix')->retain_dbh()
       or die Rose::DB->error;
 

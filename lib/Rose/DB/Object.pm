@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.755';
+our $VERSION = '0.756';
 
 our $Debug = 0;
 
@@ -528,7 +528,12 @@ sub save
 
           my $foreign_object = $fk->object_has_foreign_object($self) || next;
           $Debug && warn "$self - save foreign ", $fk->name, " - $foreign_object\n";
-          $foreign_object->save(%args)  if(Rose::DB::Object::Util::has_modified_columns($foreign_object));
+
+          if(Rose::DB::Object::Util::has_modified_columns($foreign_object) ||
+             Rose::DB::Object::Util::has_modified_children($foreign_object))
+          {
+            $foreign_object->save(%args);
+          }
         }
       }
 
@@ -565,7 +570,12 @@ sub save
           foreach my $related_object (@$related_objects)
           {
             $Debug && warn "$self - save related ", $rel->name, " - $related_object\n";
-            $related_object->save(%args)  if(Rose::DB::Object::Util::has_modified_columns($related_object));
+
+            if(Rose::DB::Object::Util::has_modified_columns($related_object) ||
+               Rose::DB::Object::Util::has_modified_children($related_object))
+            {
+              $related_object->save(%args);
+            }
           }
         }
       }
@@ -668,9 +678,15 @@ sub update
       if($changes_only)
       {
         # No changes to save...
-        return $self || 1  unless(%{$self->{MODIFIED_COLUMNS() || {}}});
+        return $self || 1  unless(%{$self->{MODIFIED_COLUMNS()} || {}});
         ($sql, $bind, $bind_params) =
           $meta->update_changes_only_sql_with_inlining($self, \@key_columns);
+
+        unless($sql) # skip key-only updates
+        {
+          $self->{MODIFIED_COLUMNS()} = {};
+          return $self || 1;
+        }
       }
       else
       {
@@ -715,9 +731,15 @@ sub update
       if($changes_only)
       {
         # No changes to save...
-        return $self || 1  unless(%{$self->{MODIFIED_COLUMNS() || {}}});
+        return $self || 1  unless(%{$self->{MODIFIED_COLUMNS()} || {}});
 
         my($sql, $bind, $columns) = $meta->update_changes_only_sql($self, \@key_columns, $db);
+
+        unless($sql) # skip key-only updates
+        {
+          $self->{MODIFIED_COLUMNS()} = {};
+          return $self || 1;
+        }
 
         # $meta->prepare_update_options (defunct)
         my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
@@ -1943,7 +1965,7 @@ Now here's the wrong way:
     # calling the base class version of the method.
     sub load
     {
-      my $self = shift; # WRONG!  The alias to original object is now lost!
+      my $self = shift; # WRONG! The alias to the object is now lost!
 
       ... # Do your stuff
 

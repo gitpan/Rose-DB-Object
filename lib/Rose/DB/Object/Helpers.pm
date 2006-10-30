@@ -9,7 +9,7 @@ our @ISA = qw(Rose::DB::Object::MixIn);
 
 use Carp;
 
-our $VERSION = '0.741';
+our $VERSION = '0.756';
 
 __PACKAGE__->export_tags
 (
@@ -20,7 +20,7 @@ __PACKAGE__->export_tags
        column_value_pairs column_accessor_value_pairs 
        column_mutator_value_pairs 
        column_values_as_yaml column_values_as_json
-       init_with_yaml init_with_json
+       init_with_yaml init_with_json init_with_column_value_pairs
        has_loaded_related) 
   ],
 
@@ -30,7 +30,7 @@ __PACKAGE__->export_tags
     qw(clone clone_and_reset load_or_insert insert_or_update 
        insert_or_update_on_duplicate_key load_speculative
        column_value_pairs column_accessor_value_pairs 
-       column_mutator_value_pairs
+       column_mutator_value_pairs init_with_column_value_pairs
        has_loaded_related)
   ],
 );
@@ -111,7 +111,7 @@ __PACKAGE__->pre_import_hook(column_values_as_yaml => sub { require YAML::Syck }
 sub column_values_as_yaml
 {
   local $_[0]->{STATE_SAVING()} = 1;
-  YAML::Syck::Dump(scalar shift->column_value_pairs)
+  YAML::Syck::Dump(scalar Rose::DB::Object::Helpers::column_value_pairs(shift))
 }
 
 __PACKAGE__->pre_import_hook(column_values_as_json => sub { require JSON::Syck });
@@ -119,7 +119,7 @@ __PACKAGE__->pre_import_hook(column_values_as_json => sub { require JSON::Syck }
 sub column_values_as_json
 {
   local $_[0]->{STATE_SAVING()} = 1;
-  JSON::Syck::Dump(scalar shift->column_value_pairs)
+  JSON::Syck::Dump(scalar Rose::DB::Object::Helpers::column_value_pairs(shift))
 }
 
 __PACKAGE__->pre_import_hook(init_with_json => sub { require YAML::Syck });
@@ -135,6 +135,7 @@ sub init_with_yaml
 
   while(my($column, $value) = each(%$hash))
   {
+    next  unless(length $column);
     my $method = $meta->column($column)->mutator_method_name;
     $self->$method($value);
   }
@@ -155,6 +156,26 @@ sub init_with_json
 
   while(my($column, $value) = each(%$hash))
   {
+    next  unless(length $column);
+    my $method = $meta->column($column)->mutator_method_name;
+    $self->$method($value);
+  }
+
+  return $self;
+}
+
+sub init_with_column_value_pairs
+{
+  my($self) = shift;
+
+  my $hash = @_ == 1 ? shift : { @_ };
+  my $meta = $self->meta;
+
+  local $self->{STATE_LOADING()} = 1;
+
+  while(my($column, $value) = each(%$hash))
+  {
+    next  unless(length $column);
     my $method = $meta->column($column)->mutator_method_name;
     $self->$method($value);
   }
@@ -392,16 +413,31 @@ Returns a hash (in list context) or reference to a hash (in scalar context) of c
 
 =item B<has_loaded_related [ NAME | PARAMS ]>
 
-Given a foreign key or relationship name, return true if one or more related have been loaded into the current object, false otherwise.
+Given a foreign key or relationship name, return true if one or more related objects have been loaded into the current object, false otherwise.
 
-If the name is passed as a plain string NAME, then a foreign key with that name is looked up.  If not such foreign key exists, then a relationship with that name is looked up.  If no such relationship or foreign key exists, a fatal error will occur.  Example:
+If the name is passed as a plain string NAME, then a foreign key with that name is looked up.  If no such foreign key exists, then a relationship with that name is looked up.  If no such relationship or foreign key exists, a fatal error will occur.  Example:
 
     $foo->has_loaded_related('bar');
 
-It's generally not a good idea to add a foreign key and a relationships with the same name, but it is technically possible.  To specify the domain of the name, pass the name as the value of a C<foreign_key> or C<relationship> parameter.  Example:
+It's generally not a good idea to add a foreign key and a relationship with the same name, but it is technically possible.  To specify the domain of the name, pass the name as the value of a C<foreign_key> or C<relationship> parameter.  Example:
 
     $foo->has_loaded_related(foreign_key => 'bar');
     $foo->has_loaded_related(relationship => 'bar');
+
+=item B<init_with_column_value_pairs [ HASH | HASHREF ]>
+
+Initialize an object with a hash or reference to a hash of column/value pairs.  This differs from the inherited L<init|Rose::Object/init> method in that it accepts column names rather than method names.  A column name may not be the same as its mutator method name if the column is L<aliased|Rose::DB::Object::Metadata/alias_column>, for example.
+
+    $p = Person->new; # assume "type" column is aliased to "person_type"
+
+    # init() takes method/value pairs
+    $p->init(person_type => 'cool', age => 30);
+
+    # Helper takes a hashref of column/value pairs
+    $p->init_with_column_value_pairs({ type => 'cool', age => 30 });
+
+    # ...or a hash of column/value pairs
+    $p->init_with_column_value_pairs(type => 'cool', age => 30);
 
 =item B<init_with_json JSON>
 
@@ -416,7 +452,7 @@ Initialize the object with a JSON-formatted string.  The JSON string must be in 
     print $p2->name; # John
     print $p2->age;  # 30
 
-=item B<init_with_json YAML>
+=item B<init_with_yaml YAML>
 
 Initialize the object with a YAML-formatted string.  The YAML string must be in the format returned by the L<column_values_as_yaml|/column_values_as_yaml> method.  Example:
 

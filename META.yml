@@ -1,10 +1,11 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         Rose-DB-Object
-version:      0.755
-version_from: lib/Rose/DB/Object.pm
-installdirs:  site
-requires:
+--- #YAML:1.0
+name:                Rose-DB-Object
+version:             0.756
+abstract:            ~
+license:             ~
+generated_by:        ExtUtils::MakeMaker version 6.31
+distribution_type:   module
+requires:     
     Bit::Vector::Overload:         0
     Clone:                         0.2
     Cwd:                           0
@@ -13,12 +14,12 @@ requires:
     File::Path:                    0
     File::Spec:                    0
     Math::BigInt:                  1.77
-    Rose::DateTime::Util:          0.53
-    Rose::DB:                      0.727
+    Rose::DateTime::Util:          0.532
+    Rose::DB:                      0.729
     Rose::Object:                  0.82
     Scalar::Util:                  0
     Test::More:                    0
     Time::Clock:                   0
-
-distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.30
+meta-spec:
+    url:     http://module-build.sourceforge.net/META-spec-v1.2.html
+    version: 1.2

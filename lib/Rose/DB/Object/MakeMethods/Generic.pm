@@ -18,7 +18,7 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.751';
+our $VERSION = '0.756';
 
 our $Debug = 0;
 
@@ -139,7 +139,7 @@ EOF
 
   if($type eq 'character')
   {
-    $set_code = qq(\$self->{'$qkey'} = sprintf("%-${length}s", \$value););
+    $set_code = qq(\$self->{'$qkey'} = defined \$value ? sprintf("%-${length}s", \$value) : undef;);
   }
   else
   {
@@ -2030,7 +2030,7 @@ sub object_by_key
         my $linked_up = 0;
 
         if(!$fk->requires_preexisting_parent_object || $self->{STATE_IN_DB()})
-        {   
+        {
           # Set the foreign key columns
           while(my($local_column, $foreign_column) = each(%$fk_columns))
           {
