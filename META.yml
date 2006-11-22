@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Rose-DB-Object
-version:             0.756
+version:             0.757
 abstract:            ~
 license:             ~
 generated_by:        ExtUtils::MakeMaker version 6.31
@@ -15,7 +15,7 @@ requires:
     File::Spec:                    0
     Math::BigInt:                  1.77
     Rose::DateTime::Util:          0.532
-    Rose::DB:                      0.729
+    Rose::DB:                      0.731
     Rose::Object:                  0.82
     Scalar::Util:                  0
     Test::More:                    0

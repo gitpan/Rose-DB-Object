@@ -11,37 +11,40 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.753';
+our $VERSION = '0.757';
 
 our $Debug = 0;
 
 our %OP_MAP = 
-(
-  similar    => 'SIMILAR TO',
-  match      => '~',
-  imatch     => '~*',
-  regex      => 'REGEXP',
-  regexp     => 'REGEXP',
-  like       => 'LIKE',
-  ilike      => 'ILIKE',
-  rlike      => 'RLIKE',
-  lt         => '<',
-  le         => '<=',
-  ge         => '>=',
-  gt         => '>',
-  ne         => '<>',
-  eq         => '=',
-  ''         => '=',
-  sql        => '=',
-  in_set     => 'ANY IN SET',
-  any_in_set => 'ANY IN SET',
-  all_in_set => 'ALL IN SET',
-  in_array      => 'ANY IN ARRAY',
-  any_in_array  => 'ANY IN ARRAY',
-  all_in_array  => 'ALL IN ARRAY',
+(  
+  similar      => 'SIMILAR TO',
+  match        => '~',
+  imatch       => '~*',
+  regex        => 'REGEXP',
+  regexp       => 'REGEXP',
+  like         => 'LIKE',
+  ilike        => 'ILIKE',
+  rlike        => 'RLIKE',
+  lt           => '<',
+  le           => '<=',
+  ge           => '>=',
+  gt           => '>',
+  ne           => '<>',
+  eq           => '=',
+  '&'          => '&',
+  ''           => '=',
+  sql          => '=',
+  in_set       => 'ANY IN SET',
+  any_in_set   => 'ANY IN SET',
+  all_in_set   => 'ALL IN SET',
+  in_array     => 'ANY IN ARRAY',
+  any_in_array => 'ANY IN ARRAY',
+  all_in_array => 'ALL IN ARRAY',
 );
 
 @OP_MAP{map { $_ . '_sql' } keys %OP_MAP} = values(%OP_MAP);
+
+our $Strict_Ops = 0;
 
 our %Op_Arg_PassThru = map { $_ => 1 } 
   qw(similar match imatch regex regexp like ilike rlike in_set any_in_set all_in_set
@@ -479,6 +482,7 @@ sub build_select
         $i++;
       }
 
+      # XXX: This sucks
       my $driver = $dbh->{'Driver'}{'Name'};
 
       if($driver eq 'mysql' && @normal_tables &&
@@ -598,12 +602,21 @@ sub _build_clause
       $force_inline = 1;
     }
 
-    $op = $OP_MAP{$op_arg} or 
-      Carp::croak "Unknown comparison operator: $op_arg";
+    unless($op = $OP_MAP{$op_arg})
+    {
+      if($Strict_Ops)
+      {
+        Carp::croak "Unknown comparison operator: $op_arg";
+      }
+      else { $op = $op_arg }
+    }
   }
   else { $op ||= '=' }
 
   my $ref;
+
+  # XXX: This sucks
+  my $driver = $db ? $db->driver : '';
 
   unless($ref = ref($vals))
   {
@@ -625,7 +638,15 @@ sub _build_clause
 
         if($op eq 'ANY IN SET' || $op eq 'ALL IN SET')
         {
-          return ($not ? "$not " : '') . "$placeholder IN $field ";
+          if($driver eq 'mysql')
+          {
+            return ($not ? "$not(" : '') . 
+                   "FIND_IN_SET($placeholder, $field) > 0" . ($not ? ')' : '');
+          }
+          else
+          {
+            return ($not ? "$not " : '') . "$placeholder IN $field ";
+          }
         }
         elsif($op eq 'ANY IN ARRAY' || $op eq 'ALL IN ARRAY')
         {
@@ -639,12 +660,22 @@ sub _build_clause
 
       if($op eq 'ANY IN SET' || $op eq 'ALL IN SET')
       {
-        return ($not ? "$not(" : '') . $dbh->quote($vals) . " $op $field " .
-               $dbh->quote($vals)  . ($not ? ')' : '');
+        if($driver eq 'mysql')
+        {
+          return ($not ? "$not(" : '') . 'FIND_IN_SET(' . 
+                 (($should_inline || $force_inline) ? $vals : $dbh->quote($vals)) . 
+                 ", $field) > 0" . ($not ? ')' : '');
+        }
+        else
+        {
+          return ($not ? "$not(" : '') . 
+                 (($should_inline || $force_inline) ? $vals : $dbh->quote($vals)) .
+                 " IN $field " . ($not ? ')' : '');
+        }
       }
       elsif($op eq 'ANY IN ARRAY' || $op eq 'ALL IN ARRAY')
       {
-        my $qval = $dbh->quote($vals);
+        my $qval = ($should_inline || $force_inline) ? $vals : $dbh->quote($vals);
         return $not ? "NOT ($qval = ANY($field)) " : "$qval = ANY($field) ";
       }
       else
@@ -788,6 +819,7 @@ sub _build_clause
     $field_mod = delete $vals->{'field'}  if(exists $vals->{'field'});
 
     my $all_in = ($op eq 'ALL IN SET' || $op eq 'ALL IN ARRAY') ? 1 : 0;
+    my $any_in = ($op eq 'ANY IN SET' || $op eq 'ANY IN ARRAY') ? 1 : 0;
 
     foreach my $raw_op (keys(%$vals))
     {
@@ -810,13 +842,32 @@ sub _build_clause
       }
       else
       {
+
         Carp::croak "Don't know how to handle comparison values: $vals->{$raw_op}";
       }
     }
 
-    if($not && $all_in)
+    if($all_in)
     {
-      return 'NOT(' . join(' AND ', @clauses) . ')';
+      if($not)
+      {
+        return 'NOT(' . join(' AND ', @clauses) . ')';
+      }
+      else
+      {
+        return @clauses == 1 ? $clauses[0] : ('(' . join(' AND ', @clauses) . ')');
+      }
+    }
+    elsif($any_in)
+    {
+      if($not)
+      {
+        return join(' AND ', @clauses);
+      }
+      else
+      {
+        return @clauses == 1 ? $clauses[0] : ('(' . join(' OR ', @clauses) . ')');
+      }    
     }
     else
     {
@@ -1148,6 +1199,8 @@ Undefined values are translated to the keyword NULL when included in a multi-val
 
 Set operations:
 
+    ### Informix (default) ###
+
     # A IN COLUMN
     'NAME' => { in_set => 'A' } 
 
@@ -1158,7 +1211,7 @@ Set operations:
     'NAME' => { in_set => [ 'A', 'B'] } 
     'NAME' => { any_in_set => [ 'A', 'B'] } 
 
-    # NOT(A IN COLUMN OR B IN COLUMN)
+    # NOT(A IN COLUMN) AND NOT(B IN COLUMN)
     '!NAME' => { in_set => [ 'A', 'B'] } 
     '!NAME' => { any_in_set => [ 'A', 'B'] } 
 
@@ -1166,6 +1219,28 @@ Set operations:
     'NAME' => { all_in_set => [ 'A', 'B'] } 
 
     # NOT(A IN COLUMN AND B IN COLUMN)
+    '!NAME' => { all_in_set => [ 'A', 'B'] } 
+
+    ### MySQL (requires db parameter)  ###
+
+    # FIND_IN_SET(A, COLUMN) > 0
+    'NAME' => { in_set => 'A' } 
+
+    # NOT(FIND_IN_SET(A, COLUMN) > 0)
+    '!NAME' => { in_set => 'A' } 
+
+    # (FIND_IN_SET(A, COLUMN) > 0 OR FIND_IN_SET(B, COLUMN) > 0)
+    'NAME' => { in_set => [ 'A', 'B'] } 
+    'NAME' => { any_in_set => [ 'A', 'B'] } 
+
+    # NOT(FIND_IN_SET(A, COLUMN) > 0) AND NOT(FIND_IN_SET(B, COLUMN) > 0)
+    '!NAME' => { in_set => [ 'A', 'B'] } 
+    '!NAME' => { any_in_set => [ 'A', 'B'] } 
+
+    # (FIND_IN_SET(A, COLUMN) > 0 AND FIND_IN_SET(B, COLUMN) > 0)
+    'NAME' => { all_in_set => [ 'A', 'B'] } 
+
+    # NOT(FIND_IN_SET(A, COLUMN) > 0 AND FIND_IN_SET(B, COLUMN) > 0)
     '!NAME' => { all_in_set => [ 'A', 'B'] } 
 
 Array operations:

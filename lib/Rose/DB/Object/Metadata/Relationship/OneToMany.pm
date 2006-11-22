@@ -12,13 +12,13 @@ use Rose::DB::Object::MakeMethods::Generic;
 
 our $Debug = 0;
 
-our $VERSION = '0.57';
+our $VERSION = '0.757';
 
 __PACKAGE__->default_auto_method_types(qw(get_set_on_save add_on_save));
 
 __PACKAGE__->add_common_method_maker_argument_names
 (
-  qw(class share_db key_columns manager_class manager_method manager_args query_args)
+  qw(class share_db key_columns manager_class manager_method manager_args query_args join_args)
 );
 
 use Rose::Object::MakeMethods::Generic
