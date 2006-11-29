@@ -5,7 +5,7 @@ use strict;
 use Bit::Vector::Overload;
 
 use Carp();
-use Scalar::Util qw(weaken);
+use Scalar::Util qw(weaken refaddr);
 
 use Rose::Object::MakeMethods;
 our @ISA = qw(Rose::Object::MakeMethods);
@@ -18,7 +18,7 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.757';
+our $VERSION = '0.758';
 
 our $Debug = 0;
 
@@ -1780,10 +1780,10 @@ sub object_by_key
   my $interface = $args->{'interface'} || 'get_set';
   my $target_class = $options->{'target_class'} or die "Missing target class";
 
-  my $fk       = $args->{'foreign_key'} || $args->{'relationship'};
+  weaken(my $fk       = $args->{'foreign_key'} || $args->{'relationship'});
   my $fk_class = $args->{'class'} or die "Missing foreign object class";
-  my $fk_meta  = $fk_class->meta;
-  my $meta     = $target_class->meta;
+  weaken(my $fk_meta  = $fk_class->meta);
+  weaken(my $meta     = $target_class->meta);
   my $fk_pk;
 
   my $required = 
@@ -2106,7 +2106,7 @@ sub object_by_key
         $self->{$key} = $object;
 
         weaken(my $welf = $self);
-
+        
         # Make the code that will run on save()
         my $save_code = sub
         {
@@ -2485,8 +2485,8 @@ sub objects_by_key
 
   my $relationship = $args->{'relationship'};
 
-  my $ft_class   = $args->{'class'} or die "Missing foreign object class";
-  my $meta       = $target_class->meta;
+  my $ft_class    = $args->{'class'} or die "Missing foreign object class";
+  weaken(my $meta = $target_class->meta);
   my $ft_pk;
 
   unless(exists $args->{'key_columns'} || exists $args->{'query_args'})
@@ -3279,7 +3279,7 @@ sub objects_by_map
   my $relationship = $args->{'relationship'} or die "Missing relationship";
   my $rel_name     = $relationship->name;
   my $map_class    = $args->{'map_class'} or die "Missing map class";
-  my $map_meta     = $map_class->meta or die "Missing meta for $map_class";
+  weaken(my $map_meta = $map_class->meta or die "Missing meta for $map_class");
   my $map_from     = $args->{'map_from'};
   my $map_to       = $args->{'map_to'};
   my $map_manager  = $args->{'manager_class'};
@@ -3560,14 +3560,14 @@ sub objects_by_map
       if($share_db)
       {
         $objs =
-          $map_manager->$map_method(query        => [ %join_map_to_self, @$query_args ],
+          $map_manager->$map_method(query => [ %join_map_to_self, @$query_args ],
                                     require_objects => $require_objects,
                                     %$mgr_args, db => $self->db);
       }
       else
       {
         $objs = 
-          $map_manager->$map_method(query        => [ %join_map_to_self, @$query_args ],
+          $map_manager->$map_method(query => [ %join_map_to_self, @$query_args ],
                                     require_objects => $require_objects,
                                     %$mgr_args);
       }
@@ -3585,8 +3585,18 @@ sub objects_by_map
         [
           map 
           {
-            my $o = $_->$map_to_method();
-            $o->$map_record_method($_); 
+            my $map_rec = $_;
+            my $o = $map_rec->$map_to_method();
+
+            # This should work too, if we want to keep the ref
+            #if(refaddr($map_rec->{$map_to}) == refaddr($o))
+            #{
+            #  weaken($map_rec->{$map_to} = $o);
+            #}
+
+            # Ditch the map record's reference to the foreign object
+            delete $map_rec->{$map_to};
+            $o->$map_record_method($map_rec); 
             $o;
           }
           @$objs
@@ -3594,7 +3604,28 @@ sub objects_by_map
       }
       else
       {
-        $self->{$key} = [ map { $_->$map_to_method() } @$objs ];
+        $self->{$key} = 
+        [
+          map 
+          {
+            # This should work too, if we want to keep the ref
+            #my $map_rec = $_;
+            #my $o = $map_rec->$map_to_method();
+            #
+            #if(refaddr($map_rec->{$map_to}) == refaddr($o))
+            #{
+            #  weaken($map_rec->{$map_to} = $o);
+            #}
+            #
+            #$o;
+
+            # Ditch the map record's reference to the foreign object
+            my $o = $_->$map_to_method();
+            $_->$map_to_method(undef);
+            $o;
+          }
+          @$objs 
+        ];
       }
 
       return wantarray ? @{$self->{$key}} : $self->{$key};
@@ -3819,8 +3850,18 @@ sub objects_by_map
         [
           map 
           {
-            my $o = $_->$map_to_method();
-            $o->$map_record_method($_); 
+            my $map_rec = $_;
+            my $o = $map_rec->$map_to_method();
+
+            # This should work too, if we want to keep the ref
+            #if(refaddr($map_rec->{$map_to}) == refaddr($o))
+            #{
+            #  weaken($map_rec->{$map_to} = $o);
+            #}
+
+            # Ditch the map record's reference to the foreign object
+            delete $map_rec->{$map_to};
+            $o->$map_record_method($map_rec); 
             $o;
           }
           @$objs
@@ -3828,7 +3869,28 @@ sub objects_by_map
       }
       else
       {
-        $self->{$key} = [ map { $_->$map_to_method() } @$objs ];
+        $self->{$key} = 
+        [
+          map
+          {
+            # This works too, if we want to keep the ref
+            #my $map_rec = $_;
+            #my $o = $map_rec->$map_to_method();
+            #
+            #if(refaddr($map_rec->{$map_to}) == refaddr($o))
+            #{
+            #  weaken($map_rec->{$map_to} = $o);
+            #}
+            #
+            #$o;
+
+            # Ditch the map record's reference to the foreign object
+            my $o = $_->$map_to_method();
+            $_->$map_to_method(undef);
+            $o;
+          }
+          @$objs
+        ];
       }
 
       return wantarray ? @{$self->{$key}} : $self->{$key};
@@ -4026,8 +4088,18 @@ sub objects_by_map
         [
           map 
           {
-            my $o = $_->$map_to_method();
-            $o->$map_record_method($_); 
+            my $map_rec = $_;
+            my $o = $map_rec->$map_to_method();
+
+            # This should work too, if we want to keep the ref
+            #if(refaddr($map_rec->{$map_to}) == refaddr($o))
+            #{
+            #  weaken($map_rec->{$map_to} = $o);
+            #}
+
+            # Ditch the map record's reference to the foreign object
+            delete $map_rec->{$map_to};
+            $o->$map_record_method($map_rec); 
             $o;
           }
           @$objs
@@ -4035,7 +4107,28 @@ sub objects_by_map
       }
       else
       {
-        $self->{$key} = [ map { $_->$map_to_method() } @$objs ];
+        $self->{$key} = 
+        [
+          map
+          {
+            # This works too, if we want to keep the ref
+            #my $map_rec = $_;
+            #my $o = $map_rec->$map_to_method();
+            #
+            #if(refaddr($map_rec->{$map_to}) == refaddr($o))
+            #{
+            #  weaken($map_rec->{$map_to} = $o);
+            #}
+            #
+            #$o;
+
+            # Ditch the map record's reference to the foreign object
+            my $o = $_->$map_to_method();
+            $_->$map_to_method(undef);
+            $o;
+          }
+          @$objs
+        ];
       }
 
       return wantarray ? @{$self->{$key}} : $self->{$key};

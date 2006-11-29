@@ -5,7 +5,7 @@ use strict;
 use Carp();
 
 use List::Util qw(first);
-use Scalar::Util qw(refaddr);
+use Scalar::Util qw(weaken refaddr);
 
 use Rose::DB::Object::Iterator;
 use Rose::DB::Object::QueryBuilder qw(build_select build_where_clause);
@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.757';
+our $VERSION = '0.758';
 
 our $Debug = 0;
 
@@ -2926,6 +2926,9 @@ sub make_manager_method_from_sql
 
   $args{'_methods'} = {}; # Will fill in on first run
 
+  my $worker_method = $args{'iterator'} ?
+    'get_objects_iterator_from_sql' : 'get_objects_from_sql';
+
   if($named_args)
   {    
     my @params = @$named_args; # every little bit counts
@@ -2933,7 +2936,7 @@ sub make_manager_method_from_sql
     $code = sub 
     {
       my($self, %margs) = @_;
-      $self->get_objects_from_sql(
+      $self->$worker_method(
         %args,
         args => [ delete @margs{@params} ], 
         %margs);
@@ -2941,7 +2944,7 @@ sub make_manager_method_from_sql
   }
   else
   {
-    $code = sub { shift->get_objects_from_sql(%args, args => \@_) };
+    $code = sub { shift->$worker_method(%args, args => \@_) };
   }
 
   no strict 'refs';
@@ -3060,6 +3063,149 @@ sub get_objects_from_sql
   }
 
   return \@objects;
+}
+
+sub get_objects_iterator_from_sql
+{
+  my($class) = shift;
+
+  my(%args, $sql);
+
+  if(@_ == 1) { $sql = shift }
+  else
+  {
+    %args = @_;
+    $sql = $args{'sql'};
+  }
+
+  Carp::croak "Missing SQL"  unless($sql);
+
+  my $object_class = $args{'object_class'} || $class->object_class ||
+    Carp::croak "Missing object class";
+
+  weaken(my $meta = $object_class->meta
+    or Carp::croak "Could not get meta for $object_class");
+
+  my $prepare_cached = 
+    exists $args{'prepare_cached'} ? $args{'prepare_cached'} :
+    $class->dbi_prepare_cached;
+
+  my $methods   = $args{'_methods'};
+  my $exec_args = $args{'args'} || [];
+
+  my $have_methods = ($args{'_methods'} && %{$args{'_methods'}}) ? 1 : 0;
+
+  my $db  = delete $args{'db'} || $object_class->init_db;
+  my $dbh = delete $args{'dbh'};
+  my $dbh_retained = 0;
+
+  unless($dbh)
+  {
+    unless($dbh = $db->retain_dbh)
+    {
+      $class->error($db->error);
+      $class->handle_error($class);
+      return undef;
+    }
+
+    $dbh_retained = 1;
+  }
+
+  my %object_args =
+  (
+    (exists $args{'share_db'} ? $args{'share_db'} : 1) ? (db => $db) : ()
+  );
+
+  my $sth;
+
+  eval
+  {
+    local $dbh->{'RaiseError'} = 1;
+
+    $Debug && warn "$sql\n";
+    $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
+                             $dbh->prepare($sql) or die $dbh->errstr;
+
+    $sth->execute(@$exec_args);
+  };
+
+  if($@)
+  {
+    $db->release_dbh  if($dbh_retained);
+    $class->total(undef);
+    $class->error("get_objects_iterator_from_sql() - $@");
+    $class->handle_error($class);
+    return undef;
+  }
+
+  my $iterator = Rose::DB::Object::Iterator->new(active => 1);
+
+  $iterator->_next_code(sub
+  {
+    my($self) = shift;
+
+    my $object = 0;
+
+    eval
+    {
+      ROW: for(;;)
+      {
+        my $row = $sth->fetchrow_hashref or return 0;
+
+        unless($have_methods)
+        {
+          foreach my $col (keys %$row)
+          {
+            if($meta->column($col))
+            {
+              $methods->{$col} = $meta->column_mutator_method_name($col);
+            }
+            elsif($object_class->can($col))
+            {
+              $methods->{$col} = $col;
+            }
+          }
+
+          $have_methods = 1;
+        }
+
+        $object = $object_class->new(%object_args);
+
+        local $object->{STATE_LOADING()} = 1;
+        $object->{STATE_IN_DB()} = 1;
+
+        while(my($col, $val) = each(%$row))
+        {
+          my $method = $methods->{$col};
+          $object->$method($val);
+        }
+
+        $object->{MODIFIED_COLUMNS()} = {};
+
+        $self->{'_count'}++;
+        last ROW;
+      }
+
+      if($@)
+      {
+        $self->error("next() - $@");
+        $class->handle_error($self);
+        return undef;
+      }
+
+      return $object;
+    };
+  });
+
+  $iterator->_finish_code(sub
+  {
+    $sth->finish      if($sth);
+    $db->release_dbh  if($db && $dbh_retained);
+    $sth = undef;
+    $db = undef;
+  });
+
+  return $iterator;
 }
 
 sub perl_class_definition
@@ -3714,6 +3860,23 @@ Within each string, any instance of "NAME." will be replaced with the appropriat
 
 If selecting sub-objects (via C<require_objects> or C<with_objects>) that are related through "one to many" or "many to many" relationships, the first condition in the sort order clause must be a column in the primary table (t1).  If this condition is not met, the list of primary key columns will be added to the beginning of the sort order clause automatically.
 
+=item C<unique_aliases BOOL>
+
+If true, and if there is no explicit value for the C<select> parameter and more than one table is participating in the query, then each selected column will be given a unique alias by prefixing it with its table alias and an underscore.  The default value is false.  Example:
+
+    SELECT
+      t1.id    AS t1_id,
+      t1.name  AS t1_name,
+      t2.id    AS t2_id,
+      t2.name  AS t2_name
+    FROM
+      foo AS t1,
+      bar AS t2
+    WHERE
+      ...
+
+These unique aliases provide a technique of last resort for unambiguously addressing a column in a query clause.
+
 =item C<with_map_records [ BOOL | METHOD | HASHREF ]>
 
 When fetching related objects through a "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>" relationship, objects of the L<map class|Rose::DB::Object::Metadata::Relationship::ManyToMany/map_class> are not retrieved by default.  Use this parameter to override the default behavior.
@@ -3807,7 +3970,11 @@ Examples:
 
 =item B<get_objects_iterator [PARAMS]>
 
-Accepts any valid L<get_objects|/get_objects> argument, but return a L<Rose::DB::Object::Iterator> object which can be used to fetch the objects one at a time, or undef if there was an error.
+Accepts any valid L<get_objects|/get_objects> arguments, but return a L<Rose::DB::Object::Iterator> object, or undef if there was an error.
+
+=item B<get_objects_iterator_from_sql [PARAMS]>
+
+Accepts any valid L<get_objects_from_sql|/get_objects_from_sql> arguments, but return a L<Rose::DB::Object::Iterator> object, or undef if there was an error.
 
 =item B<get_objects_sql [PARAMS]>
 
@@ -4052,9 +4219,15 @@ This is the typical evolution of an object manager method.  It starts out as bei
 
 =item B<make_manager_method_from_sql [ NAME =E<gt> SQL | PARAMS ]>
 
-Create a class method in the calling class that will fetch objects using a custom SQL query.  Pass either a method name and an SQL query string or name/value parameters as arguments.  Valid parameters are:
+Create a class method in the calling class that will fetch objects using a custom SQL query.  The method created will return a reference to an array of objects or a L<Rose::DB::Object::Iterator> object, depending on whether the C<iterator> parameter is set (see below).
+
+Pass either a method name and an SQL query string or name/value parameters as arguments.  Valid parameters are:
 
 =over 4
+
+=item C<iterator BOOL>
+
+If true, the method created will return a L<Rose::DB::Object::Iterator> object.
 
 =item C<object_class CLASS>
 
@@ -4088,7 +4261,7 @@ Arguments passed to the created method will be passed to L<DBI>'s L<execute|DBI/
 
 Returns a code reference to the method created.
 
-Example:
+Examples:
 
     package Product::Manager;
 
@@ -4123,6 +4296,27 @@ Example:
       Product::Manager->get_named_products(
         name => 'Kite%', 
         type => 'toy');
+
+    # Make method that takes named parameters and returns an iterator
+    __PACKAGE__->make_manager_method_from_sql(
+      method   => 'get_named_products_iterator',
+      iterator => 1,
+      params   => [ qw(type name) ],
+      sql      => <<"EOF");
+    SELECT * FROM products WHERE type = ? AND name LIKE ?
+    EOF
+
+    $iterator = 
+      Product::Manager->get_named_products_iterator(
+        name => 'Kite%', 
+        type => 'toy');
+
+    while(my $product = $iterator->next)
+    {
+      ... # do something with $product
+
+      $iterator->finish  if(...); # finish early?
+    }
 
 =item B<object_class>
 

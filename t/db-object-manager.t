@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 3059;
+use Test::More tests => 3102;
 
 BEGIN 
 {
@@ -22,7 +22,7 @@ our($HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX, $HAVE_SQLITE);
 
 SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
 {
-  skip("Postgres tests", 773)  unless($HAVE_PG);
+  skip("Postgres tests", 783)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -2065,6 +2065,23 @@ EOF
   is($objs->[18]->save_col, 5, "get_objects_from_sql 3 - $db_type");
   is($objs->[18]->name, 'John', "get_objects_from_sql 4 - $db_type");
 
+  $iterator = 
+    MyPgObjectManager->get_objects_iterator_from_sql(
+      db  => MyPgObject->init_db,
+      object_class => 'MyPgObject',
+      prepare_cached => 1,
+      sql => <<"EOF");
+SELECT * FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+
+  for(0 .. 17) { $iterator->next }
+
+  $o = $iterator->next;
+  is($o->id, 1, "get_objects_iterator_from_sql 1 - $db_type");
+  is($o->save_col, 5, "get_objects_iterator_from_sql 2 - $db_type");
+  is($o->name, 'John', "get_objects_iterator_from_sql 3 - $db_type");
+  ok(!$iterator->next,  "get_objects_iterator_from_sql 4 - $db_type");
+
   $objs = MyPgObjectManager->get_objects_from_sql(<<"EOF");
 SELECT * FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
 EOF
@@ -2104,6 +2121,30 @@ EOF
   is($objs->[17]->id, 3, "make_manager_method_from_sql 6 - $db_type");
   is($objs->[17]->extra, 7, "make_manager_method_from_sql 7 - $db_type");
   is($objs->[17]->name, 'Sue', "make_manager_method_from_sql 8 - $db_type");  
+
+  $method = 
+    MyPgObjectManager->make_manager_method_from_sql(
+      iterator => 1, method => 'iter_em', sql => <<"EOF");
+SELECT *, save + fk1 AS extra FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+
+  $iterator = MyPgObjectManager->iter_em;
+
+  for(0 .. 16) { $iterator->next }
+
+  $o = $iterator->next;
+  is($objs->[17]->id, 3, "make_manager_method_from_sql iterator 1 - $db_type");
+  is($objs->[17]->extra, 7, "make_manager_method_from_sql iterator 2 - $db_type");
+  is($objs->[17]->name, 'Sue', "make_manager_method_from_sql iterator 3 - $db_type");  
+
+  $iterator = $method->('MyPgObjectManager');
+
+  for(0 .. 16) { $iterator->next }
+
+  $o = $iterator->next;
+  is($objs->[17]->id, 3, "make_manager_method_from_sql iterator 4 - $db_type");
+  is($objs->[17]->extra, 7, "make_manager_method_from_sql iterator 5 - $db_type");
+  is($objs->[17]->name, 'Sue', "make_manager_method_from_sql iterator 6 - $db_type");  
 
   $method = 
     MyPgObjectManager->make_manager_method_from_sql(
@@ -2869,7 +2910,7 @@ EOF
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 776)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 788)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -3175,15 +3216,18 @@ SKIP: foreach my $db_type ('mysql')
   # Conservative version check for hints support
   if($objs->[0]->db->database_version >= 4_000_009)
   {
+
     my $sql = 
       Rose::DB::Object::Manager->get_objects_sql(
         object_class => 'MyMySQLObject',
         share_db     => 1,
+        with_objects => [ 'bb1' ],
         query        =>
         [
           't1.id'    => { ge => 2 },
           't1.name'  => { like => '%tt%' },
         ],
+        unique_aliases => 1,
         hints => { t1 => { ignore_index => 'rose_db_object_test_idx' } });
 
     $objs = 
@@ -3198,11 +3242,13 @@ SKIP: foreach my $db_type ('mysql')
         hints => { t1 => { ignore_index => 'rose_db_object_test_idx' } });
 
     ok($sql =~ m{\bIGNORE INDEX \(rose_db_object_test_idx\)}, "hints single table - $db_type");
+    ok($sql =~ m{ t1_name,}, "unique_aliases 1 - $db_type");
 
     $sql = 
       Rose::DB::Object::Manager->get_objects_sql(
         object_class => 'MyMySQLObject',
         share_db     => 1,
+        with_objects => [ 'bb1' ],
         query        =>
         [
           't1.id'    => { ge => 2 },
@@ -3222,6 +3268,7 @@ SKIP: foreach my $db_type ('mysql')
         hints => { ignore_index => 'rose_db_object_test_idx' });
 
     ok($sql =~ m{\bIGNORE INDEX \(rose_db_object_test_idx\)}, "hints single table 2 - $db_type");
+    ok($sql !~ m{ t1_name,}, "unique_aliases 2 - $db_type");
 
     $sql = 
       Rose::DB::Object::Manager->get_objects_sql(
@@ -4863,6 +4910,23 @@ EOF
   is($objs->[18]->save_col, 5, "get_objects_from_sql 3 - $db_type");
   is($objs->[18]->name, 'John', "get_objects_from_sql 4 - $db_type");
 
+  $iterator = 
+    MyMySQLObjectManager->get_objects_iterator_from_sql(
+      db  => MyMySQLObject->init_db,
+      object_class => 'MyMySQLObject',
+      prepare_cached => 1,
+      sql => <<"EOF");
+SELECT * FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+
+  for(0 .. 17) { $iterator->next }
+
+  $o = $iterator->next;
+  is($o->id, 1, "get_objects_iterator_from_sql 1 - $db_type");
+  is($o->save_col, 5, "get_objects_iterator_from_sql 2 - $db_type");
+  is($o->name, 'John', "get_objects_iterator_from_sql 3 - $db_type");
+  ok(!$iterator->next,  "get_objects_iterator_from_sql 4 - $db_type");
+
   $objs = MyMySQLObjectManager->get_objects_from_sql(<<"EOF");
 SELECT * FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
 EOF
@@ -4901,6 +4965,30 @@ EOF
   is($objs->[17]->id, 3, "make_manager_method_from_sql 6 - $db_type");
   is($objs->[17]->extra, 7, "make_manager_method_from_sql 7 - $db_type");
   is($objs->[17]->name, 'Sue', "make_manager_method_from_sql 8 - $db_type");  
+
+  $method = 
+    MyMySQLObjectManager->make_manager_method_from_sql(
+      iterator => 1, method => 'iter_em', sql => <<"EOF");
+SELECT *, save + fk1 AS extra FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+
+  $iterator = MyMySQLObjectManager->iter_em;
+
+  for(0 .. 16) { $iterator->next }
+
+  $o = $iterator->next;
+  is($objs->[17]->id, 3, "make_manager_method_from_sql iterator 1 - $db_type");
+  is($objs->[17]->extra, 7, "make_manager_method_from_sql iterator 2 - $db_type");
+  is($objs->[17]->name, 'Sue', "make_manager_method_from_sql iterator 3 - $db_type");  
+
+  $iterator = $method->('MyMySQLObjectManager');
+
+  for(0 .. 16) { $iterator->next }
+
+  $o = $iterator->next;
+  is($objs->[17]->id, 3, "make_manager_method_from_sql iterator 4 - $db_type");
+  is($objs->[17]->extra, 7, "make_manager_method_from_sql iterator 5 - $db_type");
+  is($objs->[17]->name, 'Sue', "make_manager_method_from_sql iterator 6 - $db_type");  
 
   $method = 
     MyMySQLObjectManager->make_manager_method_from_sql(
@@ -5649,7 +5737,7 @@ EOF
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 736)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 746)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -7622,6 +7710,23 @@ EOF
   is($objs->[18]->save_col, 5, "get_objects_from_sql 3 - $db_type");
   is($objs->[18]->name, 'John', "get_objects_from_sql 4 - $db_type");
 
+  $iterator = 
+    MyInformixObjectManager->get_objects_iterator_from_sql(
+      db  => MyInformixObject->init_db,
+      object_class => 'MyInformixObject',
+      prepare_cached => 1,
+      sql => <<"EOF");
+SELECT * FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+
+  for(0 .. 17) { $iterator->next }
+
+  $o = $iterator->next;
+  is($o->id, 1, "get_objects_iterator_from_sql 1 - $db_type");
+  is($o->save_col, 5, "get_objects_iterator_from_sql 2 - $db_type");
+  is($o->name, 'John', "get_objects_iterator_from_sql 3 - $db_type");
+  ok(!$iterator->next,  "get_objects_iterator_from_sql 4 - $db_type");
+
   $objs = MyInformixObjectManager->get_objects_from_sql(<<"EOF");
 SELECT * FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
 EOF
@@ -7660,6 +7765,30 @@ EOF
   is($objs->[17]->id, 3, "make_manager_method_from_sql 6 - $db_type");
   is($objs->[17]->extra, 7, "make_manager_method_from_sql 7 - $db_type");
   is($objs->[17]->name, 'Sue', "make_manager_method_from_sql 8 - $db_type");  
+
+  $method = 
+    MyInformixObjectManager->make_manager_method_from_sql(
+      iterator => 1, method => 'iter_em', sql => <<"EOF");
+SELECT *, save + fk1 AS extra FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+
+  $iterator = MyInformixObjectManager->iter_em;
+
+  for(0 .. 16) { $iterator->next }
+
+  $o = $iterator->next;
+  is($objs->[17]->id, 3, "make_manager_method_from_sql iterator 1 - $db_type");
+  is($objs->[17]->extra, 7, "make_manager_method_from_sql iterator 2 - $db_type");
+  is($objs->[17]->name, 'Sue', "make_manager_method_from_sql iterator 3 - $db_type");  
+
+  $iterator = $method->('MyInformixObjectManager');
+
+  for(0 .. 16) { $iterator->next }
+
+  $o = $iterator->next;
+  is($objs->[17]->id, 3, "make_manager_method_from_sql iterator 4 - $db_type");
+  is($objs->[17]->extra, 7, "make_manager_method_from_sql iterator 5 - $db_type");
+  is($objs->[17]->name, 'Sue', "make_manager_method_from_sql iterator 6 - $db_type");  
 
   $method = 
     MyInformixObjectManager->make_manager_method_from_sql(
@@ -8396,7 +8525,7 @@ EOF
 
 SKIP: foreach my $db_type (qw(sqlite))
 {
-  skip("SQLite tests", 771)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 782)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
@@ -9630,6 +9759,8 @@ SKIP: foreach my $db_type (qw(sqlite))
       query         => [ 't1.id' => [ 1, 2, 5 ] ],
       sort_by       => 't1.name');
 
+  test_memory_cycle_ok($objs, "get_objects() with many to many cycle - $db_type");
+
   is(ref $objs, 'ARRAY', "get_objects() with many to many 1 - $db_type");
   $objs ||= [];
   is(scalar @$objs, 3, "get_objects() with many to many 2 - $db_type");
@@ -10324,6 +10455,23 @@ EOF
   is($objs->[18]->save_col, 5, "get_objects_from_sql 3 - $db_type");
   is($objs->[18]->name, 'John', "get_objects_from_sql 4 - $db_type");
 
+  $iterator = 
+    MySQLiteObjectManager->get_objects_iterator_from_sql(
+      db  => MySQLiteObject->init_db,
+      object_class => 'MySQLiteObject',
+      prepare_cached => 1,
+      sql => <<"EOF");
+SELECT * FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+
+  for(0 .. 17) { $iterator->next }
+
+  $o = $iterator->next;
+  is($o->id, 1, "get_objects_iterator_from_sql 1 - $db_type");
+  is($o->save_col, 5, "get_objects_iterator_from_sql 2 - $db_type");
+  is($o->name, 'John', "get_objects_iterator_from_sql 3 - $db_type");
+  ok(!$iterator->next,  "get_objects_iterator_from_sql 4 - $db_type");
+
   $objs = MySQLiteObjectManager->get_objects_from_sql(<<"EOF");
 SELECT * FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
 EOF
@@ -10362,6 +10510,30 @@ EOF
   is($objs->[17]->id, 3, "make_manager_method_from_sql 6 - $db_type");
   is($objs->[17]->extra, 7, "make_manager_method_from_sql 7 - $db_type");
   is($objs->[17]->name, 'Sue', "make_manager_method_from_sql 8 - $db_type");  
+
+  $method = 
+    MySQLiteObjectManager->make_manager_method_from_sql(
+      iterator => 1, method => 'iter_em', sql => <<"EOF");
+SELECT *, save + fk1 AS extra FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+
+  $iterator = MySQLiteObjectManager->iter_em;
+
+  for(0 .. 16) { $iterator->next }
+
+  $o = $iterator->next;
+  is($objs->[17]->id, 3, "make_manager_method_from_sql iterator 1 - $db_type");
+  is($objs->[17]->extra, 7, "make_manager_method_from_sql iterator 2 - $db_type");
+  is($objs->[17]->name, 'Sue', "make_manager_method_from_sql iterator 3 - $db_type");  
+
+  $iterator = $method->('MySQLiteObjectManager');
+
+  for(0 .. 16) { $iterator->next }
+
+  $o = $iterator->next;
+  is($objs->[17]->id, 3, "make_manager_method_from_sql iterator 4 - $db_type");
+  is($objs->[17]->extra, 7, "make_manager_method_from_sql iterator 5 - $db_type");
+  is($objs->[17]->name, 'Sue', "make_manager_method_from_sql iterator 6 - $db_type");   
 
   $method = 
     MySQLiteObjectManager->make_manager_method_from_sql(
