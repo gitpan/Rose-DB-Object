@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.758';
+our $VERSION = '0.759';
 
 our $Debug = 0;
 
@@ -556,7 +556,8 @@ sub get_objects
   my %meta    = ($object_class => $meta);
 
   my @table_names = ($meta->table);
-
+  my @rel_names   = ($meta->table);
+  
   my(@joins, @subobject_methods, @mapped_object_methods, $clauses);
 
   my $handle_dups = 0;
@@ -640,6 +641,13 @@ sub get_objects
 
   if($with_objects)
   {
+    # XXX: Hack to avoid suprious ORA-00918 errors
+    # XXX: http://ora-00918.ora-code.com/msg/28663.html
+    if(($args{'limit'} || $args{'offset'}) && $dbh->{'Driver'}{'Name'} eq 'Oracle')
+    {
+      $args{'unique_aliases'} = 1;
+    }
+
     # Copy clauses arg
     $clauses = $args{'clauses'} ? [ @{$args{'clauses'}} ] : [];
 
@@ -802,7 +810,20 @@ sub get_objects
 
         if($rel_type eq 'one to many' && (my $query_args = $rel->query_args))
         {
-          push(@{$args{'query'}}, @$query_args);
+          # (Re)map query parameters to the correct table
+          # t1 -> No change (the primary table)
+          # t2 -> The foreign table
+          for(my $i = 0; $i < @$query_args; $i += 2)
+          {
+            my $param = $query_args->[$i];
+
+            unless($param =~ s/^t2\./$rel_tn{$arg}./)
+            {
+              $param = "t$rel_tn{$arg}.$param"  unless($param =~ /^t\d+\./);
+            }
+
+            push(@{$args{'query'}}, $param, $query_args->[$i + 1]);
+          }
         }
 
         my $ft_meta = $ft_class->meta; 
@@ -811,7 +832,8 @@ sub get_objects
 
         push(@tables, $ft_meta->fq_table($db));
         push(@tables_sql, $ft_meta->fq_table_sql($db));
-        push(@table_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
+        push(@rel_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
+        push(@table_names, $ft_meta->table);
         push(@classes, $ft_class);
 
         # Iterator will be the tN value: the first sub-table is t2, and so on
@@ -955,7 +977,7 @@ sub get_objects
         {
           # Don't bother sorting by columns if we're not even selecting them
           if($mgr_args->{'sort_by'} && (!%fetch || 
-             ($fetch{$tables[-1]} && !$fetch{$table_names[-1]})))
+             ($fetch{$tables[-1]} && !$fetch{$rel_names[-1]})))
           {
             my $sort_by = $mgr_args->{'sort_by'};
 
@@ -990,7 +1012,9 @@ sub get_objects
 
         push(@tables, $map_meta->fq_table($db));
         push(@tables_sql, $map_meta->fq_table_sql($db));
-        push(@table_names, $rel_name{'t' . (scalar(@tables) + 1)} = $rel->name);
+        # %rel_name gets the foreign table (below), not the map table here
+        push(@rel_names, $rel->name);
+        push(@table_names, $map_meta->table);
         push(@classes, $map_class);
 
         my $rel_mgr_args = $rel->manager_args || {};
@@ -1140,7 +1164,8 @@ sub get_objects
 
         push(@tables, $ft_meta->fq_table($db));
         push(@tables_sql, $ft_meta->fq_table_sql($db));
-        push(@table_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
+        push(@rel_names, $rel_name{'t' . (scalar @tables)} = $rel->name);
+        push(@table_names, $ft_meta->table);
         push(@classes, $ft_class);
 
         my $use_lazy_columns = (!ref $nonlazy || $nonlazy{$name}) ? 0 : $ft_meta->has_lazy_columns;
@@ -1223,7 +1248,7 @@ sub get_objects
         {
           # Don't bother sorting by columns if we're not even selecting them
           if($mgr_args->{'sort_by'} && (!%fetch || 
-             ($fetch{$tables[-1]} && !$fetch{$table_names[-1]})))
+             ($fetch{$tables[-1]} && !$fetch{$rel_names[-1]})))
           {
             my $sort_by = $mgr_args->{'sort_by'};
 
@@ -1261,7 +1286,10 @@ sub get_objects
       my $tn = 't' . ($i + 1);
       my $rel_name = $rel_name{$tn} || '';
 
-      unless($fetch{$tn} || $fetch{$tables[$i]} || $fetch{$table_names[$i]} || $fetch{$rel_name})
+      (my $trimmed_table = $tables[$i]) =~ s/^[^.]+\.//;
+
+      unless($fetch{$tn} || $fetch{$tables[$i]} || $fetch{$trimmed_table} || 
+             $fetch{$rel_names[$i]} || $fetch{$rel_name})
       {
         $columns{$tables[$i]} = [];
         $methods{$tables[$i]} = [];
@@ -1283,7 +1311,7 @@ sub get_objects
     $select = [ split(/\s*,\s*/, $select) ]  unless(ref $select);
 
     my $i = 1;
-    %tn = map { $_ => $i++ } @tables;
+    %tn = map { $_ => $i++ } @table_names; # @tables;
     my $expand_dotstar = 0;
 
     foreach my $item (@$select)
@@ -1304,7 +1332,7 @@ sub get_objects
         $column = $2;
         $expand_dotstar = 1  if($item =~ /^t\d+\.\*$/);
       }
-      elsif($item =~ /^(['"]?)([^.]+)\1\.(['"]?)(.+)(\3)$/)
+      elsif($item =~ /^(['"]?)([^.(]+)\1\.(['"]?)(.+)(\3)$/)
       {
         my $num = $tn{$2} || $rel_tn{$2};
         $item = "t$num.$3$4$5";
@@ -1319,7 +1347,7 @@ sub get_objects
 
         if($meta->column($column) && (my $alias = $meta->column($column)->alias))
         {
-          $item .= ' AS ' . $alias;
+          $item .= ' AS ' . $alias  unless($alias eq $column);
         }
       }
     }
@@ -1339,7 +1367,6 @@ sub get_objects
 
         my $tn = $1 || 1;
         my $meta = $meta{$classes{$tables[$tn - 1]}};
-
         my $prefix = $num_subtables ? "t$tn." : '';
 
         foreach my $column ($meta->columns)
@@ -1478,6 +1505,9 @@ sub get_objects
 
         my $table_unquoted = $db->unquote_table_name($table);
 
+        # Conditionalize schema part, if necessary
+        $table_unquoted =~ s/^([^.]+\.)/(?:\Q$1\E)?/;
+
         foreach my $sort (@$sort_by)
         {
           unless($sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t1.$sort/ ||
@@ -1545,8 +1575,9 @@ sub get_objects
 
     if($db->supports_limit_with_offset && !$manual_limit && !$subselect_limit)
     {
-      $args{'limit'} = $db->format_limit_with_offset($args{'limit'}, $args{'offset'});
-      delete $args{'offset'};
+      $db->format_limit_with_offset($args{'limit'}, $args{'offset'}, \%args);
+      #$args{'limit'} = $db->format_limit_with_offset($args{'limit'}, $args{'offset'});
+      #delete $args{'offset'};
       $skip_first = 0;
     }
     elsif($manual_limit)
@@ -1557,12 +1588,14 @@ sub get_objects
     {
       $skip_first += delete $args{'offset'};
       $args{'limit'} += $skip_first;
-      $args{'limit'} = $db->format_limit_with_offset($args{'limit'});
+      $db->format_limit_with_offset($args{'limit'}, undef, \%args);
+      #$args{'limit'} = $db->format_limit_with_offset($args{'limit'});
     }
   }
   elsif($args{'limit'})
   {
-    $args{'limit'} = $db->format_limit_with_offset($args{'limit'});
+    $db->format_limit_with_offset($args{'limit'}, undef, \%args);
+    #$args{'limit'} = $db->format_limit_with_offset($args{'limit'});
   }
 
   my($count, @objects, $iterator);
@@ -1710,12 +1743,18 @@ sub get_objects
           $class = $classes[$table_num];
           $column ||= $2;
         }
-        elsif($item =~ /^(['"]?)([^.]+)\1\.(['"]?)(.+)\3$/)
+        elsif($item =~ /^(['"]?)([^.(]+)\1\.(['"]?)(.+)\3$/)
         {
           my $table = $2;
           $class = $classes{$table};
           $column ||= $4;
           my $table_num = $tn{$table} || $rel_tn{$table};
+        }
+        else
+        {
+          $table_num = 0;
+          $class = $classes[$table_num];
+          $column ||= $item;
         }
 
         $sth->bind_col($col_num++, \$row{$class,$table_num}{$column});
@@ -2261,6 +2300,13 @@ sub get_objects
         $db = undef;
       });
 
+      $iterator->_destroy_code(sub
+      {
+        $db->release_dbh  if($db && $dbh_retained);
+        $sth = undef;
+        $db = undef;
+      });
+      
       return $iterator;
     }
 
@@ -3030,6 +3076,14 @@ sub get_objects_from_sql
           {
             $methods->{$col} = $col;
           }
+          elsif($meta->column(lc $col))
+          {
+            $methods->{$col} = $meta->column_mutator_method_name(lc $col);
+          }
+          elsif($object_class->can(lc $col))
+          {
+            $methods->{$col} = lc $col;
+          }
         }
 
         $have_methods = 1;
@@ -3164,6 +3218,14 @@ sub get_objects_iterator_from_sql
             {
               $methods->{$col} = $col;
             }
+            elsif($meta->column(lc $col))
+            {
+              $methods->{$col} = $meta->column_mutator_method_name(lc $col);
+            }
+            elsif($object_class->can(lc $col))
+            {
+              $methods->{$col} = lc $col;
+            }
           }
 
           $have_methods = 1;
@@ -3200,6 +3262,13 @@ sub get_objects_iterator_from_sql
   $iterator->_finish_code(sub
   {
     $sth->finish      if($sth);
+    $db->release_dbh  if($db && $dbh_retained);
+    $sth = undef;
+    $db = undef;
+  });
+
+  $iterator->_destroy_code(sub
+  {
     $db->release_dbh  if($db && $dbh_retained);
     $sth = undef;
     $db = undef;
@@ -3699,7 +3768,7 @@ Valid parameters to L<get_objects|/get_objects> are:
 
 =over 4
 
-=item B<allow_empty_lists BOOL>
+=item C<allow_empty_lists BOOL>
 
 If set to true, C<query> parameters with empty lists as values are allowed.  For example:
 
@@ -3728,7 +3797,7 @@ If set to a reference to an array of table names, "tN" table aliases, or relatio
 
 This parameter conflicts with the C<fetch_only> parameter in the case where both provide a list of table names or aliases.  In this case, if the value of the C<distinct> parameter is also reference to an array table names or aliases, then a fatal error will occur.
 
-=item C<fetch_only [ARRAYREF]>
+=item C<fetch_only ARRAYREF>
 
 ARRAYREF should be a reference to an array of table names or "tN" table aliases. Only the columns from the corresponding tables will be fetched.  In the case of relationships that involve more than one table, only the "most distant" table is considered.  (e.g., The map table is ignored in a "many to many" relationship.)  Columns from the primary table ("t1") are always selected, regardless of whether or not it appears in the list.
 
@@ -3802,7 +3871,7 @@ The query parameters, passed as a reference to an array of name/value pairs.  Th
 
 For the complete list of valid parameter names and values, see the documentation for the C<query> parameter of the L<build_select|Rose::DB::Object::QueryBuilder/build_select> function in the L<Rose::DB::Object::QueryBuilder> module.
 
-This class also supports a useful extension to the query syntax supported by L<Rose::DB::Object::QueryBuilder>.  In addition to table names and aliases, column names may be prefixed with foreign key or relationship names.  These names may be chained, with dots (".") separating the components.
+This class also supports an extension to the query syntax supported by L<Rose::DB::Object::QueryBuilder>.  In addition to table names and aliases, column names may be prefixed with foreign key or relationship names.  These names may be chained, with dots (".") separating the components.
 
 For example, imagine three tables, C<products>, C<vendors>, and C<regions>, fronted by three L<Rose::DB::Object>-derived classes, C<Product>, C<Vendor>, and C<Region>, respectively.  Each C<Product> has a C<Vendor>, and each C<Vendor> has a C<Region>.
 
@@ -3852,7 +3921,7 @@ If this parameter is omitted, then all columns from all participating tables are
 
 If true, C<db> will be passed to each L<Rose::DB::Object>-derived object when it is constructed.  Defaults to true.
 
-=item C<sort_by CLAUSE | ARRAYREF>
+=item C<sort_by [ CLAUSE | ARRAYREF ]>
 
 A fully formed SQL "ORDER BY ..." clause, sans the words "ORDER BY", or a reference to an array of strings to be joined with a comma and appended to the "ORDER BY" clause.
 
@@ -4432,6 +4501,6 @@ John C. Siracusa (siracusa@mindspring.com)
 
 =head1 COPYRIGHT
 
-Copyright (c) 2006 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2007 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

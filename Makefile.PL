@@ -4,7 +4,8 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(NAME         => 'Rose::DB::Object',
               VERSION_FROM => 'lib/Rose/DB/Object.pm',
-              dist => { DIST_CP => 'cp' }, # Avoid Mac OS X ._* files
+              ($^O =~ /darwin/i ?
+               (dist => { DIST_CP => 'cp' }) : ()), # Avoid Mac OS X ._* files
               PREREQ_PM =>
               {
                 'Cwd'                   => 0,
@@ -21,6 +22,6 @@ WriteMakefile(NAME         => 'Rose::DB::Object',
                 #'Scalar::Util::Clone'  => 0.04,
                 'Rose::DateTime::Util'  => 0.532,
                 'Rose::Object'          => 0.82,
-                'Rose::DB'              => 0.731,
+                'Rose::DB'              => 0.732,
               },
               clean => { FILES => "t/*.db" });

@@ -2362,8 +2362,8 @@ sub fq_primary_key_sequence_names
     {
       if(defined $seq && index($seq, '.') < 0)
       {
-        $seq = $db->quote_identifier($self->select_catalog($db),
-                                     $self->select_schema($db), $seq);
+        $seq = $db->quote_identifier_for_sequence($self->select_catalog($db),
+                                                  $self->select_schema($db), $seq);
       }
     }
 
@@ -2462,7 +2462,7 @@ sub primary_key_sequence_names
                                    $column);
     }
     # Set auto-created serial column sequence names for Pg only
-    elsif($column->type =~ /^(?:big)?serial$/ && $db->driver eq 'pg')
+    elsif($column->type =~ /^(?:big)?serial$/ && $db->use_auto_sequence_name)
     {
       $seq = $db->auto_sequence_name(table => $table, column => $column);
     }
@@ -5942,6 +5942,6 @@ John C. Siracusa (siracusa@mindspring.com)
 
 =head1 COPYRIGHT
 
-Copyright (c) 2006 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2007 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

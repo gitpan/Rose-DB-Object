@@ -7,7 +7,8 @@ use Carp;
 use Rose::DB::Object::Helpers();
 
 use Rose::DB::Object::Constants
-  qw(PRIVATE_PREFIX STATE_IN_DB STATE_LOADING STATE_SAVING MODIFIED_COLUMNS);
+  qw(PRIVATE_PREFIX STATE_IN_DB STATE_LOADING STATE_SAVING MODIFIED_COLUMNS
+     ON_SAVE_ATTR_NAME);
 
 require Exporter;
 our @ISA = qw(Exporter);
@@ -19,21 +20,28 @@ our @EXPORT_OK =
      row_id column_value_formatted_key column_value_is_inflated_key
      lazy_column_values_loaded_key modified_column_names has_modified_columns
      has_modified_children has_loaded_related set_column_value_modified
-     unset_column_value_modified get_column_value_modified);
+     unset_column_value_modified get_column_value_modified
+     post_save_set_related_objects_code post_save_add_related_objects_code
+     pre_save_set_foreign_object_code);
 
 our %EXPORT_TAGS = 
 (
-  all         => \@EXPORT_OK,
-  get_state   => [ qw(is_in_db is_loading is_saving) ],
-  set_state   => [ qw(set_state_in_db set_state_loading set_state_saving) ],
-  unset_state => [ qw(unset_state_in_db unset_state_loading unset_state_saving) ],
-  columns     => [ qw(set_column_value_modified get_column_value_modified 
-                      unset_column_value_modified modified_column_names 
-                      has_modified_columns) ],
-  children    => [ qw(has_modified_children has_loaded_related) ],
+  all          => \@EXPORT_OK,
+  get_state    => [ qw(is_in_db is_loading is_saving) ],
+  set_state    => [ qw(set_state_in_db set_state_loading set_state_saving) ],
+  unset_state  => [ qw(unset_state_in_db unset_state_loading unset_state_saving) ],
+  columns      => [ qw(set_column_value_modified get_column_value_modified 
+                       unset_column_value_modified modified_column_names 
+                       has_modified_columns) ],
+  children     => [ qw(has_modified_children has_loaded_related) ],
+  on_save_code => [ qw(post_save_set_related_objects_code 
+                       post_save_add_related_objects_code
+                       pre_save_set_foreign_object_code) ],
 );
 
-our $VERSION = '0.756';
+$EXPORT_TAGS{'state'} = [ map { @$_ } @EXPORT_TAGS{qw(get_state set_state unset_state)} ];
+
+our $VERSION = '0.759';
 
 sub is_in_db   { shift->{STATE_IN_DB()}   }
 sub is_loading { shift->{STATE_LOADING()} }
@@ -161,6 +169,63 @@ sub lazy_column_values_loaded_key
   return PRIVATE_PREFIX . "_lazy_loaded";
 }
 
+sub post_save_set_related_objects_code
+{
+  my($object, $rel_name, $code) = @_;
+  
+  if(@_ > 2)
+  {
+    if(defined $code)
+    {
+      return $object->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'} = $code;
+    }
+    else
+    {
+      return delete $object->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'};
+    }
+  }
+
+  return $object->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'};
+}
+
+sub post_save_add_related_objects_code
+{
+  my($object, $rel_name, $code) = @_;
+
+  if(@_ > 2)
+  {
+    if(defined $code)
+    {
+      return $object->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} = $code;
+    }
+    else
+    {
+      return delete $object->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
+    }
+  }
+  
+  return $object->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
+}
+
+sub pre_save_set_foreign_object_code
+{
+  my($object, $fk_name, $code) = @_;
+
+  if(@_ > 2)
+  {
+    if(defined $code)
+    {
+      return $object->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} = $code;
+    }
+    else
+    {
+      return delete $object->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
+    }
+  }
+  
+  return $object->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
+}
+
 1;
 
 __END__
@@ -228,6 +293,22 @@ The 'unset_state' tag:
 
 will cause the following function names to be imported:
 
+    unset_state_in_db()
+    unset_state_loading()
+    unset_state_saving()
+
+the 'state' tag:
+
+    use Rose::DB::Object::Util qw(:unset_state);
+
+will cause the following function names to be imported:
+
+    is_in_db()
+    is_loading()
+    is_saving()
+    set_state_in_db()
+    set_state_loading()
+    set_state_saving()
     unset_state_in_db()
     unset_state_loading()
     unset_state_saving()
@@ -365,6 +446,6 @@ John C. Siracusa (siracusa@mindspring.com)
 
 =head1 COPYRIGHT
 
-Copyright (c) 2006 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2007 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

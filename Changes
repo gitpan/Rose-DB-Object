@@ -1,3 +1,13 @@
+0.759 (01.15.2007) - John Siracusa <siracusa@mindspring.com>
+
+    * Oracle support improved significantly.
+    * Added a "state" export tag to Rose::DB::Object::Util.
+    * Fixed a bug that caused the Manager to unconditionally alias selected
+      columns in some situations.
+    * Added the (dubious) ability to set a list of filtered one-to-many items.
+    * Fixed a database handle leak in the iterator class.
+      (Reported by Peter Karman)
+
 0.758 (11.29.2006) - John Siracusa <siracusa@mindspring.com>
 
     * Added the get_objects_iterator_from_sql() Manager method and an
@@ -6,7 +16,7 @@
     * Turned off unique column aliases by default and added the
       unique_aliases Manager parameter to turn them back on.
     * Fixed some circular references that could have caused database
-      connections to leak.  (Reported by Bruno Czekay) 
+      connections to leak.  (Reported by Bruno Czekay)
 
 0.757 (11.22.2006) - John Siracusa <siracusa@mindspring.com>
 

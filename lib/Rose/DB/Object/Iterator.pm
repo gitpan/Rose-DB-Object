@@ -7,7 +7,7 @@ use Carp();
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.731';
+our $VERSION = '0.759';
 
 use Rose::Object::MakeMethods::Generic
 (
@@ -17,6 +17,7 @@ use Rose::Object::MakeMethods::Generic
     '_count',
     '_next_code',
     '_finish_code',
+    '_destroy_code',
   ],
 
   'boolean' => 'active',
@@ -41,7 +42,15 @@ sub finish
 sub DESTROY
 {
   my($self) = shift;
-  $self->finish  if($self->active);
+
+  if($self->active)
+  {
+    $self->finish;
+  }
+  elsif(my $code = $self->_destroy_code)
+  {
+    $code->($self);
+  }
 }
 
 sub total { shift->{'_count'} }
@@ -110,6 +119,6 @@ John C. Siracusa (siracusa@mindspring.com)
 
 =head1 COPYRIGHT
 
-Copyright (c) 2006 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2007 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.
