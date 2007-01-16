@@ -174,6 +174,10 @@ foreach my $db_type (qw(pg mysql informix sqlite))
     {
       ok($o->c14d_is('xyzzy'), "chkpass default - $db_type");
     }
+    elsif($n == 13 &&  $db_type eq 'pg' && !$PG_HAS_CHKPASS)
+    {
+      ok(1, "no chkpass - $db_type");
+    }
     elsif($n == 1 && $db_type ne 'pg')
     {
       ok(1, "chkpass skipped - $db_type");
@@ -239,9 +243,9 @@ CREATE TABLE rose_db_object_test
   c12   BIGINT,
   c12d  BIGINT DEFAULT 922337203685,
   c13   INT,
-  c13d  INT DEFAULT 99539509,
+  c13d  INT DEFAULT 99539509
 
-  @{[ $PG_HAS_CHKPASS ? q(c14 CHKPASS, c14d CHKPASS DEFAULT 'xyzzy') : '' ]}
+  @{[ $PG_HAS_CHKPASS ? q(, c14 CHKPASS, c14d CHKPASS DEFAULT 'xyzzy') : '' ]}
 )
 EOF
 
