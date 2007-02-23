@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1 + (5 * 22) + 9;
+use Test::More tests => 1 + (5 * 23) + 9;
 
 BEGIN 
 {
@@ -42,7 +42,7 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
   {
     unless($Have{$db_type})
     {
-      skip("$db_type tests", 22 + scalar @{$Reserved_Words{$db_type} ||= []});
+      skip("$db_type tests", 23 + scalar @{$Reserved_Words{$db_type} ||= []});
     }
   }
 
@@ -81,7 +81,17 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
     {
       next  unless($class->isa('Rose::DB::Object'));
       $class->meta->allow_inline_column_values(1);
+  
+      if($class->meta->column('release_day'))
+      {
+        is($class->meta->column('release_day')->type, 'datetime year to month', 
+           "datetime year to month - $db_type");
+      }
     }
+  }
+  else
+  {
+    ok(1, "skip datetime year to month - $db_type");
   }
 
   if(defined Rose::DB->new->schema)
@@ -101,6 +111,14 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
 
   my $p = $product_class->new(name => "Sled $i");
 
+  if($p->can('release_day'))
+  {
+    $p->release_day('2001-02');
+    die "datetime year to month not truncated"  unless($p->release_day->day == 1);
+    $p->release_day('2001-02-05');
+    die "datetime year to month not truncated"  unless($p->release_day->day == 1);
+  }
+
   # Check reserved methods
   foreach my $word (@{$Reserved_Words{$db_type} ||= []})
   {
@@ -114,8 +132,12 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
     ok($p->can('tee_time') && $p->can('tee_time5'), "time methods - $db_type");
     is($p->meta->column('tee_time5')->scale, 5, "time precision check 1 - $db_type");
     is($p->meta->column('tee_time')->scale || 0, 0, "time precision check 2 - $db_type");
+    my $t = $p->tee_time5->as_string;
+    $t =~ s/0+$//;
     is($p->tee_time5->as_string, '12:34:56.12345', "time default 1 - $db_type");
-    is($p->meta->column('tee_time5')->default, '12:34:56.12345', "time default 2 - $db_type");
+    $t = $p->meta->column('tee_time5')->default;
+    $t =~ s/0+$//;
+    is($t, '12:34:56.12345', "time default 2 - $db_type");
   }
   else
   {
@@ -626,7 +648,8 @@ CREATE TABLE products
 
   date_created  DATETIME YEAR TO SECOND,
   release_date  DATETIME YEAR TO SECOND,
-
+  release_day   DATETIME YEAR TO MONTH,
+  
   UNIQUE(name)
 )
 EOF

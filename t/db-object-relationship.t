@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1511;
+use Test::More tests => 1530;
 
 BEGIN 
 {
@@ -4247,7 +4247,7 @@ SKIP: foreach my $db_type ('informix')
 
 SKIP: foreach my $db_type ('sqlite')
 {
-  skip("SQLite tests", 409)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 428)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
@@ -4406,9 +4406,11 @@ SKIP: foreach my $db_type ('sqlite')
 
   $x = MySQLiteObject->new(id => $o->id)->load;
 
+  my $one_o = $x->other2_one_obj;
   my $ao = $x->other2_a_objs;
   my $oo = $x->other2_objs;
 
+  is($one_o->id, 1, "filtered one-to-one 1 - $db_type");
   is(scalar @$ao, 2, "filtered one-to-many 1 - $db_type");
   is(join(',', map { $_->name } @$ao), 'abc,aoo', "filtered one-to-many 2 - $db_type");
 
@@ -4903,10 +4905,57 @@ SKIP: foreach my $db_type ('sqlite')
 
   @o2s = $o->other2_objs_now;
   ok(@o2s == 3, "set one to many now 3 - $db_type");
-
+  
   ok($o2s[0]->id == 2 && $o2s[0]->pid == 111, "set one to many now 4 - $db_type");
   ok($o2s[1]->id == 3 && $o2s[1]->pid == 111, "set one to many now 5 - $db_type");
   ok($o2s[2]->id == 1 && $o2s[2]->pid == 111, "set one to many now 6 - $db_type");
+
+  my @fos = $o->find_other2_objs(query    => [ id => { gt => 1 } ],
+                                 sort_by  => 'id desc', 
+                                 share_db => 0);
+
+  ok($fos[0]->id == 3 && $fos[0]->pid == 111, "find one to many 1 - $db_type");
+  ok($fos[1]->id == 2 && $fos[1]->pid == 111, "find one to many 2 - $db_type");
+  ok(!defined $fos[0]->{'db'}, "find one to many 3 - $db_type");
+  ok(!defined $fos[1]->{'db'}, "find one to many 4 - $db_type");
+
+  @fos = $o->find_other2_objs([ id => { gt => 1 } ],
+                              sort_by  => 'id desc', 
+                              share_db => 0);
+
+  ok($fos[0]->id == 3 && $fos[0]->pid == 111, "find one to many array query 1 - $db_type");
+  ok($fos[1]->id == 2 && $fos[1]->pid == 111, "find one to many array query 2 - $db_type");
+  ok(!defined $fos[0]->{'db'}, "find one to many array query 3 - $db_type");
+  ok(!defined $fos[1]->{'db'}, "find one to many array query 4 - $db_type");
+
+  @fos = $o->find_other2_objs([ id => 2 ]);
+
+  ok($fos[0]->id == 2 && $fos[0]->pid == 111, "find one to many array query 5 - $db_type");
+
+  @fos = $o->find_other2_objs({ id => { gt => 1 } },
+                              sort_by  => 'id desc', 
+                              share_db => 0);
+
+  ok($fos[0]->id == 3 && $fos[0]->pid == 111, "find one to many hash query 1 - $db_type");
+  ok($fos[1]->id == 2 && $fos[1]->pid == 111, "find one to many hash query 2 - $db_type");
+  ok(!defined $fos[0]->{'db'}, "find one to many hash query 3 - $db_type");
+  ok(!defined $fos[1]->{'db'}, "find one to many hash query 4 - $db_type");
+
+  @fos = $o->find_other2_objs({ id => 2 });
+
+  ok($fos[0]->id == 2 && $fos[0]->pid == 111, "find one to many hash query 5 - $db_type");
+
+  @fos = $o->find_other2_objs(query    => [ id => { le => 2 } ],
+                              sort_by  => 'id desc', 
+                              cache    => 1);
+
+  ok($fos[0]->id == 2 && $fos[0]->pid == 111, "find one to many cache 1 - $db_type");
+  ok($fos[1]->id == 1 && $fos[1]->pid == 111, "find one to many cache 2 - $db_type");
+
+  my @fos2 = $o->find_other2_objs(from_cache => 1);
+
+  ok($fos2[0] eq $fos[0], "find one to many from_cache 1 - $db_type");
+  ok($fos2[1] eq $fos[1], "find one to many from_cache 2 - $db_type");
 
   $o2 = MySQLiteOtherObject2->new(id => 1)->load(speculative => 1);
   ok($o2 && $o2->pid == $o->id, "set one to many now 7 - $db_type");
@@ -5872,15 +5921,7 @@ BEGIN
       $dbh->do('DROP TABLE rose_db_object_chkpass_test');
     }
 
-    eval
-    {
-      local $dbh->{'RaiseError'} = 1;
-      local $dbh->{'PrintError'} = 0;
-      $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
-      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
-    };
-
-    our $PG_HAS_CHKPASS = 1  unless($@);
+    our $PG_HAS_CHKPASS = pg_has_chkpass();
 
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_other
@@ -5955,7 +5996,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('pg') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('pg') }
 
     MyPgOtherObject->meta->table('rose_db_object_other');
 
@@ -5976,7 +6019,9 @@ EOF
     use Rose::DB::Object::Helpers qw(has_loaded_related);
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('pg') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('pg') }
 
     MyPgObject->meta->table('rose_db_object_test');
 
@@ -6126,7 +6171,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('pg') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('pg') }
 
     MyPgOtherObject2->meta->table('rose_db_object_other2');
 
@@ -6164,7 +6211,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('pg') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('pg') }
 
     MyPgColor->meta->table('rose_db_object_colors');
 
@@ -6180,7 +6229,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('pg') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('pg') }
 
     MyPgColorMap->meta->table('rose_db_object_colors_map');
 
@@ -6315,7 +6366,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('mysql') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('mysql') }
 
     MyMySQLOtherObject->meta->table('rose_db_object_other');
 
@@ -6336,7 +6389,9 @@ EOF
     use Rose::DB::Object::Helpers qw(has_loaded_related);
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('mysql') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('mysql') }
 
     MyMySQLObject->meta->allow_inline_column_values(1);
 
@@ -6486,7 +6541,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('mysql') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('mysql') }
 
     MyMySQLOtherObject2->meta->table('rose_db_object_other2');
 
@@ -6523,7 +6580,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('mysql') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('mysql') }
 
     MyMySQLColor->meta->table('rose_db_object_colors');
 
@@ -6539,7 +6598,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('mysql') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('mysql') }
 
     MyMySQLColorMap->meta->table('rose_db_object_colors_map');
 
@@ -6669,7 +6730,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('informix') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('informix') }
 
     MyInformixOtherObject->meta->table('rose_db_object_other');
 
@@ -6690,7 +6753,9 @@ EOF
     use Rose::DB::Object::Helpers qw(has_loaded_related);
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('informix') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('informix') }
 
     MyInformixObject->meta->table('rose_db_object_test');
 
@@ -6828,7 +6893,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('informix') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('informix') }
 
     MyInformixOtherObject2->meta->table('rose_db_object_other2');
 
@@ -6865,7 +6932,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('informix') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('informix') }
 
     MyInformixColor->meta->table('rose_db_object_colors');
 
@@ -6881,7 +6950,9 @@ EOF
 
     our @ISA = qw(Rose::DB::Object);
 
-    sub init_db { Rose::DB->new('informix') }
+    our $DB;
+
+    sub init_db { $DB ||= Rose::DB->new('informix') }
 
     MyInformixColorMap->meta->table('rose_db_object_colors_map');
 
@@ -7111,6 +7182,7 @@ EOF
         manager_args => { sort_by => 'rose_db_object_other2.name DESC' },
         methods =>
         {
+          find            => undef,
           get_set         => undef,
           get_set_now     => 'other2_objs_now',
           get_set_on_save => 'other2_objs_on_save',
@@ -7126,6 +7198,14 @@ EOF
         column_map => { id => 'pid' },
         query_args => [ name => { like => 'a%' } ],
         manager_args => { sort_by => 'name' },
+      },
+
+      other2_one_obj =>
+      {
+        type  => 'one to one',
+        class => 'MySQLiteOtherObject2',
+        column_map => { id => 'pid' },
+        query_args => [ name => 'one' ],
       },
 
       # Hrm.  Experimental...
@@ -7291,7 +7371,6 @@ END
     $dbh->do('DROP TABLE rose_db_object_colors');
     $dbh->do('DROP TABLE rose_db_object_other');
     $dbh->do('DROP TABLE rose_db_object_other2');
-
 
     $dbh->disconnect;
   }

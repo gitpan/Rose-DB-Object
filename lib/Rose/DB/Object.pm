@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.760';
+our $VERSION = '0.761';
 
 our $Debug = 0;
 
@@ -82,8 +82,7 @@ sub db
       }
     }
 
-    $self->{'db'}  = $new_db;
-    $self->{'dbh'} = undef;
+    $self->{'db'} = $new_db;
 
     return $new_db;
   }
@@ -116,13 +115,11 @@ sub dbh
 {
   my($self) = shift;
 
-  return $self->{'dbh'}  if($self->{'dbh'});
+  my $db = $self->db or return undef;
 
-  my $db = $self->db or return 0;
-
-  if(my $dbh = $db->dbh)
+  if(my $dbh = $db->dbh(@_))
   {
-    return $self->{'dbh'} = $dbh;
+    return $dbh;
   }
   else
   {
@@ -152,57 +149,88 @@ sub load
 
   local $self->{STATE_SAVING()} = 1;
 
-  my @key_columns = $meta->primary_key_column_names;
-  my @key_methods = $meta->primary_key_column_accessor_names;
-  my @key_values  = grep { defined } map { $self->$_() } @key_methods;
+  my(@key_columns, @key_methods, @key_values);
+
   my $null_key  = 0;
   my $found_key = 0;
 
-  unless(@key_values == @key_columns)
+  if(my $key = delete $args{'use_key'})
   {
-    my $alt_columns;
-
-    # Prefer unique keys where we have defined values for all
-    # key columns, but fall back to the first unique key found 
-    # where we have at least one defined value.
-    foreach my $cols ($meta->unique_keys_column_names)
+    my @uk = grep { $_->name eq $key } $meta->unique_keys;
+    
+    if(@uk == 1)
     {
       my $defined = 0;
-      @key_columns = @$cols;
+      @key_columns = $uk[0]->column_names;
       @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
       @key_values  = map { $defined++ if(defined $_); $_ } 
                      map { $self->$_() } @key_methods;
 
-      if($defined == @key_columns)
+      unless($defined)
       {
-        $found_key = 1;
-        last;
+        $self->error("Could not load() based on key '$key' - column(s) have undefined values");
+        $meta->handle_error($self);
+        return undef;
       }
-
-      $alt_columns ||= $cols  if($defined);
+      
+      if(@key_values != $defined)
+      {
+        $null_key = 1;
+      }
     }
-
-    if(!$found_key && $alt_columns)
+  }
+  else
+  {
+    @key_columns = $meta->primary_key_column_names;
+    @key_methods = $meta->primary_key_column_accessor_names;
+    @key_values  = grep { defined } map { $self->$_() } @key_methods;
+  
+    unless(@key_values == @key_columns)
     {
-      @key_columns = @$alt_columns;
-      @key_methods = map { $meta->column_accessor_method_name($_) }  @key_columns;
-      @key_values  = map { $self->$_() } @key_methods;
-      $null_key    = 1;
-      $found_key   = 1;
-    }
-
-    unless($found_key)
-    {
-      @key_columns = $meta->primary_key_column_names;
-
-      $self->error("Cannot load " . ref($self) . " without a primary key (" .
-                   join(', ', @key_columns) . ') with ' .
-                   (@key_columns > 1 ? 'non-null values in all columns' : 
-                                       'a non-null value') .
-                   ' or another unique key with at least one non-null value.');
-
-      $meta->handle_error($self);
-      return 0;
+      my $alt_columns;
+  
+      # Prefer unique keys where we have defined values for all
+      # key columns, but fall back to the first unique key found 
+      # where we have at least one defined value.
+      foreach my $cols ($meta->unique_keys_column_names)
+      {
+        my $defined = 0;
+        @key_columns = @$cols;
+        @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
+        @key_values  = map { $defined++ if(defined $_); $_ } 
+                       map { $self->$_() } @key_methods;
+  
+        if($defined == @key_columns)
+        {
+          $found_key = 1;
+          last;
+        }
+  
+        $alt_columns ||= $cols  if($defined);
+      }
+  
+      if(!$found_key && $alt_columns)
+      {
+        @key_columns = @$alt_columns;
+        @key_methods = map { $meta->column_accessor_method_name($_) }  @key_columns;
+        @key_values  = map { $self->$_() } @key_methods;
+        $null_key    = 1;
+        $found_key   = 1;
+      }
+  
+      unless($found_key)
+      {
+        @key_columns = $meta->primary_key_column_names;
+  
+        $self->error("Cannot load " . ref($self) . " without a primary key (" .
+                     join(', ', @key_columns) . ') with ' .
+                     (@key_columns > 1 ? 'non-null values in all columns' : 
+                                         'a non-null value') .
+                     ' or another unique key with at least one non-null value.');
+  
+        $meta->handle_error($self);
+        return 0;
+      }
     }
   }
 
@@ -469,7 +497,7 @@ sub save
         #}
 
         my $code   = $todo->{'fk'}{$fk_name}{'set'} or next;
-        my $object = $code->();
+        my $object = $code->($self);
 
         # Account for objects that evaluate to false to due overloading
         unless($object || ref $object)
@@ -515,7 +543,7 @@ sub save
           # Don't run the code to delete this object if we just set it above
           next  if($did_set{'fk'}{$fk_name}{Rose::DB::Object::Util::row_id($object)});
 
-          $code->() or die $self->error;
+          $code->($self) or die $self->error;
         }
       }
 
@@ -523,15 +551,16 @@ sub save
       {
         foreach my $fk ($meta->foreign_keys)
         {
-          # Don't save if this object was just set above
-          next  if($todo->{'fk'}{$fk->name}{'set'});
+          # If this object was just set above, just save changes (there 
+          # should be none) as a way to continue the cascade
+          local $args{'changes_only'} = 1  if($todo->{'fk'}{$fk->name}{'set'});
 
           my $foreign_object = $fk->object_has_foreign_object($self) || next;
-          $Debug && warn "$self - save foreign ", $fk->name, " - $foreign_object\n";
 
           if(Rose::DB::Object::Util::has_modified_columns($foreign_object) ||
              Rose::DB::Object::Util::has_modified_children($foreign_object))
           {
+            $Debug && warn "$self - save foreign ", $fk->name, " - $foreign_object\n";
             $foreign_object->save(%args);
           }
         }
@@ -548,13 +577,19 @@ sub save
         # Set value(s)
         if($code  = $todo->{'rel'}{$rel_name}{'set'})
         {
-          $code->() or die $self->error;
+          $code->($self) or die $self->error;
+        }
+
+        # Delete value(s)
+        if($code  = $todo->{'rel'}{$rel_name}{'delete'})
+        {
+          $code->($self) or die $self->error;
         }
 
         # Add value(s)
         if($code  = $todo->{'rel'}{$rel_name}{'add'})
         {
-          $code->() or die $self->error;
+          $code->($self) or die $self->error;
         }
       }
 
@@ -562,18 +597,18 @@ sub save
       {
         foreach my $rel ($meta->relationships)
         {
-          # Don't save if this object was just set above
-          next  if($todo->{'rel'}{$rel->name}{'set'});
+          # If this object was just set above, just save changes (there 
+          # should be none) as a way to continue the cascade
+          local $args{'changes_only'} = 1  if($todo->{'rel'}{$rel->name}{'set'});
 
           my $related_objects = $rel->object_has_related_objects($self) || next;
 
           foreach my $related_object (@$related_objects)
           {
-            $Debug && warn "$self - save related ", $rel->name, " - $related_object\n";
-
             if(Rose::DB::Object::Util::has_modified_columns($related_object) ||
                Rose::DB::Object::Util::has_modified_children($related_object))
             {
+              $Debug && warn "$self - save related ", $rel->name, " - $related_object\n";
               $related_object->save(%args);
             }
           }
@@ -1958,6 +1993,12 @@ Returns a new L<Rose::DB::Object> constructed according to PARAMS, where PARAMS 
 
 =over 4
 
+=item B<init_db>
+
+Returns the L<Rose::DB>-derived object used to access the database in the absence of an explicit L<db|/db> value.  The default implementation simply calls L<Rose::DB-E<gt>new()|Rose::DB/new> with no arguments.
+
+Override this method in your subclass in order to use a different default data source.  B<Note:> This method must be callable as both an object method and a class method.
+
 =item B<meta>
 
 Returns the L<Rose::DB::Object::Metadata>-derived object associated with this class.  This object describes the database table whose rows are fronted by this class: the name of the table, its columns, unique keys, foreign keys, etc.
@@ -1982,13 +2023,13 @@ If it does not already exist, this object is created with a simple, argument-les
 
 =item B<init_db>
 
-Returns the L<Rose::DB>-derived object used to access the database in the absence of an explicit L<db|/db> value.  The default implementation simply calls C<Rose::DB-E<gt>new()> with no arguments.
+Returns the L<Rose::DB>-derived object used to access the database in the absence of an explicit L<db|/db> value.  The default implementation simply calls L<Rose::DB-E<gt>new()|Rose::DB/new> with no arguments.
 
-Override this method in your subclass in order to use a different default data source.
+Override this method in your subclass in order to use a different default data source.  B<Note:> This method must be callable as both an object method and a class method.
 
-=item B<dbh>
+=item B<dbh [DBH]>
 
-Returns the L<DBI> database handle contained in L<db|/db>.
+Get or set the L<DBI> database handle contained in L<db|/db>.
 
 =item B<delete [PARAMS]>
 
@@ -2050,7 +2091,7 @@ Load a row from the database table, initializing the object with the values from
 
 Returns true if the row was loaded successfully, undef if the row could not be loaded due to an error, or zero (0) if the row does not exist.  The true value returned on success will be the object itself.  If the object L<overload>s its boolean value such that it is not true, then a true value will be returned instead of the object itself.
 
-When loading based on a unique key, unique keys are considered in the order in which they were defined in the L<metadata|/meta> for this class.  If the object has defined values for every column in a unique key, then that key is used.  If no such keys are found, then the first key for which the object has at least one defined value is used.
+When loading based on a unique key, unique keys are considered in the order in which they were defined in the L<metadata|/meta> for this class.  If the object has defined values for every column in a unique key, then that key is used.  If no such key is found, then the first key for which the object has at least one defined value is used.
 
 PARAMS are optional name/value pairs.  Valid PARAMS are:
 
@@ -2069,6 +2110,10 @@ all columns will be fetched from the database, even L<lazy|Rose::DB::Object::Met
 =item C<speculative BOOL>
 
 If this parameter is passed with a true value, and if the load failed because the row was L<not found|/not_found>, then the L<error_mode|Rose::DB::Object::Metadata/error_mode> setting is ignored and zero (0) is returned.  In the absence of an explicitly set value, this parameter defaults to the value returned my the L<metadata object|/meta>'s L<default_load_speculative|Rose::DB::Object::Metadata/default_load_speculative> method.
+
+=item B<use_key KEY>
+
+Use the unique key L<name|Rose::DB::Object::Metadata::UniqueKey/name>d KEY to load the object.  This overrides the unique key selection process described above.  The key must have a defined value in at least one of its L<columns|Rose::DB::Object::Metadata::UniqueKey/columns>.
 
 =item C<with OBJECTS>
 
@@ -2116,7 +2161,7 @@ See the L<Rose::DB::Object::Metadata> documentation for more information.
 
 =item B<save [PARAMS]>
 
-Save the current object to the database table.  In the absence of PARAMS, if the object was previously L<load|/load>ed from the database, the row will be updated.  Otherwise, a new row will be created.  PARAMS are name/value pairs.  Valid PARAMS are listed below.
+Save the current object to the database table.  In the absence of PARAMS, if the object was previously L<load|/load>ed from the database, the row will be L<update|/update>d.  Otherwise, a new row will be L<insert|/insert>ed.  PARAMS are name/value pairs.  Valid PARAMS are listed below.
 
 Actions associated with sub-objects that were added or deleted using one of the "*_on_save" relationship or foreign key method types are also performed when this method is called.  If there are any such actions to perform, a new transaction is started if the L<db|/db> is not already in one, and L<rollback()|Rose::DB/rollback> is called if any of the actions fail during the L<save()|/save>.  Example:
 
@@ -2159,7 +2204,7 @@ If omitted, the default value of this parameter is determined by the L<metadata 
 
 =item C<insert BOOL>
 
-If set to a true value, then an insert is attempted, regardless of whether or not the object was previously L<load|/load>ed from the database.
+If set to a true value, then an L<insert|/insert> is attempted, regardless of whether or not the object was previously L<load|/load>ed from the database.
 
 =item C<prepare_cached BOOL>
 
@@ -2167,7 +2212,7 @@ If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used 
 
 =item C<update BOOL>
 
-If set to a true value, then an update is attempted, regardless of whether or not the object was previously L<load|/load>ed from the database.
+If set to a true value, then an L<update|/update> is attempted, regardless of whether or not the object was previously L<load|/load>ed from the database.
 
 =back
 

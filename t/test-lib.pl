@@ -320,6 +320,43 @@ EOF
   return 1;
 }
 
+our $PG_HAS_CHKPASS = $ENV{'PG_HAS_CHKPASS'};
+
+sub pg_has_chkpass
+{
+  return $PG_HAS_CHKPASS  if(defined $PG_HAS_CHKPASS);
+
+  my $dbh = get_dbh('pg_admin') or return undef;
+
+  eval
+  {
+    local $dbh->{'RaiseError'} = 1;
+    local $dbh->{'PrintError'} = 0;
+    $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
+    $dbh->do('DROP TABLE rose_db_object_chkpass_test');
+  };
+
+  return $PG_HAS_CHKPASS = $@ ? 0 : 1;
+}
+
+our $PG_MAX_CONNECTIONS;
+
+sub pg_max_connections
+{
+  return $PG_MAX_CONNECTIONS  if(defined $PG_MAX_CONNECTIONS);
+
+  my $dbh = get_dbh('pg') or return 0;
+  my @dbh = ($dbh);
+
+  for(;;)
+  {
+    eval { $dbh = get_dbh('pg') or die; push(@dbh, $dbh) };
+    last if($@ || @dbh > 50);
+  }
+
+  return $PG_MAX_CONNECTIONS = @dbh;
+}
+
 sub oracle_is_broken
 {
   return undef  unless(have_db('oracle'));

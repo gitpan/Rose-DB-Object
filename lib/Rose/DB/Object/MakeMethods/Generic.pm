@@ -18,7 +18,7 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.759';
+our $VERSION = '0.761';
 
 our $Debug = 0;
 
@@ -32,6 +32,7 @@ sub scalar
   my $overflow  = $args->{'overflow'};
   my $default   = $args->{'default'};
   my $check_in  = $args->{'check_in'};
+  my $smart     = $args->{'smart_modification'};
   my $type      = $args->{'_method_type'} || 'scalar';
 
   my $column_name = $args->{'column'} ? $args->{'column'}->name : $name;
@@ -161,12 +162,18 @@ EOF
   #
 
   my $return_code = '';
+  my $return_code_get = '';
   my $return_code_shift = '';
 
   if(defined $default)
   {
     if($type eq 'character')
     {
+      $return_code_get=<<"EOF";
+return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
+  (\$self->{'$qkey'} = sprintf("%-${length}s", \$default));
+EOF
+
       $return_code=<<"EOF";
 return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
   (scalar($column_modified_code, 
@@ -175,6 +182,11 @@ EOF
     }
     else
     {
+      $return_code_get=<<"EOF";
+return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
+  (\$self->{'$qkey'} = \$default);
+EOF
+
       $return_code=<<"EOF";
 return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
   (scalar($column_modified_code, 
@@ -186,14 +198,24 @@ EOF
   {
     if($type eq 'character')
     {
+      $return_code_get=<<"EOF";
+return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
+  (\$self->{'$qkey'} = sprintf("%-${length}s", \$self->$init_method()));
+EOF
+
       $return_code=<<"EOF";
 return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
   (scalar($column_modified_code, 
-          \$self->{'$qkey'} = sprintf("%-${length}s", \$self->$init_method())););
+          \$self->{'$qkey'} = sprintf("%-${length}s", \$self->$init_method())));
 EOF
     }
     else
     {
+      $return_code_get=<<"EOF";
+return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
+  (\$self->{'$qkey'} = \$self->$init_method());
+EOF
+
       $return_code=<<"EOF";
 return (defined \$self->{'$qkey'}) ? \$self->{'$qkey'} : 
   (scalar($column_modified_code, 
@@ -207,7 +229,19 @@ EOF
     $return_code_shift = qq(return shift->{'$qkey'};);
   }
 
+  $return_code_get   ||= $return_code;
   $return_code_shift ||= $return_code;
+
+  my $save_old_val_code = $smart ? 
+    qq(no warnings 'uninitialized';\nmy \$old_val = \$self->{'$qkey'};) : '';
+
+  my $mod_cond_code =  $smart ? 
+    qq(unless(\$self->{STATE_LOADING()} || \$old_val eq \$self->{'$qkey'});) :
+    qq(unless(\$self->{STATE_LOADING()}););
+
+  my $mod_cond_pre_set_code = $smart ?
+    qq(unless(\$self->{STATE_LOADING()} || \$value eq \$self->{'$qkey'});) :
+    qq(unless(\$self->{STATE_LOADING()}););
 
   my %methods;
 
@@ -229,12 +263,13 @@ sub
 
     $check_in_code
     $length_check_code
+    $save_old_val_code
     $set_code
-    $column_modified_code  unless(\$self->{STATE_LOADING()});
+    $column_modified_code  $mod_cond_code
     $return_code
   }
 
-  $return_code
+  $return_code_get
 };
 EOF
     }
@@ -248,9 +283,10 @@ sub
     my \$self  = shift;
     my \$value = shift;
 
+    no warnings 'uninitialized';
     $check_in_code
     $length_check_code
-    $column_modified_code  unless(\$self->{STATE_LOADING()});
+    $column_modified_code  $mod_cond_pre_set_code
     return $set_code
   }
 
@@ -305,8 +341,9 @@ sub
 
   $check_in_code
   $length_check_code
+  $save_old_val_code
   $set_code
-  $column_modified_code  unless(\$self->{STATE_LOADING()});
+  $column_modified_code  $mod_cond_code
   $return_code
 };
 EOF
@@ -1715,7 +1752,7 @@ sub set
       else
       {
         my $set = $db->parse_set(@_);
- 
+
         if($choices)
         {
           foreach my $val (@$set)
@@ -1724,7 +1761,7 @@ sub set
               unless(exists $choices{$val});
           }
         }
- 
+
         $self->{$key} = $set;
 
         if(!defined $_[0] || defined $self->{$key})
@@ -1773,6 +1810,15 @@ sub set
 sub object_by_key
 {
   my($class, $name, $args, $options) = @_;
+
+  # Delegate to plural with coercion to single indicted in args
+  if($args->{'manager_class'} || $args->{'manager_method'} ||
+     $args->{'manager_args'} || $args->{'query_args'} ||
+     $args->{'join_args'})
+  {
+    $args->{'single'} = 1;
+    return $class->objects_by_key($name, $args, $options);
+  }
 
   my %methods;
 
@@ -1880,7 +1926,7 @@ sub object_by_key
 
         if($@ || !$ret)
         {
-          $self->error("Could not load $fk_class with key ", 
+          $self->error("Could not load $fk_class object with key " .
                        join(', ', map { "$_ = '$key{$_}'" } sort keys %key) .
                        " - " . $obj->error);
           $self->meta->handle_error($self);
@@ -2035,7 +2081,7 @@ sub object_by_key
 
         if($@ || !$ret)
         {
-          $self->error("Could not load $fk_class with key ", 
+          $self->error("Could not load $fk_class with key " .
                        join(', ', map { "$_ = '$key{$_}'" } sort keys %key) .
                        " - " . $obj->error);
           $self->meta->handle_error($self);
@@ -2058,6 +2104,7 @@ sub object_by_key
     }
 
     my $fk_name = $fk->name;
+    my $is_fk = $fk->type eq 'foreign key' ? 1 : 0;
 
     $methods{$name} = sub
     {
@@ -2089,7 +2136,7 @@ sub object_by_key
 
         my $linked_up = 0;
 
-        if(!$fk->requires_preexisting_parent_object || $self->{STATE_IN_DB()})
+        if($is_fk && (!$fk->requires_preexisting_parent_object || $self->{STATE_IN_DB()}))
         {
           # Set the foreign key columns
           while(my($local_column, $foreign_column) = each(%$fk_columns))
@@ -2106,11 +2153,13 @@ sub object_by_key
         # Set the attribute
         $self->{$key} = $object;
 
-        weaken(my $welf = $self);
-        
+        #weaken(my $welf = $self);
+
         # Make the code that will run on save()
         my $save_code = sub
         {
+          my $welf = shift;
+
           # Bail if there's nothing to do
           my $object = $welf->{$key} or return;
 
@@ -2228,7 +2277,7 @@ sub object_by_key
 
         if($@ || !$ret)
         {
-          $self->error("Could not load $fk_class with key ", 
+          $self->error("Could not load $fk_class with key " .
                        join(', ', map { "$_ = '$key{$_}'" } sort keys %key) .
                        " - " . $obj->error);
           $self->meta->handle_error($self);
@@ -2431,11 +2480,13 @@ sub object_by_key
       # Clear the foreignobject attribute
       $self->{$key} = undef;
 
-      weaken(my $welf = $self);
+      #weaken(my $welf = $self);
 
       # Make the code to run on save
       my $delete_code = sub
       {  
+        my $welf = shift;
+
         my $db;
 
         eval
@@ -2503,6 +2554,7 @@ sub objects_by_key
   my $share_db   = $args->{'share_db'} || 1;
   my $mgr_args   = $args->{'manager_args'} || {};
   my $query_args = $args->{'query_args'} || [];
+  my $single     = $args->{'single'} || 0;
 
   if($mgr_args->{'query'})
   {
@@ -2521,7 +2573,140 @@ sub objects_by_key
     $mgr_args->{'object_class'} = $ft_class;
   }
 
-  if($interface eq 'get_set' || $interface eq 'get_set_load')
+  my $required = 
+    exists $args->{'required'} ? $args->{'required'} :
+    exists $args->{'referential_integrity'} ? $args->{'referential_integrity'} : 1;
+
+  if(exists $args->{'required'} && exists $args->{'referential_integrity'} &&
+    (!$args->{'required'} != !$$args->{'referential_integrity'}))
+  {
+    Carp::croak "The required and referential_integrity parameters conflict. ",
+                "Please pass one or the other, not both.";
+  }
+
+  if($interface eq 'find')
+  {
+    my $cache_key = PRIVATE_PREFIX . '_' . $name;
+
+    $methods{$name} = sub
+    {
+      my($self) = shift;
+
+      my %args;
+
+      if(my $ref = ref $_[0])
+      {
+        if($ref eq 'HASH')
+        {
+          %args = (query => [ %{shift(@_)} ], @_);
+        }
+        elsif(ref $_[0] eq 'ARRAY')
+        {
+          %args = (query => shift, @_);
+        }
+      }
+      else { %args = @_ }
+
+      if(delete $args{'from_cache'})
+      {
+        if(keys %args)
+        {
+          Carp::croak "Additional parameters not allowed in call to ",
+                      "$name() with from_cache parameter";
+        }
+
+        if(defined $self->{$cache_key})
+        {
+          return wantarray ? @{$self->{$cache_key}} : $self->{$cache_key};
+        }
+      }
+
+      my $objs;
+
+      # Get query key
+      my %key;
+
+      while(my($local_column, $foreign_column) = each(%$ft_columns))
+      {
+        my $local_method = $meta->column_accessor_method_name($local_column);
+
+        $key{$foreign_column} = $self->$local_method();
+
+        # Comment this out to allow null keys
+        unless(defined $key{$foreign_column})
+        {
+          keys(%$ft_columns); # reset iterator
+          $self->error("Could not fetch objects via $name() - the " .
+                       "$local_method attribute is undefined");
+          return;
+        }
+      }
+
+      my $cache = delete $args{'cache'};
+
+      # Merge query args
+      my @query = (%key, @$query_args, @{delete $args{'query'} || []});      
+
+      # Merge the rest of the arguments
+      foreach my $param (keys %args)
+      {
+        if(exists $mgr_args->{$param})
+        {
+          my $ref = ref $args{$param};
+
+          if($ref eq 'ARRAY')
+          {
+            unshift(@{$args{$param}}, ref $mgr_args->{$param} ? 
+                    @{$mgr_args->{$param}} :  $mgr_args->{$param});
+          }
+          elsif($ref eq 'HASH')
+          {
+            while(my($k, $v) = each(%{$mgr_args->{$param}}))
+            {
+              $args{$param}{$k} = $v  unless(exists $args{$param}{$k});
+            }
+          }
+        }
+      }
+
+      while(my($k, $v) = each(%$mgr_args))
+      {
+        $args{$k} = $v  unless(exists $args{$k});
+      }
+
+      # Make query for object list
+      eval
+      {
+        #local $Rose::DB::Object::Manager::Debug = 1;
+        if($share_db)
+        {
+          $objs = 
+            $ft_manager->$ft_method(query => \@query, db => $self->db, %args)
+              or die $ft_manager->error;
+        }
+        else
+        {
+          $objs = 
+            $ft_manager->$ft_method(query    => \@query, 
+                                    db       => $self->db,
+                                    share_db => 0, %args)
+              or die $ft_manager->error;
+        }
+      };
+
+      if($@ || !$objs)
+      {
+        $self->error("Could not find $ft_class objects - " . $ft_manager->error);
+        $self->meta->handle_error($self);
+        return wantarray ? () : $objs;
+      }
+
+      $self->{$cache_key} = $objs  if($cache);
+
+      return wantarray ? @$objs: $objs;
+    };
+  }
+  elsif($interface eq 'get_set' || $interface eq 'get_set_load')
   {
     $methods{$name} = sub
     {
@@ -2531,12 +2716,27 @@ sub objects_by_key
       {      
         return $self->{$key} = undef  if(@_ == 1 && !defined $_[0]);
         $self->{$key} = __args_to_objects($self, $key, $ft_class, \$ft_pk, \@_);
-        return wantarray ? @{$self->{$key}} : $self->{$key};
+
+        if(!$single)
+        {
+          return wantarray ? @{$self->{$key}} : $self->{$key};
+        }
+        else
+        {
+          return $self->{$key}[0];
+        }
       }
 
       if(defined $self->{$key})
       {
-        return wantarray ? @{$self->{$key}} : $self->{$key};  
+        if(!$single)
+        {
+          return wantarray ? @{$self->{$key}} : $self->{$key};
+        }
+        else
+        {
+          return $self->{$key}[0];
+        }
       }
 
       my %key;
@@ -2571,23 +2771,41 @@ sub objects_by_key
         else
         {
           $objs = 
-            $ft_manager->$ft_method(query => [ %key, @$query_args ], %$mgr_args)
+            $ft_manager->$ft_method(query    => [ %key, @$query_args ],
+                                    db       => $self->db, 
+                                    share_db => 0, %$mgr_args)
               or die $ft_manager->error;
         }
       };
 
       if($@ || !$objs)
       {
-        $self->error("Could not load $ft_class objects with key ", 
+        $self->error("Could not load $ft_class objects with key " .
                      join(', ', map { "$_ = '$key{$_}'" } sort keys %key) .
                      " - " . $ft_manager->error);
         $self->meta->handle_error($self);
-        return $objs;
+        return wantarray ? () : $objs;
       }
 
       $self->{$key} = $objs;
 
-      return wantarray ? @{$self->{$key}} : $self->{$key};
+      if(!$single)
+      {
+        return wantarray ? @{$self->{$key}} : $self->{$key};
+      }
+      else
+      {
+        if($required && !@$objs)
+        {
+          my %query = (%key, @$query_args);
+          $self->error("Not related $ft_class object found with query " .
+                       join(', ', map { "$_ = '$query{$_}'" } sort keys %query));
+          $self->meta->handle_error($self);
+          return 0;
+        }
+
+        return $self->{$key}[0];
+      }
     };
 
     if($interface eq 'get_set_load')
@@ -2621,7 +2839,16 @@ sub objects_by_key
         if($self->{STATE_LOADING()})
         {
           return $self->{$key} = undef  if(@_ == 1 && !defined $_[0]);
-          return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
+          $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
+
+          if(!$single)
+          {
+            return wantarray ? @{$self->{$key}} : $self->{$key};
+          }
+          else
+          {
+            return $self->{$key}[0];
+          }
         }
 
         # Can't set until the object is saved
@@ -2638,7 +2865,7 @@ sub objects_by_key
           delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
 
           $self->{$key} = undef;
-          return;
+          $single ? return undef : return;
         }
 
         # Set up join conditions and column map
@@ -2660,7 +2887,7 @@ sub objects_by_key
             keys(%$ft_columns); # reset iterator
             $self->error("Could not set objects via $name() - the " .
                          "$local_method attribute is undefined");
-            return;
+            $single ? return undef : return;
           }
         }
 
@@ -2750,13 +2977,28 @@ sub objects_by_key
         }
 
         return 1  unless(defined $self->{$key});
-        return wantarray ? @{$self->{$key}} : $self->{$key};
+
+        if(!$single)
+        {
+          return wantarray ? @{$self->{$key}} : $self->{$key};
+        }
+        else
+        {
+          return $self->{$key}[0];
+        }
       }
 
       # Return existing list of objects, if it exists
       if(defined $self->{$key})
       {
-        return wantarray ? @{$self->{$key}} : $self->{$key};  
+        if(!$single)
+        {
+          return wantarray ? @{$self->{$key}} : $self->{$key};
+        }
+        else
+        {
+          return $self->{$key}[0];
+        }
       }
 
       my $objs;
@@ -2776,7 +3018,7 @@ sub objects_by_key
           keys(%$ft_columns); # reset iterator
           $self->error("Could not fetch objects via $name() - the " .
                        "$local_method attribute is undefined");
-          return;
+          $single ? return undef : return;
         }
       }
 
@@ -2793,23 +3035,41 @@ sub objects_by_key
         else
         {
           $objs = 
-            $ft_manager->$ft_method(query => [ %key, @$query_args ], %$mgr_args)
+            $ft_manager->$ft_method(query    => [ %key, @$query_args ],
+                                    db       => $self->db,
+                                    share_db => 0, %$mgr_args)
               or die $ft_manager->error;
         }
       };
 
       if($@ || !$objs)
       {
-        $self->error("Could not load $ft_class objects with key ", 
+        $self->error("Could not load $ft_class objects with key " .
                      join(', ', map { "$_ = '$key{$_}'" } sort keys %key) .
                      " - " . $ft_manager->error);
         $self->meta->handle_error($self);
-        return $objs;
+        return wantarray ? () : $objs;
       }
 
       $self->{$key} = $objs;
 
-      return wantarray ? @{$self->{$key}} : $self->{$key};
+      if(!$single)
+      {
+        return wantarray ? @{$self->{$key}} : $self->{$key};
+      }
+      else
+      {
+        if($required && !@$objs)
+        {
+          my %query = (%key, @$query_args);
+          $self->error("Not related $ft_class object found with query " .
+                       join(', ', map { "$_ = '$query{$_}'" } sort keys %query));
+          $self->meta->handle_error($self);
+          return 0;
+        }
+
+        return $self->{$key}[0];
+      }
     };
   }
   elsif($interface eq 'get_set_on_save')
@@ -2833,7 +3093,16 @@ sub objects_by_key
         if($self->{STATE_LOADING()})
         {
           return $self->{$key} = undef  if(@_ == 1 && !defined $_[0]);
-          return $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
+          $self->{$key} = (@_ == 1 && ref $_[0] eq 'ARRAY') ? $_[0] : [ @_ ];
+
+          if(!$single)
+          {
+            return wantarray ? @{$self->{$key}} : $self->{$key};
+          }
+          else
+          {
+            return $self->{$key}[0];
+          }
         }
 
         # Set to undef resets the attr  
@@ -2844,7 +3113,7 @@ sub objects_by_key
           delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
 
           $self->{$key} = undef;
-          return;
+          $single ? return undef : return;
         }
 
         my $objects = __args_to_objects($self, $key, $ft_class, \$ft_pk, \@_);
@@ -2874,10 +3143,12 @@ sub objects_by_key
         # Set the attribute
         $self->{$key} = $objects;
 
-        weaken(my $welf = $self);
+        #weaken(my $welf = $self);
 
         my $save_code = sub
         {
+          my $welf = shift;
+
           # Set up join conditions and column map
           my(%key, %map);
 
@@ -2969,13 +3240,28 @@ sub objects_by_key
         delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
 
         return 1  unless(defined $self->{$key});
-        return wantarray ? @{$self->{$key}} : $self->{$key};
+
+        if(!$single)
+        {
+          return wantarray ? @{$self->{$key}} : $self->{$key};
+        }
+        else
+        {
+          return $self->{$key}[0];
+        }
       }
 
       # Return existing list of objects, if it exists
       if(defined $self->{$key})
       {
-        return wantarray ? @{$self->{$key}} : $self->{$key};  
+        if(!$single)
+        {
+          return wantarray ? @{$self->{$key}} : $self->{$key};
+        }
+        else
+        {
+          return $self->{$key}[0];
+        }
       }
 
       my $objs;
@@ -2995,7 +3281,7 @@ sub objects_by_key
           keys(%$ft_columns); # reset iterator
           $self->error("Could not fetch objects via $name() - the " .
                        "$local_method attribute is undefined");
-          return;
+          $single ? return undef : return;
         }
       }
 
@@ -3012,23 +3298,196 @@ sub objects_by_key
         else
         {
           $objs = 
-            $ft_manager->$ft_method(query => [ %key, @$query_args ], %$mgr_args)
+            $ft_manager->$ft_method(query    => [ %key, @$query_args ],
+                                    db       => $self->db, 
+                                    share_db => 0,
+                                    %$mgr_args)
               or die $ft_manager->error;
         }
       };
 
       if($@ || !$objs)
       {
-        $self->error("Could not load $ft_class objects with key ", 
+        $self->error("Could not load $ft_class objects with key " .
                      join(', ', map { "$_ = '$key{$_}'" } sort keys %key) .
                      " - " . $ft_manager->error);
         $self->meta->handle_error($self);
-        return $objs;
+        return wantarray ? () : $objs;
       }
 
       $self->{$key} = $objs;
 
-      return wantarray ? @{$self->{$key}} : $self->{$key};
+      if(!$single)
+      {
+        return wantarray ? @{$self->{$key}} : $self->{$key};
+      }
+      else
+      {
+        if($required && !@$objs)
+        {
+          my %query = (%key, @$query_args);
+          $self->error("Not related $ft_class object found with query " .
+                       join(', ', map { "$_ = '$query{$_}'" } sort keys %query));
+          $self->meta->handle_error($self);
+          return 0;
+        }
+
+        return $self->{$key}[0];
+      }
+    };
+  }
+  elsif($interface eq 'delete_now')
+  {
+    my $ft_delete_method  = $args->{'manager_delete_method'} || 'delete_objects';
+
+    unless($relationship)
+    {
+      Carp::confess "Cannot make 'delete_now' method $name without relationship argument";
+    }
+
+    my $rel_name = $relationship->name;
+
+    $methods{$name} = sub
+    {
+      my($self) = shift;
+
+      # Set up join conditions and column map
+      my(%key, %map);
+
+      my $ft_meta = $ft_class->meta 
+        or Carp::croak "Missing metadata for foreign object class $ft_class";
+
+      while(my($local_column, $foreign_column) = each(%$ft_columns))
+      {
+        my $local_method   = $meta->column_accessor_method_name($local_column);
+        my $foreign_method = $ft_meta->column_accessor_method_name($foreign_column);
+
+        $key{$foreign_column} = $map{$foreign_method} = $self->$local_method();
+
+        # Comment this out to allow null keys
+        unless(defined $key{$foreign_column})
+        {
+          keys(%$ft_columns); # reset iterator
+          $self->error("Could not delete objects via $name() - the " .
+                       "$local_method attribute is undefined");
+          $single ? return undef : return;
+        }
+      }
+
+      my($db, $started_new_tx);
+
+      eval
+      {
+        $db = $self->db;
+
+        my $ret = $db->begin_work;
+
+        unless(defined $ret)
+        {
+          die 'Could not begin transaction during call to $name() - ',
+              $db->error;
+        }
+
+        $started_new_tx = ($ret == IN_TRANSACTION) ? 0 : 1;
+
+        # Delete existing objects
+        my $deleted = 
+          $ft_manager->$ft_delete_method(object_class => $ft_class,
+                                         where => [ %key, @$query_args ], 
+                                         db => $db);
+        die $ft_manager->error  unless(defined $deleted);
+
+        # Delete any pending set or add actions
+        delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'};
+        delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
+
+        if($started_new_tx)
+        {
+          $db->commit or die $db->error;
+        }
+      };
+
+      if($@)
+      {
+        $self->error("Could not delete $name objects - $@");
+        $db->rollback  if($db && $started_new_tx);
+        $meta->handle_error($self);
+        return undef;
+      }
+
+      return 1;
+    };
+  }
+  elsif($interface eq 'delete_on_save')
+  {
+    my $ft_delete_method  = $args->{'manager_delete_method'} || 'delete_objects';
+
+    unless($relationship)
+    {
+      Carp::confess "Cannot make 'delete_on_save' method $name without relationship argument";
+    }
+
+    my $rel_name = $relationship->name;
+
+    $methods{$name} = sub
+    {
+      my($self) = shift;
+
+      # Delete any pending set or add actions
+      delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'set'};
+      delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
+
+      $self->{$key} = undef;
+
+      #weaken(my $welf = $self);
+
+      my $delete_code = sub
+      {
+        my $welf = shift;
+
+        # Set up join conditions and column map
+        my(%key, %map);
+
+        my $ft_meta = $ft_class->meta 
+          or Carp::croak "Missing metadata for foreign object class $ft_class";
+
+        while(my($local_column, $foreign_column) = each(%$ft_columns))
+        {
+          my $local_method   = $meta->column_accessor_method_name($local_column);
+          my $foreign_method = $ft_meta->column_accessor_method_name($foreign_column);
+
+          $key{$foreign_column} = $map{$foreign_method} = $welf->$local_method();
+
+          # Comment this out to allow null keys
+          unless(defined $key{$foreign_column})
+          {
+            keys(%$ft_columns); # reset iterator
+            $welf->error("Could not set objects via $name() - the " .
+                         "$local_method attribute is undefined");
+            return;
+          }
+        }
+
+        my $db = $welf->db;
+
+        # Delete existing objects
+        my $deleted = 
+          $ft_manager->$ft_delete_method(object_class => $ft_class,
+                                         where => [ %key, @$query_args ], 
+                                         db => $db);
+        die $ft_manager->error  unless(defined $deleted);
+
+        $welf->{$key} = undef;
+
+        return 1;
+      };
+
+      $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'delete'} = $delete_code;
+
+      # Forget about any adds
+      delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'};
+
+      return 1;
     };
   }
   elsif($interface eq 'add_now')
@@ -3197,10 +3656,12 @@ sub objects_by_key
         push(@{$self->{$key}}, @$objects);
       }
 
-      weaken(my $welf = $self);
+      #weaken(my $welf = $self);
 
       my $add_code = sub
       {
+        my $welf = shift;
+
         # Set up column map
         my %map;
 
@@ -3570,12 +4031,13 @@ sub objects_by_map
         $objs = 
           $map_manager->$map_method(query => [ %join_map_to_self, @$query_args ],
                                     require_objects => $require_objects,
+                                    db => $self->db, share_db => 0,
                                     %$mgr_args);
       }
 
       unless($objs)
       {
-        $self->error("Could not load $foreign_class objects via map class ", 
+        $self->error("Could not load $foreign_class objects via map class " .
                      "$map_class - " . $map_manager->error);
         return wantarray ? () : $objs;
       }
@@ -3835,12 +4297,13 @@ sub objects_by_map
         $objs = 
           $map_manager->$map_method(query        => [ %join_map_to_self, @$query_args ],
                                     require_objects => $require_objects,
+                                    db => $self->db, share_db => 0,
                                     %$mgr_args);
       }
 
       unless($objs)
       {
-        $self->error("Could not load $foreign_class objects via map class ", 
+        $self->error("Could not load $foreign_class objects via map class " .
                      "$map_class - " . $map_manager->error);
         return wantarray ? () : $objs;
       }
@@ -3929,10 +4392,12 @@ sub objects_by_map
         # Set the attribute
         $self->{$key} = $objects;
 
-        weaken(my $welf = $self);
+        #weaken(my $welf = $self);
 
         my $save_code = sub
         {
+          my $welf = shift;
+
           # Set up join conditions and map record connections
           my(%join_map_to_self,    # map column => self value
              %method_map_to_self); # map method => self value
@@ -4073,12 +4538,13 @@ sub objects_by_map
         $objs = 
           $map_manager->$map_method(query        => [ %join_map_to_self, @$query_args ],
                                     require_objects => $require_objects,
+                                    db => $self->db, share_db => 0,
                                     %$mgr_args);
       }
 
       unless($objs)
       {
-        $self->error("Could not load $foreign_class objects via map class ", 
+        $self->error("Could not load $foreign_class objects via map class " .
                      "$map_class - " . $map_manager->error);
         return wantarray ? () : $objs;
       }
@@ -4288,10 +4754,12 @@ sub objects_by_map
         push(@{$self->{$key}}, @$objects);
       }
 
-      weaken(my $welf = $self);
+      #weaken(my $welf = $self);
 
       my $add_code = sub
       {
+        my $welf = shift;
+
         # Set up join conditions and map record connections
         my(%join_map_to_self,    # map column => self value
            %method_map_to_self); # map method => self value
@@ -5264,6 +5732,16 @@ A reference to an array of arguments added to the value of the C<query> paramete
 
 =over 4
 
+=item B<find>
+
+Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object, plus any additional parameters passed to the method call.  Since the objects fetched are partially determined by the arguments passed to the method, the list of objects is not retained.  It is simply returned.  Each call fetches the requested objects again, even if the arguments are the same as the previous call.
+
+If the first argument is a reference to a hash or array, it is converted to a reference to an array (if necessary) and taken as the value of the C<query> parameter.  All arguments are passed on to the C<manager_class>'s C<manager_method> method, augmented by the key formed from attributes of the current object.  Query parameters are added to the existing contents of the C<query> parameter.  Other parameters replace existing parameters if the existing values are simple scalars, or augment existing parameters if the existing values are references to hashes or arrays.
+
+The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, the behavior is determined by the L<metadata object|Rose::DB::Object/meta>'s L<error_mode|Rose::DB::Object::Metadata/error_mode>.  If the mode is C<return>, that false value (in scalar context) or an empty list (in list context) is returned.
+
+If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
+
 =item B<get_set>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object.
@@ -5286,7 +5764,7 @@ The list of object is assigned to C<hash_key>.  Note that these objects are B<no
 
 If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
-The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, that false value (in scalar context) or an empty list (in list context) is returned.
+The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, the behavior is determined by the L<metadata object|Rose::DB::Object/meta>'s L<error_mode|Rose::DB::Object::Metadata/error_mode>.  If the mode is C<return>, that false value (in scalar context) or an empty list (in list context) is returned.
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
@@ -5318,7 +5796,7 @@ The parent object must have been L<load|Rose::DB::Object/load>ed or L<save|Rose:
 
 If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
-The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, that false value (in scalar context) or an empty list (in list context) is returned.
+The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, the behavior is determined by the L<metadata object|Rose::DB::Object/meta>'s L<error_mode|Rose::DB::Object::Metadata/error_mode>.  If the mode is C<return>, that false value (in scalar context) or an empty list (in list context) is returned.
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
@@ -5348,7 +5826,7 @@ When adding each object when the parent is L<save|Rose::DB::Object/save>d, if th
 
 If called with no arguments and the hash key used to store the list of objects is defined, the list (in list context) or a reference to that array (in scalar context) of objects is returned.  Otherwise, the objects are fetched.
 
-The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, that false value (in scalar context) or an empty list (in list context) is returned.
+The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, the behavior is determined by the L<metadata object|Rose::DB::Object/meta>'s L<error_mode|Rose::DB::Object::Metadata/error_mode>.  If the mode is C<return>, that false value (in scalar context) or an empty list (in list context) is returned.
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
@@ -5430,6 +5908,19 @@ Example setup:
     (
       objects_by_key =>
       [
+        find_bugs => 
+        {
+          interface => 'find',
+          class     => 'Bug',
+          key_columns =>
+          {
+            # Map Program column names to Bug column names
+            id      => 'program_id',
+            version => 'version',
+          },
+          manager_args => { sort_by => 'date_submitted DESC' },
+        },
+
         bugs => 
         {
           interface => '...', # get_set, get_set_now, get_set_on_save
@@ -5461,6 +5952,61 @@ Example setup:
     );
     ...
 
+Example - find interface:
+
+    # Read from the programs table
+    $prog = Program->new(id => 5)->load;
+
+    # Read from the bugs table
+    $bugs = $prog->find_bugs;
+
+    # Calls (essentially):
+    #
+    # Rose::DB::Object::Manager->get_objects(
+    #   db           => $prog->db, # share_db defaults to true
+    #   object_class => 'Bug',
+    #   query =>
+    #   [
+    #     program_id => 5,     # value of $prog->id
+    #     version    => '3.0', # value of $prog->version
+    #   ],
+    #   sort_by => 'date_submitted DESC');
+
+    # Augment query
+    $bugs = $prog->find_bugs({ state => 'open' });
+
+    # Calls (essentially):
+    #
+    # Rose::DB::Object::Manager->get_objects(
+    #   db           => $prog->db, # share_db defaults to true
+    #   object_class => 'Bug',
+    #   query =>
+    #   [
+    #     program_id => 5,     # value of $prog->id
+    #     version    => '3.0', # value of $prog->version
+    #     state      => 'open',
+    #   ],
+    #   sort_by => 'date_submitted DESC');
+    ...
+
+    # Augment query and replace sort_by value
+    $bugs = $prog->find_bugs(query   => [ state => 'defunct' ], 
+                             sort_by => 'name');
+
+    # Calls (essentially):
+    #
+    # Rose::DB::Object::Manager->get_objects(
+    #   db           => $prog->db, # share_db defaults to true
+    #   object_class => 'Bug',
+    #   query =>
+    #   [
+    #     program_id => 5,     # value of $prog->id
+    #     version    => '3.0', # value of $prog->version
+    #     state      => 'defunct',
+    #   ],
+    #   sort_by => 'name');
+    ...
+
 Example - get_set interface:
 
     # Read from the programs table
@@ -5475,11 +6021,11 @@ Example - get_set interface:
     #   db           => $prog->db, # share_db defaults to true
     #   object_class => 'Bug',
     #   query =>
-    #   {
+    #   [
     #     program_id => 5,     # value of $prog->id
     #     version    => '3.0', # value of $prog->version
     #     state      => { ne => 'closed' },
-    #   },
+    #   ],
     #   sort_by => 'date_submitted DESC');
     ...
     $prog->version($new_version); # Does not hit the db

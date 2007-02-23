@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.759';
+our $VERSION = '0.761';
 
 our $Debug = 0;
 
@@ -295,7 +295,28 @@ sub get_objects_sql      { shift->get_objects(@_, return_sql => 1) }
 
 sub get_objects
 {
-  my($class, %args) = @_;
+  my($class, %args);
+
+  if(ref $_[1])
+  {
+    $class = shift;
+
+    if(ref $_[0] eq 'HASH')
+    {
+      %args = (query => [ %{shift(@_)} ], @_);
+    }
+    elsif(ref $_[0] eq 'ARRAY')
+    {
+      %args = (query => shift, @_);
+    }
+    else { Carp::croak 'Invalid arguments: ', join(', ', @_) }
+
+    unshift(@_, $class); # restore original args  
+  }
+  else
+  {
+    ($class, %args) = @_;
+  }
 
   $class->error(undef);
 
@@ -380,7 +401,10 @@ sub get_objects
      $num_with_objects, %with_objects,
      @belongs_to, %seen_rel, %rel_tn);
 
-  my $use_redundant_join_conditions = delete $args{'redundant_join_conditions'};
+  # Putting join conditions inthe WHERE clause can change the meaning of
+  # the query when outer joins are used, so disable them in that case.
+  my $use_redundant_join_conditions = 
+    $outer_joins_only ? 0 : delete $args{'redundant_join_conditions'};
 
   if($with_objects)
   {
@@ -808,7 +832,7 @@ sub get_objects
           Carp::confess "$class - Missing key columns for '$name'";
         }
 
-        if($rel_type eq 'one to many' && (my $query_args = $rel->query_args))
+        if($rel->can('query_args') && (my $query_args = $rel->query_args))
         {
           # (Re)map query parameters to the correct table
           # t1 -> No change (the primary table)
@@ -938,7 +962,7 @@ sub get_objects
         }
 
         # XXX: Undocumented for now...
-        if($rel_type eq 'one to many' && (my $join_args = $rel->join_args))
+        if($rel->can('join_args') && (my $join_args = $rel->join_args))
         {
           my $cond = 
             build_where_clause(dbh         => $dbh,
@@ -2735,7 +2759,28 @@ sub save_objects   { shift->_map_action('save', @_)   }
 
 sub delete_objects
 {
-  my($class, %args) = @_;
+  my($class, %args);
+
+  if(ref $_[1])
+  {
+    $class = shift;
+
+    if(ref $_[0] eq 'HASH')
+    {
+      %args = (where => [ %{shift(@_)} ], @_);
+    }
+    elsif(ref $_[0] eq 'ARRAY')
+    {
+      %args = (where => shift, @_);
+    }
+    else { Carp::croak 'Invalid arguments: ', join(', ', @_) }
+
+    unshift(@_, $class); # restore original args  
+  }
+  else
+  {
+    ($class, %args) = @_;
+  }
 
   $class->error(undef);
 
@@ -3641,9 +3686,11 @@ Get or set a boolean value that determines whether or not this class will consid
 
 Get or set the default number of items per page, as returned by the L<get_objects|/get_objects> method when used with the C<page> and/or C<per_page> parameters.  The default value is 20.
 
-=item B<delete_objects [PARAMS]>
+=item B<delete_objects [ PARAMS | ARRAYREF | HASHREF ]>
 
 Delete rows from a table fronted by a L<Rose::DB::Object>-derived class based on PARAMS, where PARAMS are name/value pairs.  Returns the number of rows deleted, or undef if there was an error.
+
+If the first argument is a reference to a hash or array, it is converted to a reference to an array (if necessary) and taken as the value of the C<where> parameter. 
 
 Valid parameters are:
 
@@ -3655,7 +3702,7 @@ If set to a true value, this parameter indicates an explicit request to delete a
 
 =item C<db DB>
 
-A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> object method of the C<object_class>. 
+A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>. 
 
 =item C<prepare_cached BOOL>
 
@@ -3665,9 +3712,9 @@ If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used 
 
 The name of the L<Rose::DB::Object>-derived class that fronts the table from which rows are to be deleted.  This parameter is required; a fatal error will occur if it is omitted.  Defaults to the value returned by the L<object_class|/object_class> class method.
 
-=item C<where PARAMS>
+=item C<where ARRAYREF>
 
-The query parameters, passed as a reference to an array of name/value pairs.  These PARAMS are used to formulate the "where" clause of the SQL query that is used to delete the rows from the table.  Arbitrarily nested boolean logic is supported.
+The query parameters, passed as a reference to an array of name/value pairs.  These pairs are used to formulate the "where" clause of the SQL query that is used to delete the rows from the table.  Arbitrarily nested boolean logic is supported.
 
 For the complete list of valid parameter names and values, see the documentation for the C<query> parameter of the L<build_select|Rose::DB::Object::QueryBuilder/build_select> function in the L<Rose::DB::Object::QueryBuilder> module.
 
@@ -3717,9 +3764,11 @@ Return a value that indicates that an error has occurred, as described in the do
 
 In all cases, the class's C<error> attribute will also contain the error message.
 
-=item B<get_objects [PARAMS]>
+=item B<get_objects [ PARAMS | HASHREF | ARRAYREF ]>
 
 Get L<Rose::DB::Object>-derived objects based on PARAMS, where PARAMS are name/value pairs.  Returns a reference to a (possibly empty) array, or undef if there was an error.  
+
+If the first argument is a reference to a hash or array, it is converted to a reference to an array (if necessary) and taken as the value of the C<query> parameter. 
 
 Each table that participates in the query will be aliased.  Each alias is in the form "tN" where "N" is an ascending number starting with 1.  The tables are numbered as follows.
 
@@ -3785,7 +3834,7 @@ By default, passing an empty list as a value will cause a fatal error.
 
 =item C<db DB>
 
-A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> object method of the C<object_class>.
+A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>.
 
 =item C<distinct [ BOOL | ARRAYREF ]>
 
@@ -3865,9 +3914,9 @@ If this parameter is included along with either of the C<limit> or <offset> para
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will fetch the objects.  If omitted, the default value is determined by the L<dbi_prepare_cached|/dbi_prepare_cached> class method.
 
-=item C<query PARAMS>
+=item C<query ARRAYREF>
 
-The query parameters, passed as a reference to an array of name/value pairs.  These PARAMS are used to formulate the "where" clause of the SQL query that, in turn, is used to fetch the objects from the database.  Arbitrarily nested boolean logic is supported.
+The query parameters, passed as a reference to an array of name/value pairs.  These pairs are used to formulate the "where" clause of the SQL query that, in turn, is used to fetch the objects from the database.  Arbitrarily nested boolean logic is supported.
 
 For the complete list of valid parameter names and values, see the documentation for the C<query> parameter of the L<build_select|Rose::DB::Object::QueryBuilder/build_select> function in the L<Rose::DB::Object::QueryBuilder> module.
 
@@ -3881,11 +3930,11 @@ To select only products whose vendors are in the United States, use a query argu
 
 This assumes that the C<Product> class has a relationship or foreign key named "vendor" that points to the product's C<Vendor>, and that the C<Vendor> class has a foreign key or relationship named "region" that points to the vendor's C<Region>, and that 'vendor.region' (or any foreign key or relationship name chain that begins with 'vendor.region.') is an argument to the C<with_objects> or C<require_objects> parameters.
 
-=item C<require_objects ARGS>
+=item C<require_objects ARRAYREF>
 
-Only fetch rows from the primary table that have all of the associated sub-objects listed in ARGS, where ARGS is a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names defined for C<object_class>.  The supported relationship types are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>," "L<one to many|Rose::DB::Object::Metadata::Relationship::OneToMany>," and  "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>".
+Only fetch rows from the primary table that have all of the associated sub-objects listed in ARRAYREF, a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names defined for C<object_class>.  The supported relationship types are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>," "L<one to many|Rose::DB::Object::Metadata::Relationship::OneToMany>," and  "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>".
 
-For each foreign key or relationship listed in ARGS, another table will be added to the query via an implicit inner join.  The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.
+For each foreign key or relationship listed in ARRAYREF, another table will be added to the query via an implicit inner join.  The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.
 
 Foreign key and relationship names may be chained, with dots (".") separating each name.  For example, imagine three tables, C<products>, C<vendors>, and C<regions>, fronted by three L<Rose::DB::Object>-derived classes, C<Product>, C<Vendor>, and C<Region>, respectively.  Each C<Product> has a C<Vendor>, and each C<Vendor> has a C<Region>.
 
@@ -3897,13 +3946,13 @@ This assumes that the C<Product> class has a relationship or foreign key named "
 
 This chaining syntax can be used to traverse relationships of any kind, including "one to many" and "many to many" relationships, to an arbitrary depth.
 
-B<Warning:> there may be a geometric explosion of redundant data returned by the database if you include more than one "... to many" relationship in ARGS.  Sometimes this may still be more efficient than making additional queries to fetch these sub-objects, but that all depends on the actual data.  A warning will be emitted (via L<Carp::cluck|Carp/cluck>) if you you include more than one "... to many" relationship in ARGS.  If you're sure you know what you're doing, you can silence this warning by passing the C<multi_many_ok> parameter with a true value.
+B<Warning:> there may be a geometric explosion of redundant data returned by the database if you include more than one "... to many" relationship in ARRAYREF.  Sometimes this may still be more efficient than making additional queries to fetch these sub-objects, but that all depends on the actual data.  A warning will be emitted (via L<Carp::cluck|Carp/cluck>) if you you include more than one "... to many" relationship in ARRAYREF.  If you're sure you know what you're doing, you can silence this warning by passing the C<multi_many_ok> parameter with a true value.
 
 B<Note:> the C<require_objects> list currently cannot be used to simultaneously fetch two objects that both front the same database table, I<but are of different classes>.  One workaround is to make one class use a synonym or alias for one of the tables.  Another option is to make one table a trivial view of the other.  The objective is to get the table names to be different for each different class (even if it's just a matter of letter case, if your database is not case-sensitive when it comes to table names).
 
-=item C<select LIST>
+=item C<select [ LIST | ARRAYREF ]>
 
-Select only the columns specified in LIST, which must be a comma-separated string of column names or a reference to an array of column names.  Strings are naively split between each comma.  If you need more complex parsing, please use the array-reference argument format instead.
+Select only the columns specified in either a comma-separated string of column names or a reference to an array of column names.  Strings are naively split between each comma.  If you need more complex parsing, please use the array-reference argument format instead.
 
 Column names should be prefixed by the appropriate "tN" table alias, the table name, or the foreign key or relationship name.  The prefix should be joined to the column name with a dot (".").  Examples: C<t2.name>, C<vendors.age>.
 
@@ -3956,11 +4005,11 @@ If a method name is provided instead, then each object fetched through a mapping
 
 If the value is a reference to a hash, then the keys of the hash should be "many to many" relationship names, and the values should be the method names through which the maps records will be available for each relationship.
 
-=item C<with_objects ARGS>
+=item C<with_objects ARRAYREF>
 
-Also fetch sub-objects (if any) associated with rows in the primary table, where ARGS is a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names defined for C<object_class>.  The supported relationship types are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>," "L<one to many|Rose::DB::Object::Metadata::Relationship::OneToMany>," and  "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>".
+Also fetch sub-objects (if any) associated with rows in the primary table based on a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names defined for C<object_class>.  The supported relationship types are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>," "L<one to many|Rose::DB::Object::Metadata::Relationship::OneToMany>," and  "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>".
 
-For each foreign key or relationship listed in ARGS, another table will be added to the query via an explicit LEFT OUTER JOIN.  (Foreign keys whose columns are all NOT NULL are the exception, however.  They are always fetched via inner joins.)   The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|/SYNOPSIS> for an example.
+For each foreign key or relationship listed in ARRAYREF, another table will be added to the query via an explicit LEFT OUTER JOIN.  (Foreign keys whose columns are all NOT NULL are the exception, however.  They are always fetched via inner joins.)   The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|/SYNOPSIS> for an example.
 
 "Many to many" relationships are a special case.  They will add two tables to the query (the "map" table plus the table with the actual data), which will offset the "tN" table numbering by one extra table.
 
@@ -3974,7 +4023,7 @@ This assumes that the C<Product> class has a relationship or foreign key named "
 
 This chaining syntax can be used to traverse relationships of any kind, including "one to many" and "many to many" relationships, to an arbitrary depth.
 
-B<Warning:> there may be a geometric explosion of redundant data returned by the database if you include more than one "... to many" relationship in ARGS.  Sometimes this may still be more efficient than making additional queries to fetch these sub-objects, but that all depends on the actual data.  A warning will be emitted (via L<Carp::cluck|Carp/cluck>) if you you include more than one "... to many" relationship in ARGS.  If you're sure you know what you're doing, you can silence this warning by passing the C<multi_many_ok> parameter with a true value.
+B<Warning:> there may be a geometric explosion of redundant data returned by the database if you include more than one "... to many" relationship in ARRAYREF.  Sometimes this may still be more efficient than making additional queries to fetch these sub-objects, but that all depends on the actual data.  A warning will be emitted (via L<Carp::cluck|Carp/cluck>) if you you include more than one "... to many" relationship in ARRAYREF.  If you're sure you know what you're doing, you can silence this warning by passing the C<multi_many_ok> parameter with a true value.
 
 B<Note:> the C<with_objects> list currently cannot be used to simultaneously fetch two objects that both front the same database table, I<but are of different classes>.  One workaround is to make one class use a synonym or alias for one of the tables.  Another option is to make one table a trivial view of the other.  The objective is to get the table names to be different for each different class (even if it's just a matter of letter case, if your database is not case-sensitive when it comes to table names).
 
@@ -3996,7 +4045,7 @@ A reference to an array of arguments to be passed to L<DBI>'s L<execute|DBI/exec
 
 =item C<db DB>
 
-A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> object method of the C<object_class>.
+A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>.
 
 =item C<object_class CLASS>
 
@@ -4424,7 +4473,7 @@ If set to a true value, this parameter indicates an explicit request to update a
 
 =item C<db DB>
 
-A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> object method of the C<object_class>.
+A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>.
 
 =item C<object_class CLASS>
 

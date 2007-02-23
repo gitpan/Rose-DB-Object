@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.757';
+our $VERSION = '0.761';
 
 our $Debug = 0;
 
@@ -65,6 +65,7 @@ use Rose::Object::MakeMethods::Generic
     default_update_changes_only => { default => 0 },
     default_insert_changes_only => { default => 0 },
     default_cascade_save        => { default => 0 },
+    default_smart_modification  => { default => 0 },
   ],
 
   array =>
@@ -158,6 +159,9 @@ __PACKAGE__->column_type_classes
   'decimal'   => 'Rose::DB::Object::Metadata::Column::Numeric',
   'float'     => 'Rose::DB::Object::Metadata::Column::Float',
 
+  'float8'           => 'Rose::DB::Object::Metadata::Column::DoublePrecision',
+  'double precision' => 'Rose::DB::Object::Metadata::Column::DoublePrecision',
+
   'time'      => 'Rose::DB::Object::Metadata::Column::Time',
   'interval'  => 'Rose::DB::Object::Metadata::Column::Interval',
 
@@ -177,6 +181,8 @@ __PACKAGE__->column_type_classes
 
   'datetime year to second' => 'Rose::DB::Object::Metadata::Column::DatetimeYearToSecond',
   'datetime year to minute' => 'Rose::DB::Object::Metadata::Column::DatetimeYearToMinute',
+
+  'datetime year to month' => 'Rose::DB::Object::Metadata::Column::DatetimeYearToMonth',
 
   'epoch'       => 'Rose::DB::Object::Metadata::Column::Epoch',
   'epoch hires' => 'Rose::DB::Object::Metadata::Column::Epoch::HiRes',
@@ -1028,6 +1034,15 @@ sub add_columns
     }
   }
 
+  # Handle as-yet undocumented smart modification defaults
+  foreach my $column (@columns)
+  {
+    if($column->can('smart_modification') && !defined $column->{'smart_modification'})
+    {
+      $column->smart_modification($self->default_smart_modification);
+    }
+  }
+
   push(@{$self->{'columns_ordered'}}, @columns);
 }
 
@@ -1754,7 +1769,14 @@ sub make_foreign_key_methods
         eval "require $fclass";
         $Debug && print STDERR "FK REQUIRES $fclass - $@\n";
       }
-      # Ignore errors to allow deferment system to work
+
+      if($@)
+      {
+        if($@ =~ /^syntax error /)
+        {
+          Carp::confess "Could not load $fclass - $@";
+        }
+      }
     }
 
     # We may need to defer the creation of some foreign key methods until
@@ -2061,7 +2083,14 @@ sub make_relationship_methods
           $Debug && print STDERR "REL ",  $relationship->name, 
                                  " REQUIRES $fclass - $@\n";
         }
-        # Ignore errors to allow deferment system to work
+
+        if($@)
+        {
+          if($@ =~ /^syntax error /)
+          {
+            Carp::confess "Could not load $fclass - $@";
+          }
+        }
       }
 
       if($relationship->can('map_class'))
@@ -2074,7 +2103,11 @@ sub make_relationship_methods
           $Debug && print STDERR "REL ",  $relationship->name, 
                                  " REQUIRES $map_class - $@\n";
         }
-        # Ignore errors to allow deferment system to work
+
+        if($@ && $@ =~ /^syntax error /)
+        {
+          Carp::confess "Could not load $map_class - $@";
+        }
       }
     }
 
@@ -4333,6 +4366,10 @@ The default mapping of type names to class names is:
   numeric   => Rose::DB::Object::Metadata::Column::Numeric
   decimal   => Rose::DB::Object::Metadata::Column::Numeric
   float     => Rose::DB::Object::Metadata::Column::Float
+  float8    => Rose::DB::Object::Metadata::Column::DoublePrecision
+
+  'double precision' =>
+    Rose::DB::Object::Metadata::Column::DoublePrecision
 
   time      => Rose::DB::Object::Metadata::Column::Time
   interval  => Rose::DB::Object::Metadata::Column::Interval
@@ -4370,6 +4407,9 @@ The default mapping of type names to class names is:
 
   'datetime year to minute' =>
     Rose::DB::Object::Metadata::Column::DatetimeYearToMinute
+
+  'datetime year to month' =>
+    Rose::DB::Object::Metadata::Column::DatetimeYearToMonth
 
   'epoch'       => Rose::DB::Object::Metadata::Column::Epoch
   'epoch hires' => Rose::DB::Object::Metadata::Column::Epoch::HiRes

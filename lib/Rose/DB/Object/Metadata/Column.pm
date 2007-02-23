@@ -22,7 +22,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 our $Triggers_Key      = 'triggers';
 our $Trigger_Index_Key = 'trigger_index';
 
-our $VERSION = '0.757';
+our $VERSION = '0.761';
 
 use overload
 (
@@ -32,7 +32,7 @@ use overload
 
 __PACKAGE__->add_default_auto_method_types('get_set');
 
-__PACKAGE__->add_common_method_maker_argument_names(qw(column default type hash_key));
+__PACKAGE__->add_common_method_maker_argument_names(qw(column default type hash_key smart_modification));
 
 use Rose::Class::MakeMethods::Generic
 (
@@ -57,20 +57,21 @@ __PACKAGE__->event_method_types
 Rose::Object::MakeMethods::Generic->make_methods
 (
   { preserve_existing => 1 },
-  scalar => 
-  [
-    'alias',
-    'ordinal_position',
-    'parse_error',
-    __PACKAGE__->common_method_maker_argument_names,
-  ],
-
   boolean => 
   [
     'manager_uses_method',
     'is_primary_key_member',
     'not_null',
     'triggers_disabled',
+    'smart_modification',
+  ],
+
+  scalar => 
+  [
+    'alias',
+    'ordinal_position',
+    'parse_error',
+    __PACKAGE__->common_method_maker_argument_names,
   ],
 );
 
@@ -364,6 +365,7 @@ sub perl_column_definition_attributes
 
     my $val = $self->can($attr) ? $self->$attr() : next ATTR;
 
+    no warnings 'uninitialized';
     if(($attr eq 'check_in' || $attr eq 'values') &&
        ref $val && ref $val eq 'ARRAY')
     {
@@ -377,6 +379,12 @@ sub perl_column_definition_attributes
         $val = perl_arrayref(array => $val, inline => 1);
         $attr = 'values';
       }
+    }
+    elsif($attr eq 'smart_modification' && 
+          (($self->smart_modification == ref($self)->new->smart_modification) ||
+           ($self->parent && $self->smart_modification == $self->parent->default_smart_modification)))
+    {
+      next ATTR;
     }
     elsif(!defined $val || ref $val || ($attr eq 'not_null' && !$self->not_null))
     {

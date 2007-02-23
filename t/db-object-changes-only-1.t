@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 483;
+use Test::More tests => 484;
 
 BEGIN 
 {
@@ -186,7 +186,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
     }
     else
     {
-      skip("chkpass tests", 5);
+      skip("chkpass tests", 6);
     }
   }
 
@@ -869,7 +869,7 @@ SKIP: foreach my $db_type ('informix')
 
 SKIP: foreach my $db_type ('sqlite')
 {
-  skip("SQLite tests", 79)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 80)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
@@ -1074,6 +1074,14 @@ SKIP: foreach my $db_type ('sqlite')
   is($o->num, 123, "insert changes only 1 - $db_type");
   is($o->flag, 7, "insert changes only 2 - $db_type");
 
+  $o->num(123);
+
+  QUIET:
+  {
+    local $Rose::DB::Object::Debug = 1;
+    ok($o->save(changes_only => 1), "noop update smart 1 - $db_type");
+  }
+
   $o = MySQLiteObject4->new(id => 1)->save;
   $o = MySQLiteObject4->new(id => 1)->load;
   ok($o->save, "noop update pk only 1 - $db_type");
@@ -1118,15 +1126,7 @@ BEGIN
       $dbh->do('CREATE SCHEMA rose_db_object_private');
     }
 
-    eval
-    {
-      local $dbh->{'RaiseError'} = 1;
-      local $dbh->{'PrintError'} = 0;
-      $dbh->do('CREATE TABLE rose_db_object_chkpass_test (pass CHKPASS)');
-      $dbh->do('DROP TABLE rose_db_object_chkpass_test');
-    };
-
-    our $PG_HAS_CHKPASS = 1  unless($@);
+    our $PG_HAS_CHKPASS = pg_has_chkpass();
 
     $dbh->do(<<"EOF");
 CREATE TABLE rose_db_object_test
@@ -1830,7 +1830,7 @@ EOF
       columns =>
       [
         id   => { type => 'serial', primary_key => 1 },
-        num  => { type => 'int' }, # default is 123
+        num  => { type => 'int', smart_modification => 1 }, # default is 123
         flag => { type => 'int', default => 2 },
       ],
       default_insert_changes_only => 1,
