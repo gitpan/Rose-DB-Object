@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1530;
+use Test::More tests => 1551;
 
 BEGIN 
 {
@@ -14,13 +14,20 @@ BEGIN
 our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX, $HAVE_SQLITE);
 
 
+use FindBin qw($Bin);
+
+eval { require "$Bin/map-record-name-conflict.pl" };
+
+ok($@ =~ /^\QAlready made a map record method named map_record in class JCS::B on behalf of the relationship 'bs' in class JCS::A.  Please choose another name for the map record method for the relationship named 'bs' in JCS::C.\E/,
+   'many-to-many map record name conflict');
+
 #
 # Postgres
 #
 
 SKIP: foreach my $db_type ('pg')
 {
-  skip("Postgres tests", 381)  unless($HAVE_PG);
+  skip("Postgres tests", 386)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -269,6 +276,34 @@ SKIP: foreach my $db_type ('pg')
      $colors->[0]->name eq 'blue' && $colors->[1]->name eq 'red',
      "colors 1 - $db_type");
 
+  $colors = $o->find_colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 2 && 
+     $colors->[0]->name eq 'blue' && $colors->[1]->name eq 'red',
+     "find colors 1 - $db_type");
+
+  $colors = $o->find_colors([ name => { like => 'r%' } ]);
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'red',
+     "find colors 2 - $db_type");
+
+  $colors = $o->find_colors(query => [ name => { like => 'r%' } ], cache => 1);
+
+  my $colors2 = $o->find_colors(from_cache => 1);
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'red' &&
+     ref $colors2 eq 'ARRAY' && @$colors2 == 1 && $colors2->[0]->name eq 'red' &&
+     $colors->[0] eq $colors2->[0],
+     "find colors from cache - $db_type");
+
+  my $count = $o->colors_count;
+
+  is($count, 2, "count colors 1 - $db_type");
+
+  $count = $o->colors_count([ name => { like => 'r%' } ]);
+
+  is($count, 1, "count colors 2 - $db_type");
+
   my @colors = $o->colors;
 
   ok(@colors == 2 && $colors[0]->name eq 'blue' && $colors[1]->name eq 'red',
@@ -299,7 +334,7 @@ SKIP: foreach my $db_type ('pg')
 
   ok($@, "delete cascade null 1 - $db_type");
 
-  my $count = 
+  $count = 
     Rose::DB::Object::Manager->get_objects_count(
       db => $o->db,
       object_class => 'MyPgOtherObject');
@@ -1486,7 +1521,7 @@ SKIP: foreach my $db_type ('pg')
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 348)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 353)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -1638,6 +1673,34 @@ SKIP: foreach my $db_type ('mysql')
      $colors->[0]->name eq 'blue' && $colors->[1]->name eq 'red',
      "colors 1 - $db_type");
 
+  $colors = $o->find_colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 2 && 
+     $colors->[0]->name eq 'blue' && $colors->[1]->name eq 'red',
+     "find colors 1 - $db_type");
+
+  $colors = $o->find_colors([ name => { like => 'r%' } ]);
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'red',
+     "find colors 2 - $db_type");
+
+  $colors = $o->find_colors(query => [ name => { like => 'r%' } ], cache => 1);
+
+  my $colors2 = $o->find_colors(from_cache => 1);
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'red' &&
+     ref $colors2 eq 'ARRAY' && @$colors2 == 1 && $colors2->[0]->name eq 'red' &&
+     $colors->[0] eq $colors2->[0],
+     "find colors from cache - $db_type");
+
+  my $count = $o->colors_count;
+
+  is($count, 2, "count colors 1 - $db_type");
+
+  $count = $o->colors_count([ name => { like => 'r%' } ]);
+
+  is($count, 1, "count colors 2 - $db_type");
+
   my @colors = $o->colors;
 
   ok(@colors == 2 && $colors[0]->name eq 'blue' && $colors[1]->name eq 'red',
@@ -1682,7 +1745,7 @@ SKIP: foreach my $db_type ('mysql')
   # tries preserve referential integrity.  Hey, you never know...
   ok($ret || $@, "delete cascade null 1 - $db_type");
 
-  my $count = 
+  $count = 
     Rose::DB::Object::Manager->get_objects_count(
       db => $o->db,
       object_class => 'MyMySQLOtherObject2');
@@ -2833,7 +2896,7 @@ SKIP: foreach my $db_type ('mysql')
 
 SKIP: foreach my $db_type ('informix')
 {
-  skip("Informix tests", 371)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 376)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
 
@@ -3046,6 +3109,34 @@ SKIP: foreach my $db_type ('informix')
      $colors->[0]->name eq 'blue' && $colors->[1]->name eq 'red',
      "colors 1 - $db_type");
 
+  $colors = $o->find_colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 2 && 
+     $colors->[0]->name eq 'blue' && $colors->[1]->name eq 'red',
+     "find colors 1 - $db_type");
+
+  $colors = $o->find_colors([ name => { like => 'r%' } ]);
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'red',
+     "find colors 2 - $db_type");
+
+  $colors = $o->find_colors(query => [ name => { like => 'r%' } ], cache => 1);
+
+  my $colors2 = $o->find_colors(from_cache => 1);
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'red' &&
+     ref $colors2 eq 'ARRAY' && @$colors2 == 1 && $colors2->[0]->name eq 'red' &&
+     $colors->[0] eq $colors2->[0],
+     "find colors from cache - $db_type");
+
+  my $count = $o->colors_count;
+
+  is($count, 2, "count colors 1 - $db_type");
+
+  $count = $o->colors_count([ name => { like => 'r%' } ]);
+
+  is($count, 1, "count colors 2 - $db_type");
+
   my @colors = $o->colors;
 
   ok(@colors == 2 && $colors[0]->name eq 'blue' && $colors[1]->name eq 'red',
@@ -3076,7 +3167,7 @@ SKIP: foreach my $db_type ('informix')
 
   ok($@, "delete cascade null 1 - $db_type");
 
-  my $count = 
+  $count = 
     Rose::DB::Object::Manager->get_objects_count(
       db => $o->db,
       object_class => 'MyInformixOtherObject');
@@ -4247,7 +4338,7 @@ SKIP: foreach my $db_type ('informix')
 
 SKIP: foreach my $db_type ('sqlite')
 {
-  skip("SQLite tests", 428)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 433)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
@@ -4435,7 +4526,7 @@ SKIP: foreach my $db_type ('sqlite')
   $x->save;
 
   # End filtered collection tests
-  
+
   ok(!$o->has_loaded_related('other2_objs'), "has_loaded_related() 3 - $db_type");
 
   my $o2s = $o->other2_objs;
@@ -4478,6 +4569,34 @@ SKIP: foreach my $db_type ('sqlite')
      $colors->[0]->name eq 'blue' && $colors->[1]->name eq 'red',
      "colors 1 - $db_type");
 
+  $colors = $o->find_colors;
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 2 && 
+     $colors->[0]->name eq 'blue' && $colors->[1]->name eq 'red',
+     "find colors 1 - $db_type");
+
+  $colors = $o->find_colors([ name => { like => 'r%' } ]);
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'red',
+     "find colors 2 - $db_type");
+
+  $colors = $o->find_colors(query => [ name => { like => 'r%' } ], cache => 1);
+
+  my $colors2 = $o->find_colors(from_cache => 1);
+
+  ok(ref $colors eq 'ARRAY' && @$colors == 1 && $colors->[0]->name eq 'red' &&
+     ref $colors2 eq 'ARRAY' && @$colors2 == 1 && $colors2->[0]->name eq 'red' &&
+     $colors->[0] eq $colors2->[0],
+     "find colors from cache - $db_type");
+
+  my $count = $o->colors_count;
+
+  is($count, 2, "count colors 1 - $db_type");
+
+  $count = $o->colors_count([ name => { like => 'r%' } ]);
+
+  is($count, 1, "count colors 2 - $db_type");
+
   my @colors = $o->colors;
 
   ok(@colors == 2 && $colors[0]->name eq 'blue' && $colors[1]->name eq 'red',
@@ -4508,7 +4627,7 @@ SKIP: foreach my $db_type ('sqlite')
 
   ok($@, "delete cascade null 1 - $db_type");
 
-  my $count = 
+  $count = 
     Rose::DB::Object::Manager->get_objects_count(
       db => $o->db,
       object_class => 'MySQLiteOtherObject');
@@ -4905,7 +5024,7 @@ SKIP: foreach my $db_type ('sqlite')
 
   @o2s = $o->other2_objs_now;
   ok(@o2s == 3, "set one to many now 3 - $db_type");
-  
+
   ok($o2s[0]->id == 2 && $o2s[0]->pid == 111, "set one to many now 4 - $db_type");
   ok($o2s[1]->id == 3 && $o2s[1]->pid == 111, "set one to many now 5 - $db_type");
   ok($o2s[2]->id == 1 && $o2s[2]->pid == 111, "set one to many now 6 - $db_type");
@@ -5751,7 +5870,7 @@ SKIP: foreach my $db_type ('sqlite')
   # End "many to many" tests
 
   # Begin with_map_records tests
-  
+
   test_memory_cycle_ok($o, "with_map_records memory cycle 1 - $db_type");
 # print find_cycle($o);
 # print "######################\n";
@@ -6151,6 +6270,8 @@ EOF
           get_set_on_save => 'colors_on_save',
           add_now         => undef,
           add_on_save     => 'add_colors_on_save',
+          find            => undef,
+          count           => undef,
         },
       },
     );
@@ -6456,6 +6577,7 @@ EOF
           fk3 => 'k3',
         },
         soft => 1,
+        with_column_triggers => 1,
       },
 
       other2_objs =>
@@ -6521,6 +6643,8 @@ EOF
           get_set_on_save => 'colors_on_save',
           add_now         => undef,
           add_on_save     => 'add_colors_on_save',
+          find            => undef,
+          count           => undef,
         },
       },
     );
@@ -6562,6 +6686,7 @@ EOF
         class => 'MyMySQLObject',
         column_map => { pid => 'id' },
         required => 1,
+        with_column_triggers => 1,
       },
     );
 
@@ -6827,6 +6952,7 @@ EOF
           fk3 => 'k3',
         },
         soft => 1,
+        with_column_triggers => 1,
       },
 
       other2_objs =>
@@ -6873,6 +6999,8 @@ EOF
           get_set_on_save => 'colors_on_save',
           add_now         => undef,
           add_on_save     => 'add_colors_on_save',
+          find            => undef,
+          count           => undef,
         },
       },
     );
@@ -6914,6 +7042,7 @@ EOF
         class => 'MyInformixObject',
         column_map => { pid => 'id' },
         required => 1,
+        with_column_triggers => 1,
       },
     );
 
@@ -7172,6 +7301,7 @@ EOF
           fk3 => 'k3',
         },
         referential_integrity => 0,
+        with_column_triggers => 1,
       },
 
       other2_objs =>
@@ -7206,6 +7336,7 @@ EOF
         class => 'MySQLiteOtherObject2',
         column_map => { id => 'pid' },
         query_args => [ name => 'one' ],
+        with_column_triggers => 1,
       },
 
       # Hrm.  Experimental...
@@ -7236,6 +7367,8 @@ EOF
           get_set_on_save => 'colors_on_save',
           add_now         => undef,
           add_on_save     => 'add_colors_on_save',
+          find            => undef,
+          count           => undef,
         },
       },
 
@@ -7289,6 +7422,7 @@ EOF
         class => 'MySQLiteObject',
         column_map => { pid => 'id' },
         required => 1,
+        with_column_triggers => 1,
       },
     );
 

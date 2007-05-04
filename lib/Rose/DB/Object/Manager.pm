@@ -5,6 +5,7 @@ use strict;
 use Carp();
 
 use List::Util qw(first);
+use List::MoreUtils qw(uniq);
 use Scalar::Util qw(weaken refaddr);
 
 use Rose::DB::Object::Iterator;
@@ -15,7 +16,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.761';
+our $VERSION = '0.764';
 
 our $Debug = 0;
 
@@ -34,6 +35,7 @@ use Rose::Class::MakeMethods::Generic
     '_base_name',
     'default_objects_per_page',
     'default_limit_with_subselect',
+    'default_nested_joins',
     'dbi_prepare_cached',
   ],
 );
@@ -41,6 +43,7 @@ use Rose::Class::MakeMethods::Generic
 __PACKAGE__->error_mode('fatal');
 __PACKAGE__->default_objects_per_page(20);
 __PACKAGE__->default_limit_with_subselect(1);
+__PACKAGE__->default_nested_joins(1);
 __PACKAGE__->dbi_prepare_cached(0);
 
 sub handle_error
@@ -371,7 +374,10 @@ sub get_objects
     $dbh_retained = 1;
   }
 
-  my $use_explicit_joins =  (defined $args{'explicit_joins'}) ? 
+  my $nested_joins = $args{'nested_joins'} = $db->supports_nested_joins ?
+    (defined $args{'nested_joins'} ? $args{'nested_joins'} : $class->default_nested_joins) : 0;
+
+  my $use_explicit_joins = (defined $args{'explicit_joins'}) ? 
     $args{'explicit_joins'} : !$db->likes_implicit_joins;
 
   my $with_map_records;
@@ -415,7 +421,7 @@ sub get_objects
 
     if(ref $with_objects) # copy argument (shallow copy)
     {
-      $with_objects = [ @$with_objects ];
+      $with_objects = [ uniq @$with_objects ];
     }
     else
     {
@@ -462,7 +468,7 @@ sub get_objects
   {
     if(ref $require_objects) # copy argument (shallow copy)
     {
-      $require_objects = [ @$require_objects ];
+      $require_objects = [ uniq @$require_objects ];
     }
     else
     {
@@ -581,7 +587,7 @@ sub get_objects
 
   my @table_names = ($meta->table);
   my @rel_names   = ($meta->table);
-  
+
   my(@joins, @subobject_methods, @mapped_object_methods, $clauses);
 
   my $handle_dups = 0;
@@ -903,7 +909,8 @@ sub get_objects
           # Use outer joins to handle duplicate or optional information.
           # Foreign keys that have all non-null columns are never outer-
           # joined, however.
-          if(!($rel_type eq 'foreign key' && $rel->is_required && $rel->referential_integrity) &&
+          if(!($rel_type eq 'foreign key' && $rel->is_required &&
+               $rel->referential_integrity && !$nested_joins) &&
              ($outer_joins_only || $with_objects{$arg}))
           {
             # Aliased table names
@@ -960,6 +967,8 @@ sub get_objects
             }
           }
         }
+
+        $joins[$i]{'parent_tn'} = $parent_tn  if($joins[$i] && $joins[$i]{'type'} eq 'JOIN');
 
         # XXX: Undocumented for now...
         if($rel->can('join_args') && (my $join_args = $rel->join_args))
@@ -1162,6 +1171,8 @@ sub get_objects
           }
         }
 
+        $joins[$i]{'parent_tn'} = $parent_tn  if($joins[$i] && $joins[$i]{'type'} eq 'JOIN');
+
         #
         # Now add table, columns, and clauses for the foreign object
         #
@@ -1266,6 +1277,8 @@ sub get_objects
             }
           }
         }
+
+        $joins[$i]{'parent_tn'} = $i - 1  if($joins[$i] && $joins[$i]{'type'} eq 'JOIN');
 
         # Add sub-object sort conditions
         if($rel->can('manager_args') && (my $mgr_args = $rel->manager_args))
@@ -1497,7 +1510,7 @@ sub get_objects
         $sth->execute(@$bind);
       }
 
-      $count = $sth->fetchrow_array;
+      ($count) = $sth->fetchrow_array;
       $sth->finish;
     };
 
@@ -2330,7 +2343,7 @@ sub get_objects
         $sth = undef;
         $db = undef;
       });
-      
+
       return $iterator;
     }
 
@@ -3682,6 +3695,10 @@ Get or set a boolean value that indicates whether or not this class will use L<D
 
 Get or set a boolean value that determines whether or not this class will consider using a sub-query to express C<limit>/C<offset> constraints when fetching sub-objects related through one of the "...-to-many" relationship types.  Not all databases support this syntax, and not all queries can use it even in supported databases.  If this parameter is true, the feature will be used when possible, by default.  The default value is true.
 
+=item B<default_nested_joins [BOOL]>
+
+Get or set a boolean value that determines whether or not this class will consider using nested JOIN syntax when fetching related objects.  Not all databases support this syntax, and not all queries can use it even in supported databases.  If this parameter is true, the feature will be used when possible, by default.  The default value is true.
+
 =item B<default_objects_per_page [NUM]>
 
 Get or set the default number of items per page, as returned by the L<get_objects|/get_objects> method when used with the C<page> and/or C<per_page> parameters.  The default value is 20.
@@ -3869,6 +3886,12 @@ Return a maximum of NUM objects.
 This parameter controls whether or not this method will consider using a sub-query to express  C<limit>/C<offset> constraints when fetching sub-objects related through one of the "...-to-many" relationship types.  Not all databases support this syntax, and not all queries can use it even in supported databases.  If this parameter is true, the feature will be used when possible.
 
 The default value is determined by the L<default_limit_with_subselect|/default_limit_with_subselect> class method.
+
+=item C<nested_joins BOOL>
+
+This parameter controls whether or not this method will consider using nested JOIN syntax when fetching related objects.  Not all databases support this syntax, and not all queries will use it even in supported databases.  If this parameter is true, the feature will be used when possible.
+
+The default value is determined by the L<default_nested_joins|/default_nested_joins> class method.
 
 =item C<multi_many_ok BOOL>
 

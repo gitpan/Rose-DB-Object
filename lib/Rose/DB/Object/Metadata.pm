@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.761';
+our $VERSION = '0.764';
 
 our $Debug = 0;
 
@@ -113,6 +113,7 @@ __PACKAGE__->auto_helper_classes
   'pg'       => 'Rose::DB::Object::Metadata::Auto::Pg',
   'mysql'    => 'Rose::DB::Object::Metadata::Auto::MySQL',
   'sqlite'   => 'Rose::DB::Object::Metadata::Auto::SQLite',
+  'oracle'   => 'Rose::DB::Object::Metadata::Auto::Oracle',
   'generic'  => 'Rose::DB::Object::Metadata::Auto::Generic',
 );
 
@@ -401,6 +402,15 @@ sub setup
       }
 
       $auto_init = 1;
+      next PAIR;
+    }
+    elsif($method eq 'helpers')
+    {
+      require Rose::DB::Object::Helpers;
+
+      Rose::DB::Object::Helpers->import(
+        '--target-class' => $self->class, (ref $args eq 'ARRAY' ? @$args : $args));
+
       next PAIR;
     }
 
@@ -1044,6 +1054,8 @@ sub add_columns
   }
 
   push(@{$self->{'columns_ordered'}}, @columns);
+
+  return wantarray ? @columns : \@columns;
 }
 
 sub add_column { shift->add_columns(@_) }
@@ -1684,7 +1696,14 @@ sub make_column_methods
 
     $column->make_methods(%args);
 
+    # Primary key columns cannot be aliased
+    if($column->is_primary_key_member && $column->alias && $column->alias ne $column->name)
+    {
+      Carp::croak "Primary key columns cannot be aliased (the culprit: '$name')";
+    }
+
     # Allow primary keys to be aliased
+    # XXX: Disabled because the Manager is not happy with this.
     #if($method ne $name)
     #{
     #  # Primary key columns can be aliased, but we make a column-named 
@@ -1745,6 +1764,8 @@ sub make_foreign_key_methods
 
   foreach my $foreign_key ($self->foreign_keys)
   {
+    #next  unless($foreign_key->is_ready_to_make_methods);
+
     foreach my $type ($foreign_key->auto_method_types)
     {
       my $method = 
@@ -1772,7 +1793,8 @@ sub make_foreign_key_methods
 
       if($@)
       {
-        if($@ =~ /^syntax error /)
+        # XXX: Need to distinguish recoverable errors from unrecoverable errors
+        if($@ !~ /\.pm in \@INC/ && !UNIVERSAL::isa($@, 'Rose::DB::Object::Exception::ClassNotReady'))
         {
           Carp::confess "Could not load $fclass - $@";
         }
@@ -1886,7 +1908,7 @@ sub retry_deferred_tasks
     }
   }
 
-  if(@Deferred_Tasks != @tasks)
+  if(join(',', sort @Deferred_Tasks) ne join(',', sort @tasks))
   {
     @Deferred_Tasks = @tasks;
   }
@@ -1998,7 +2020,7 @@ sub retry_deferred_foreign_keys
     }
   }
 
-  if(@Deferred_Foreign_Keys != @foreign_keys)
+  if(join(',', sort @Deferred_Foreign_Keys) ne join(',', sort @foreign_keys))
   {
     @Deferred_Foreign_Keys = @foreign_keys;
   }
@@ -2030,6 +2052,7 @@ sub make_relationship_methods
   REL: foreach my $relationship ($self->relationships)
   {
     next  if($args{'name'} && $relationship->name ne $args{'name'});
+    #next  unless($relationship->is_ready_to_make_methods);
 
     foreach my $type ($relationship->auto_method_types)
     {
@@ -2086,7 +2109,8 @@ sub make_relationship_methods
 
         if($@)
         {
-          if($@ =~ /^syntax error /)
+          # XXX: Need to distinguish recoverable errors from unrecoverable errors
+          if($@ =~ /syntax error at |requires explicit package name|not allowed while "strict|already has a relationship named|Can't modify constant item/)
           {
             Carp::confess "Could not load $fclass - $@";
           }
@@ -2239,7 +2263,7 @@ sub retry_deferred_relationships
     }
   }
 
-  if(@Deferred_Relationships != @relationships)
+  if(join(',', sort @Deferred_Relationships) ne join(',', sort @relationships))
   {
     @Deferred_Relationships = @relationships;
   }
@@ -2751,18 +2775,19 @@ sub alias_column
   Carp::croak "No such column '$name' in table ", $self->table
     unless($self->{'columns'}{$name});
 
-  Carp::croak "Pointless alias for '$name' to '$new_name' for table ", $self->table
+  Carp::cluck "Pointless alias for '$name' to '$new_name' for table ", $self->table
     unless($name ne $new_name);
 
-  # We now allow this, but create a duplicate method using the real
-  # column name anyway in make_column_methods().
-  #foreach my $column ($self->primary_key_column_names)
-  #{
-  #  if($name eq $column)
-  #  {
-  #    Carp::croak "Cannot alias primary key column '$name'";
-  #  }
-  #}
+  # XXX: We now allow this, but create a duplicate method using the real
+  # XXX: column name anyway in make_column_methods().
+  # XXX: Not really.  Disregard the above.
+  foreach my $column ($self->primary_key_column_names)
+  {
+    if($name eq $column)
+    {
+      Carp::croak "Primary key columns cannot be aliased (the culprit: '$name')";
+    }
+  }
 
   $self->_clear_column_generated_values;
 
@@ -4515,7 +4540,7 @@ This is an alias for the L<add_columns|/add_columns> method.
 
 =item B<add_columns ARGS>
 
-Add the columns specified by ARGS to the list of columns for the table.  Columns can be specified in ARGS in several ways.
+Add the columns specified by ARGS to the list of columns for the table.  Returns the list of columns added in list context, or a reference to an array of columns added in scalar context.  Columns can be specified in ARGS in several ways.
 
 If an argument is a subclass of L<Rose::DB::Object::Metadata::Column>, it is added as-is.
 
@@ -5240,7 +5265,9 @@ The argument will be passed to METHOD as-is:
 
     $meta->METHOD(ARG);
 
-There's one exception to these transformation rules.  If METHOD is "L<unique_key|/unique_key>" or "L<add_unique_key|/add_unique_key>" and the argument is a reference to an array containing only non-reference values, then the array reference itself is passed to the method.  For example, this pair:
+There are two exceptions to these transformation rules.
+
+If METHOD is "L<unique_key|/unique_key>" or "L<add_unique_key|/add_unique_key>" and the argument is a reference to an array containing only non-reference values, then the array reference itself is passed to the method.  For example, this pair:
 
     unique_key => [ 'name', 'status' ]
 
@@ -5249,6 +5276,15 @@ will result in this method call:
     $meta->unique_key([ 'name', 'status' ]);
 
 (Note that these method names are I<singular>.  This exception does I<not> apply to the I<plural> variants, "L<unique_keys|/unique_keys>" and "L<add_unique_keys|/add_unique_keys>".)
+
+If METHOD is "helpers", then the argument is dereferenced (if it's an array reference) and passed on to L<Rose::DB::Object::Helpers>.  That is, this:
+
+    helpers => [ 'load_or_save', { load_or_insert => 'find_or_create' } ],
+
+Is equivalent to having this in your L<class|/class>:
+
+    use Rose::DB::Object::Helpers 
+      'load_or_save', { load_or_insert => 'find_or_create' };
 
 Method names may appear more than once in PARAMS.  The methods are called in the order that they appear in PARAMS, with the exception of the L<initialize|/initialize> (or L<auto_initialize|/auto_initialize>) method, which is always called last.
 

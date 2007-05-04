@@ -1,3 +1,44 @@
+0.764 (05.04.2007) - John Siracusa <siracusa@mindspring.com>
+
+    * Added a "find" method type to many-to-many relationships.
+    * Added a "count" method type to ...-to-many relationships.
+    * Added support for nested joins.
+    * The setup() method now supports a "helpers" shortcut for importing
+      methods from Rose::DB::Object::Helpers.
+    * Added the dubious require_primary_key parameter and object attribute
+      to the Loader.  (Requested by Teodor Zlatanov)
+    * Added two syntaxes for literal SQL to QueryBuilder.
+    * Added the with_column_triggers attribute to foreign keys and singular
+      relationships in order to keep columns and related objects in sync.
+    * Fixed a bug that caused some optional related objects to be improperly
+      transformed into required objects.  (Reported by Ethan Rowe)
+    * Improved detection of errors when auto-loading related classes.
+    * Duplicate auto-created map record method names are now detected and 
+      reported as a fatal error.
+    * Added and documented a return value for add_columns().
+    * Added module_preamble and module_postamble features to the Loader's
+      make_modules() method.  (Patch by David Christensen)
+    * Made changes_only, cascade, and prepare_cached arguments to save()
+      also apply to *_on_save collections.
+    * Added test and prerequisite version for a Rose::DB bug that
+      prevented certain reserved words from being detected as primary
+      key columns in Postgres.  (Reported by Fred Cox)
+    * Baseline Oracle support added to the Loader.  (Patch by Teodor Zlatanov)
+    * The clone() and clone_and_reset() methods now handle missing or
+      differently named accessor/mutator methods.
+    * QueryBuilder now supports eq/ne undef for is/is not null comparisons.
+    * Foreign key columns that are also primary key columns are no longer set 
+      to undef when a foreign object is set to undef.  (Reported by Ovid)
+    * Fixed a bug that caused values not to be checked against the list
+      of valid values in SET columns.  (Reported by Adrian Howard)
+    * Fixed a bug that caused column (get/)set methods not to return the
+      correct value when an on_set trigger was applied to the column.
+      (Reported by Cory Bennett)
+    * Fixed a bug that caused enum columns to be incorrectly marked as
+      modified in some circumstances.  (Reported by Cory Bennett)
+    * Fixed a bug that caused inflate/deflate triggers to fail under some
+      circumstances.  (Patch by Cory Bennett)
+
 0.763 (02.24.2007) - John Siracusa <siracusa@mindspring.com>
 
     * Re-enabled the DBD::SQLite 1.13 work-around in the test suite, which

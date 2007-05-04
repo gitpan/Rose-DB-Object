@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.761';
+our $VERSION = '0.764';
 
 our $Debug = 0;
 
@@ -113,12 +113,17 @@ sub build_select
 
   if($query_arg)
   {
-    for(my $i = 0; $i < $#$query_arg; $i += 2)
+    for(my $i = 0; $i <= $#$query_arg; $i++)
     {
       if($query_arg->[$i] =~ /^(?:and|or)$/i)
       {
         my $query = $query_arg->[$i + 1];
-        next  unless(ref $query && @$query);
+
+        unless(ref $query && @$query)
+        {
+          $i++;
+          next;
+        }
 
         my($sql, $bind);
 
@@ -161,10 +166,40 @@ sub build_select
         {
           push(@clauses, "($sql)");
         }
+
+        $i++;
+      }
+      elsif(my $ref = ref $query_arg->[$i])
+      {
+        if($ref eq 'SCALAR')
+        {
+          push(@clauses, ${$query_arg->[$i]});
+        }
+        elsif($ref eq 'ARRAY')
+        {
+          my $list = $query_arg->[$i];
+
+          no warnings 'uninitialized';
+          unless(ref $list->[0] eq 'SCALAR')
+          {
+            Carp::croak "Invalid array reference argument: [ @$list ] - ",
+                        "Expected a reference to a scalar followed by zero or more ",
+                        "bind arguments";
+          }
+
+          push(@clauses, ${shift(@$list)});
+
+          if($do_bind)
+          {
+            push(@bind, @$list);
+            push(@$bind_params, undef); # need to offset this list with empty items
+          }
+        }
       }
       else
       {
         push(@{$query{$query_arg->[$i]}}, $query_arg->[$i + 1]);
+        $i++;
       }
     }
   }
@@ -370,8 +405,9 @@ sub build_select
           }
           elsif(!defined $val)
           {
+            no warnings 'uninitialized';
             push(@clauses, $set ? "$sql_column = NULL" : 
-                                  ("$sql_column IS " . ($not ? "$not " : '') . 'NULL'));
+                                  ("$sql_column IS " . (($not || $op eq '<>') ? "NOT " : '') . 'NULL'));
           }
           else
           {
@@ -426,6 +462,9 @@ sub build_select
 
   my $qs;
 
+  my $nested_joins = (exists $args{'nested_joins'}) ? 
+    delete $args{'nested_joins'} : ($db ? $db->supports_nested_joins : 1);
+
   if(!$where_only)
   {
     my $from_tables_sql;
@@ -441,7 +480,7 @@ sub build_select
     if($joins && @$joins)
     {
       my $i = 1;
-      my($primary_table, @normal_tables, @joined_tables);
+      my($primary_table, @normal_tables, @joined_tables, @nested);
 
       foreach my $table (@$tables)
       {
@@ -485,21 +524,70 @@ sub build_select
         Carp::croak "Missing join conditions for table '$table'"
           unless($joins->[$i]{'conditions'});
 
-        if($db)
+        if($nested_joins)
         {
-          push(@joined_tables, "  $joins->[$i]{'type'} " .
-            $db->format_table_with_alias($tables_sql->[$i - 1], "t$i", 
-                                         $joins->[$i]{'hints'}) .
-            " ON (" . join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+          if(my $parent_tn = $joins->[$i]{'parent_tn'})
+          {
+            push(@{$nested[$parent_tn]}, $i);
+          }
+          else
+          {
+            $nested[$i] = [];
+          }
         }
         else
         {
-          push(@joined_tables, 
-               "  $joins->[$i]{'type'} $tables_sql->[$i - 1] t$i ON (" .
-               join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+          if($db)
+          {
+            push(@joined_tables, "  $joins->[$i]{'type'} " .
+              $db->format_table_with_alias($tables_sql->[$i - 1], "t$i", 
+                                           $joins->[$i]{'hints'}) .
+              " ON (" . join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+          }
+          else
+          {
+            push(@joined_tables, 
+                 "  $joins->[$i]{'type'} $tables_sql->[$i - 1] t$i ON (" .
+                 join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+          }
         }
 
         $i++;
+      }
+
+      if($nested_joins)
+      {
+        my @seen;
+
+        for($i = 1; $i <= $#nested; $i++)
+        {
+          next  if($seen[$i]++);
+
+          my $children = $nested[$i];
+
+          next  unless($children);
+
+          if(@$children)
+          {
+            push(@joined_tables, _build_nested_join($joins, \@nested, $i, $tables_sql, $db, \@seen));
+          }
+          else
+          {
+            if($db)
+            {
+              push(@joined_tables, "  $joins->[$i]{'type'} " .
+                $db->format_table_with_alias($tables_sql->[$i - 1], "t$i", 
+                                             $joins->[$i]{'hints'}) .
+                " ON (" . join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+            }
+            else
+            {
+              push(@joined_tables, 
+                   "  $joins->[$i]{'type'} $tables_sql->[$i - 1] t$i ON (" .
+                   join(' AND ', @{$joins->[$i]{'conditions'}}) . ")");
+            }
+          }
+        }
       }
 
       # XXX: This sucks
@@ -716,8 +804,10 @@ sub _build_clause
                ($not ? ')' : '');
       }
     }
+
+    no warnings 'uninitialized';
     return $set ? ("$field = NULL") :
-                  ("$field IS " . ($not ? "$not " : '') . 'NULL');
+                  ("$field IS " . (($not || $op eq '<>') ? "NOT " : '') . 'NULL');
   }
 
   if($ref eq 'ARRAY')
@@ -906,6 +996,69 @@ sub _build_clause
   }
 
   Carp::croak "Don't know how to handle comparison values $vals";
+}
+
+sub _build_nested_join
+{
+  my($joins, $nested, $i, $tables_sql, $db, $seen) = @_;
+
+  $seen->[$i] = 1;
+
+  if($nested->[$i] && @{$nested->[$i]})
+  {
+    my $join_sql;
+
+    if($joins->[$i])
+    {
+      my $child_num = 0;
+
+      $join_sql = "  $joins->[$i]{'type'} (";
+
+      if($db)
+      {
+        $join_sql .=
+          $db->format_table_with_alias($tables_sql->[$i - 1], "t$i", 
+                                       $joins->[$i]{'hints'});
+      }
+      else
+      {
+        $join_sql .= "$tables_sql->[$i - 1] t$i";
+      }
+
+      foreach my $child_tn (@{$nested->[$i]})
+      {
+        $join_sql .= _build_nested_join($joins, $nested, $child_tn, $tables_sql, $db, $seen);
+      }
+
+      $join_sql .=  ") ON (" . join(' AND ', @{$joins->[$i]{'conditions'}}) . ")";
+      return $join_sql;
+    }
+    else
+    {
+      foreach my $child_tn (@{$nested->[$i]})
+      {
+        $join_sql .= _build_nested_join($joins, $nested, $child_tn, $tables_sql, $db, $seen);
+      }
+
+      return $join_sql;
+    }
+  }
+  else
+  {
+    if($db)
+    {
+      return  "  $joins->[$i]{'type'} " .
+        $db->format_table_with_alias($tables_sql->[$i - 1], "t$i", 
+                                     $joins->[$i]{'hints'}) .
+        " ON (" . join(' AND ', @{$joins->[$i]{'conditions'}}) . ")";
+    }
+    else
+    {
+      return 
+        "  $joins->[$i]{'type'} $tables_sql->[$i - 1] t$i ON (" .
+        join(' AND ', @{$joins->[$i]{'conditions'}}) . ")";
+    }
+  }
 }
 
 sub _format_value
@@ -1142,7 +1295,7 @@ If true, the SQL returned will have slightly nicer formatting.
 
 =item B<query PARAMS>
 
-The query parameters, passed as a reference to an array of name/value pairs.  PARAMS may include an arbitrary list of selection parameters used to modify the "WHERE" clause of the SQL select statement.  Any query parameter that is not in one of the forms described below will cause a fatal error.
+The query parameters, passed as a reference to an array of name/value pairs, scalar references, or array references.  PARAMS may include an arbitrary list of selection parameters used to modify the "WHERE" clause of the SQL select statement.  Any query parameter that is not in one of the forms described below will cause a fatal error.
 
 Valid selection parameters are described below, along with the SQL clause they add to the select statement.
 
@@ -1154,8 +1307,13 @@ Simple equality:
     'NAME'  => [ "a", "b" ] # COLUMN IN ('a', 'b')
     '!NAME' => [ "a", "b" ] # COLUMN NOT(IN ('a', 'b'))
 
-    'NAME'  => undef        # COLUMN IS NULL
-    '!NAME' => undef        # COLUMN IS NOT NULL
+Is/is not null:
+
+    'NAME'  => undef            # COLUMN IS NULL
+    '!NAME' => undef            # COLUMN IS NOT NULL
+
+    'NAME'  => { eq => undef }  # COLUMN IS NULL
+    'NAME'  => { ne => undef }  # COLUMN IS NOT NULL
 
 Comparisons:
 
@@ -1278,6 +1436,14 @@ The same NAME string may be repeated multiple times.  (This is the primary reaso
     ]
 
 The string "NAME" can take many forms, each of which eventually resolves to a database column (COLUMN in the examples above).
+
+Literal SQL can be included by providing a reference to a scalar:
+
+    \'mycol > 123'
+
+To use placeholders and bind values, pass a reference to an array containing a scalar reference to the literal SQL with placeholders as the first item, followed by a list of values to bind:
+
+    [ \'mycol > ?' => 123 ]
 
 =over 4
 

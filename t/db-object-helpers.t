@@ -3,7 +3,7 @@
 use strict;
 
 #use Test::LongString;
-use Test::More tests => (81 * 4) + 2;
+use Test::More tests => (82 * 4) + 2;
 
 BEGIN 
 {
@@ -26,7 +26,7 @@ foreach my $db_type (qw(mysql pg informix sqlite))
 {
   SKIP:
   {
-    skip("$db_type tests", 81)  unless($Have{$db_type});
+    skip("$db_type tests", 82)  unless($Have{$db_type});
   }
 
   next  unless($Have{$db_type});
@@ -36,7 +36,7 @@ foreach my $db_type (qw(mysql pg informix sqlite))
 
   my $class = 'My' . ucfirst($db_type) . 'Object';
   my $other_class = 'My' . ucfirst($db_type) . 'OtherObject';
-  
+
   my $o = $class->new(id => 1, name => 'John', age => 30);
 
   my @tags = MyMixIn->export_tags;
@@ -279,6 +279,20 @@ foreach my $db_type (qw(mysql pg informix sqlite))
   unset_state_loading($c);
 
   # has_loaded_related() tested in db-object-relationship.t
+
+  eval { require Storable };
+
+  unless($@)
+  {
+    $o = $class->new(id => 1)->load_or_save;
+
+    my $frozen = Storable::freeze($o->strip);
+
+    my $thawed = Storable::thaw($frozen);
+
+    is_deeply($thawed, $o, "strip 1 - $db_type")
+  }
+  else { SKIP: { skip("tests that require Storable - $db_type", 1) } }
 }
 
 BEGIN
@@ -421,7 +435,7 @@ CREATE TABLE rose_db_object_test_other
 EOF
 
     $dbh->disconnect;
-    
+
     package MyMysqlObject;
     our @ISA = qw(Rose::DB::Object);
     use Rose::DB::Object::Helpers ($All);
@@ -595,7 +609,7 @@ EOF
     __PACKAGE__->meta->column('laz')->lazy(1);
     __PACKAGE__->meta->column('laz')->add_auto_method_types(qw(get set));
     __PACKAGE__->meta->initialize(replace_existing => 1);
-   
+
     package MySqliteOtherObject;
     our @ISA = qw(Rose::DB::Object);
     sub init_db { Rose::DB->new('sqlite') }
@@ -604,6 +618,7 @@ EOF
   }
 
   package MyMixIn;
+  use Rose::DB::Object::MixIn;
   our @ISA = qw(Rose::DB::Object::MixIn);
 }
 

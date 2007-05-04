@@ -12,11 +12,12 @@ use Rose::DB;
 use Rose::DB::Object;
 use Rose::DB::Object::ConventionManager;
 use Rose::DB::Object::Metadata::Util qw(perl_hashref);
+use Rose::DB::Object::Metadata::Auto;
 
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.757';
+our $VERSION = '0.764';
 
 our $Debug = 0;
 
@@ -36,6 +37,8 @@ use Rose::Object::MakeMethods::Generic
     'pre_init_hook',
     'post_init_hook',
     'module_dir',
+    'module_preamble',
+    'module_postamble',
   ],
 
   'scalar --get_set_init' =>
@@ -46,10 +49,11 @@ use Rose::Object::MakeMethods::Generic
   boolean => 
   [
     'using_default_base_class',
-    'include_views'     => { default => 0 },
-    'with_managers'     => { default => 1 },
-    'with_foreign_keys' => { default => 1 },
-    'with_unique_keys'  => { default => 1 },
+    'require_primary_key' => { default => 1 },
+    'include_views'       => { default => 0 },
+    'with_managers'       => { default => 1 },
+    'with_foreign_keys'   => { default => 1 },
+    'with_unique_keys'    => { default => 1 },
     'convention_manager_was_set' => { default => 0 },
   ],
 );
@@ -369,8 +373,22 @@ sub make_modules
 
     open(my $pm, '>', $file) or croak "Could not create $file - $!";
 
+    my $preamble = exists $args{'module_preamble'} ? 
+      $args{'module_preamble'} : $self->module_preamble;
+
+    my $postamble = exists $args{'module_postamble'} ? 
+      $args{'module_postamble'} : $self->module_postamble;
+
     if($class->isa('Rose::DB::Object'))
     {
+      if($preamble)
+      {
+        my $this_preamble = ref $preamble eq 'CODE' ? 
+          $preamble->($class->meta) : $preamble;
+
+        print {$pm} $this_preamble;
+      }
+
       if($extra_info{'base_classes'}{$class})
       {
         print {$pm} _perl_base_class($class, \%extra_info, \%args);
@@ -379,10 +397,34 @@ sub make_modules
       {
         print {$pm} _perl_class($class, \%extra_info, \%args);
       }
+
+      if($postamble)
+      {
+        my $this_postamble = ref $postamble eq 'CODE' ? 
+          $postamble->($class->meta) : $postamble;
+
+        print {$pm} $this_postamble;
+      }
     }
     elsif($class->isa('Rose::DB::Object::Manager'))
     {
+      if($preamble)
+      {
+        my $this_preamble = ref $preamble eq 'CODE' ? 
+          $preamble->($class->object_class->meta) : $preamble;
+
+        print {$pm} $this_preamble;
+      }
+
       print {$pm} $class->perl_class_definition(%args), "\n";
+
+      if($postamble)
+      {
+        my $this_postamble = ref $postamble eq 'CODE' ? 
+          $postamble->($class->object_class->meta) : $postamble;
+
+        print {$pm} $this_postamble;
+      }
     }
     elsif($class->isa('Rose::DB'))
     {
@@ -390,7 +432,7 @@ sub make_modules
     }
     else { croak "Unknown class: $class" }
 
-    close($pm) or croak  "Could not write $file - $!";
+    close($pm) or croak "Could not write $file - $!";
   }
 
   return wantarray ? @classes : \@classes;
@@ -494,6 +536,9 @@ sub make_classes
 
   $args{'stay_connected'} = 1;
   $args{'passive'} = 1  unless(exists $args{'passive'});
+
+  my $require_primary_key = exists $args{'require_primary_key'} ? 
+    delete $args{'require_primary_key'} : $self->require_primary_key;
 
   my $include_views = exists $args{'include_views'} ? 
     delete $args{'include_views'} : $self->include_views;
@@ -817,6 +862,10 @@ sub make_classes
   my %list_args;
   $list_args{'include_views'} = 1  if($include_views);
 
+  # XXX: Horrible hack.  Replce eventually...
+  local $Rose::DB::Object::Metadata::Auto::Missing_PK_OK = 
+    $require_primary_key ? 0 : 1;
+
   # Iterate over tables, creating RDBO classes for each
   foreach my $table ($db->list_tables(%list_args))
   {
@@ -824,7 +873,7 @@ sub make_classes
     next  unless(!$filter || $filter->($table));
 
     # Skip tables with no primary keys
-    next  unless($db->has_primary_key($table));
+    next  if($require_primary_key && !$db->has_primary_key($table));
 
     my $obj_class = $class_prefix . $cm->table_to_class($table);
 
@@ -1231,6 +1280,10 @@ A reference to a subroutine or a reference to an array of code references that w
 
 A reference to a subroutine or a reference to an array of code references that will be called just before each L<Rose::DB::Object>-derived class is L<initialize|Rose::DB::Object::Metadata/initialize>d.  Each referenced subroutine will be passed the class's L<metadata|Rose::DB::Object::Metadata> object plus any arguments to the L<initialize|Rose::DB::Object::Metadata/initialize> method.  Defaults to the value of the loader object's L<pre_init_hook|/pre_init_hook> attribute.
 
+=item B<require_primary_key BOOL>
+
+If true, then any table that does not have a primary key will be skipped.  Defaults to the value of the loader object's L<require_primary_key|/require_primary_key> attribute.  Note that a L<Rose::DB::Object>-derived class based on a table with no primary key will not function correctly in all circumstances.  Use this feature at your own risk.
+
 =item B<with_foreign_keys BOOL>
 
 If true, set up foreign key metadata for each L<Rose::DB::Object>-derived.  Defaults to the value of the loader object's L<with_foreign_keys|/with_foreign_keys> attribute.
@@ -1267,7 +1320,7 @@ This method returns a list (in list context) or a reference to an array (in scal
 
 Automatically create L<Rose::DB::Object> and (optionally) L<Rose::DB::Object::Manager> subclasses for some or all of the tables in a database, then create Perl module (*.pm) files for each class.
 
-This method calls L<make_classes|/make_classes> to make the actual classes, and therefore takes all of the same parameters, with one addition.
+This method calls L<make_classes|/make_classes> to make the actual classes, and therefore takes all of the same parameters, with several additions.
 
 =over 4
 
@@ -1277,15 +1330,41 @@ The path to the directory where the Perl module files will be created.  For exam
 
 Defaults to the value of the loader object's L<module_dir|/module_dir> attribute.  If the L<module_dir|/module_dir> attribute is also undefined, then the current working directory (as determined by a call to L<cwd()|Cwd/cwd>) is used instead.
 
+=item B<module_preamble [ SCALAR | CODE ]>
+
+If defined as a scalar, inserts the contents of the variable into the auto-generated file before any of the auto-generated class information.  If provided as a code ref, calls the indicated function, passing the L<metadata object|Rose::DB::Object::Metadata> as a parameter.  (The metadata object that belongs to the C<object_class> is passed if the module is a L<Rose::DB::Object::Manager>-derived class.)  The returned value of the function is inserted as the preamble text.
+
+Defaults to to the value of the loader object's L<module_preamble|/module_preamble> attribute.
+
+=item B<module_postamble [ SCALAR | CODE ]>
+
+If defined as a scalar, inserts the contents of the variable into the auto-generated file after any of the auto-generated class information.  If provided as a code ref, calls the indicated function, passing the L<metadata object|Rose::DB::Object::Metadata> as a parameter.  (The metadata object that belongs to the C<object_class> is passed if the module is a L<Rose::DB::Object::Manager>-derived class.)  The returned value of the function is inserted as the postamble text.
+
+Defaults to to the value of the loader object's L<module_postamble|/module_postamble> attribute.
+
 =back
 
 =item B<module_dir [DIR]>
 
 Get or set the path to the directory where L<make_modules|/make_modules> will create its Perl modules files.  For example, given a DIR of "/home/john/lib", L<make_modules|/make_modules> would create the file  "/home/john/lib/My/DB/Object.pm" for the class C<My::DB::Object>.
 
+=item B<module_preamble [ SCALAR | CODE ]>
+
+If defined as a scalar, inserts the contents of the variable into the auto-generated file before any of the auto-generated class information.  If provided as a code ref, calls the indicated function, passing the L<metadata object|Rose::DB::Object::Metadata> as a parameter.  (The metadata object that belongs to the C<object_class> is passed if the module is a L<Rose::DB::Object::Manager>-derived class.)  The returned value of the function is inserted as the preamble text.
+
+=item B<module_postamble [ SCALAR | CODE ]>
+
+If defined as a scalar, inserts the contents of the variable into the auto-generated file after any of the auto-generated class information.  If provided as a code ref, calls the indicated function, passing the L<metadata object|Rose::DB::Object::Metadata> as a parameter.  (The metadata object that belongs to the C<object_class> is passed if the module is a L<Rose::DB::Object::Manager>-derived class.)  The returned value of the function is inserted as the postamble text.
+
 =item B<pre_init_hook [CODE]>
 
 Get or set a reference to a subroutine to be called just before each L<Rose::DB::Object>-derived class is L<initialize|Rose::DB::Object::Metadata/initialize>ed within the L<make_classes|/make_classes> method.  The subroutine will be passed the class's L<metdata|Rose::DB::Object::Metadata> object as an argument.
+
+=item B<require_primary_key BOOL>
+
+Get or set a boolean value that determines whether or not the L<make_classes|/make_classes> method will skip any table that does not have a primary key will be skipped.  Defaults to true.
+
+Note that a L<Rose::DB::Object>-derived class based on a table with no primary key will not function correctly in all circumstances.  Use this feature at your own risk.
 
 =item B<with_foreign_keys BOOL>
 

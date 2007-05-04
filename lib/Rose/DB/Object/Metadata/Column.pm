@@ -22,7 +22,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 our $Triggers_Key      = 'triggers';
 our $Trigger_Index_Key = 'trigger_index';
 
-our $VERSION = '0.761';
+our $VERSION = '0.764';
 
 use overload
 (
@@ -946,7 +946,16 @@ sub apply_method_triggers
           {
             $self->{$is_inflated_key} = 0  unless($uses_formatted_key);
 
-            &$method_code; # magic call using current @_
+            my @ret;
+
+            if(wantarray)
+            {            
+              @ret = &$method_code; # magic call using current @_
+            }
+            else
+            {
+              $ret[0] = &$method_code; # magic call using current @_
+            }
 
             unless($self->{'triggers_disabled'})
             {
@@ -960,12 +969,23 @@ sub apply_method_triggers
                 }
               }
             }
+
+            return wantarray ? @ret : $ret[0];
           }
           else
           {
             $self->{$is_inflated_key} = 0  unless($uses_formatted_key);
 
-            &$method_code; # magic call using current @_
+            my @ret;
+
+            if(wantarray)
+            {            
+              @ret = &$method_code; # magic call using current @_
+            }
+            else
+            {
+              $ret[0] = &$method_code; # magic call using current @_
+            }
 
             unless($self->{'triggers_disabled'})
             {
@@ -979,6 +999,8 @@ sub apply_method_triggers
                 }
               }
             }
+
+            return wantarray ? @ret : $ret[0];
           }
         }
         else # getting
@@ -1062,7 +1084,7 @@ sub apply_method_triggers
                   $key_was_defined = 0;
                   # Invoke built-in default and inflation code
                   # (The call must not be in void context)
-                  $value = $method_code->($self, @_[1 .. $#$_]);
+                  $value = $method_code->($self, @_[1 .. $#_]);
                 }
 
                 unless($self->{$is_inflated_key} && $key_was_defined)
@@ -1208,7 +1230,7 @@ sub apply_method_triggers
                 $key_was_defined = 0;
                 # Invoke built-in default and inflation code
                 # (The call must not be in void context)
-                $value = $method_code->($self, @_[1 .. $#$_]);
+                $value = $method_code->($self, @_[1 .. $#_]);
               }
 
               unless($self->{$is_inflated_key} && $key_was_defined)
@@ -1280,7 +1302,16 @@ sub apply_method_triggers
         {
           $self->{$is_inflated_key} = 0  unless($uses_formatted_key);
 
-          &$method_code; # magic call using current @_
+          my @ret;
+
+          if(wantarray)
+          {            
+            @ret = &$method_code; # magic call using current @_
+          }
+          else
+          {
+            $ret[0] = &$method_code; # magic call using current @_
+          }
 
           unless($self->{'triggers_disabled'})
           {
@@ -1294,12 +1325,23 @@ sub apply_method_triggers
               }
             }
           }
+
+          return wantarray ? @ret : $ret[0];
         }
         else
         {
           $self->{$is_inflated_key} = 0  unless($uses_formatted_key);
 
-          &$method_code; # magic call using current @_
+          my @ret;
+
+          if(wantarray)
+          {            
+            @ret = &$method_code; # magic call using current @_
+          }
+          else
+          {
+            $ret[0] = &$method_code; # magic call using current @_
+          }
 
           unless($self->{'triggers_disabled'})
           {
@@ -1313,6 +1355,8 @@ sub apply_method_triggers
               }
             }
           }
+
+          return wantarray ? @ret : $ret[0];
         }
       };
 

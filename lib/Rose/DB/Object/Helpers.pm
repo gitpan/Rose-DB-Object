@@ -4,12 +4,12 @@ use strict;
 
 use Rose::DB::Object::Constants qw(:all);
 
-use Rose::DB::Object::MixIn;
-our @ISA = qw(Rose::DB::Object::MixIn);
+use Rose::Object::MixIn;
+our @ISA = qw(Rose::Object::MixIn);
 
 use Carp;
 
-our $VERSION = '0.757';
+our $VERSION = '0.764';
 
 __PACKAGE__->export_tags
 (
@@ -21,7 +21,7 @@ __PACKAGE__->export_tags
        column_mutator_value_pairs 
        column_values_as_yaml column_values_as_json
        init_with_yaml init_with_json init_with_column_value_pairs
-       has_loaded_related) 
+       has_loaded_related strip) 
   ],
 
   # This exists for the benefit of the test suite
@@ -31,7 +31,7 @@ __PACKAGE__->export_tags
        insert_or_update_on_duplicate_key load_speculative
        column_value_pairs column_accessor_value_pairs 
        column_mutator_value_pairs init_with_column_value_pairs
-       has_loaded_related)
+       has_loaded_related strip)
   ],
 );
 
@@ -254,7 +254,14 @@ sub clone
   my($self) = shift;
   my $class = ref $self;
   local $self->{STATE_CLONING()} = 1;
-  return $class->new(map { $_ => $self->$_() } $self->meta->column_accessor_method_names);
+  my @mutators = $self->meta->column_mutator_method_names;
+  my $mutator;
+  return $class->new(map
+  {
+    (defined($mutator = shift(@mutators)) && defined $_) ? 
+      ($mutator => $self->$_()) : ()
+  }
+  $self->meta->column_accessor_method_names);
 }
 
 sub clone_and_reset
@@ -262,7 +269,14 @@ sub clone_and_reset
   my($self) = shift;
   my $class = ref $self;
   local $self->{STATE_CLONING()} = 1;
-  my $clone = $class->new(map { $_ => $self->$_() } $self->meta->column_accessor_method_names);
+  my @mutators = $self->meta->column_mutator_method_names;
+  my $mutator;
+  my $clone = $class->new(map
+  {
+    (defined($mutator = shift(@mutators)) && defined $_) ? 
+      ($mutator => $self->$_()) : ()
+  }
+  $self->meta->column_accessor_method_names);
 
   my $meta = $class->meta;
 
@@ -343,6 +357,69 @@ sub has_loaded_related
       croak "Missing foreign key or relationship name argument";
     }
   }
+}
+
+sub strip
+{
+  my($self) = shift;
+
+  my %args = @_;
+
+  my %leave = map { $_ => 1 } (ref $args{'leave'} ? @{$args{'leave'}} : ($args{'leave'} || ''));
+
+  my $meta = $self->meta;
+
+  if($leave{'relationships'} || $leave{'related_objects'})
+  {
+    foreach my $rel ($meta->relationships)
+    {
+      if(my $objs = $rel->object_has_related_objects($self))
+      {
+        foreach my $obj (@$objs)
+        {
+          Rose::DB::Object::Helpers::strip($obj, @_);
+        }
+      }
+    }
+  }
+  else
+  {
+    foreach my $rel ($meta->relationships)
+    {
+      delete $self->{$rel->name};
+    }
+  }
+
+  if($leave{'foreign_keys'} || $leave{'related_objects'})
+  {
+    foreach my $rel ($meta->foreign_keys)
+    {
+      if(my $obj = $rel->object_has_foreign_object($self))
+      {
+        Rose::DB::Object::Helpers::strip($obj, @_);
+      }
+    }
+  }
+  else
+  {
+    foreach my $fk ($meta->foreign_keys)
+    {
+      delete $self->{$fk->name};
+    }
+  }
+
+  if($leave{'db'})
+  {
+    $self->{'db'}->dbh(undef)  if($self->{'db'});
+  }
+  else
+  {
+    delete $self->{'db'};
+  }
+
+  delete $self->{META_ATTR_NAME()};
+
+  return $self;
 }
 
 1;
@@ -587,6 +664,38 @@ Example:
     {
       print "Object id 123 not found\n";
     }
+
+=item B<strip [PARAMS]>
+
+This method prepares an object for serialization by stripping out internal structures known to contain code references or other values that do not survive serialization.  By default, the L<db|Rose::DB::Object/db> object and all sub-objects (foreign keys or relationships) are removed.  PARAMS are optional name/value pairs.  Valid PARAMS are:
+
+=over 4
+
+=item C<leave [NAME|ARRAYREF]>
+
+This parameter specifies which items to leave un-stripped.  The value may be an item name or a reference to an array of item names.  Valid names are:
+
+=over 4
+
+=item C<db>
+
+Do not remove the L<db|Rose::DB::Object/db> object.  The L<db|Rose::DB::Object/db> object will have its DBI database handle (L<dbh|Rose::DB/dbh>) removed, however.
+
+=item C<foreign_keys>
+
+Do not removed sub-objects that have L<already been loaded|/has_loaded_related> by this object through L<foreign keys|Rose::DB::Object::Metadata/foreign_keys>.
+
+=item C<relationships>
+
+Do not removed sub-objects that have L<already been loaded|/has_loaded_related> by this object through L<relationships|Rose::DB::Object::Metadata/relationships>.
+
+=item C<related_objects>
+
+Do not remove any sub-objects (L<foreign keys|Rose::DB::Object::Metadata/foreign_keys> or L<relationships|Rose::DB::Object::Metadata/relationships>) that have L<already been loaded|/has_loaded_related> by this object.  This option is the same as specifying both the C<foreign_keys> and <relationships> names.
+
+=back
+
+=back
 
 =back
 

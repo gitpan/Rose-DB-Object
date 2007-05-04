@@ -14,11 +14,11 @@ use Rose::DB::Object::Manager;
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Constants 
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
-     STATE_SAVING ON_SAVE_ATTR_NAME MODIFIED_COLUMNS);
+     STATE_SAVING ON_SAVE_ATTR_NAME MODIFIED_COLUMNS SET_COLUMNS);
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.761';
+our $VERSION = '0.764';
 
 our $Debug = 0;
 
@@ -54,6 +54,12 @@ sub scalar
   $qkey =~ s/'/\\'/g;
   my $qname = $name;
   $qname =~ s/"/\\"/g;
+
+  #
+  # equivalence op
+  #
+
+  my $eq = ($type eq 'integer') ? '==' : 'eq';
 
   #
   # check_in code
@@ -235,12 +241,15 @@ EOF
   my $save_old_val_code = $smart ? 
     qq(no warnings 'uninitialized';\nmy \$old_val = \$self->{'$qkey'};) : '';
 
+  my $was_set_code = $smart ?
+    qq(\$self->{SET_COLUMNS()}{'$col_name_escaped'} = 1;) : '';
+
   my $mod_cond_code =  $smart ? 
-    qq(unless(\$self->{STATE_LOADING()} || \$old_val eq \$self->{'$qkey'});) :
+    qq(unless(\$self->{STATE_LOADING()} || (!defined \$old_val && !defined \$self->{'$qkey'}) || \$old_val $eq \$self->{'$qkey'});) :
     qq(unless(\$self->{STATE_LOADING()}););
 
   my $mod_cond_pre_set_code = $smart ?
-    qq(unless(\$self->{STATE_LOADING()} || \$value eq \$self->{'$qkey'});) :
+    qq(unless(\$self->{STATE_LOADING()} || (!defined \$value && !defined \$self->{'$qkey'}) || \$value $eq \$self->{'$qkey'});) :
     qq(unless(\$self->{STATE_LOADING()}););
 
   my %methods;
@@ -266,6 +275,7 @@ sub
     $save_old_val_code
     $set_code
     $column_modified_code  $mod_cond_code
+    $was_set_code
     $return_code
   }
 
@@ -287,6 +297,7 @@ sub
     $check_in_code
     $length_check_code
     $column_modified_code  $mod_cond_pre_set_code
+    $was_set_code
     return $set_code
   }
 
@@ -344,6 +355,7 @@ sub
   $save_old_val_code
   $set_code
   $column_modified_code  $mod_cond_code
+  $was_set_code
   $return_code
 };
 EOF
@@ -403,7 +415,7 @@ sub enum
         if(@_ && defined $_[0])
         {
           Carp::croak "Invalid $name: '$_[0]'"  unless(exists $values{$_[0]});
-          $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
+          $self->{MODIFIED_COLUMNS()}{$column_name} = 1  unless($self->{STATE_LOADING()});
           return $self->{$key} = $_[0];
         }
         return (defined $self->{$key}) ? $self->{$key} : 
@@ -440,7 +452,7 @@ sub enum
         if(@_ && defined $_[0])
         {
           Carp::croak "Invalid $name: '$_[0]'"  unless(exists $values{$_[0]});
-          $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
+          $self->{MODIFIED_COLUMNS()}{$column_name} = 1  unless($self->{STATE_LOADING()});
           return $self->{$key} = $_[0];
         }
 
@@ -456,7 +468,7 @@ sub enum
 
       Carp::croak "Missing argument in call to $name"  unless(@_);
       Carp::croak "Invalid $name: '$_[0]'"  unless(exists $values{$_[0]});
-      $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
+      $self->{MODIFIED_COLUMNS()}{$column_name} = 1   unless($self->{STATE_LOADING()});
       return $self->{$key} = $_[0];
     };
   }
@@ -1837,6 +1849,9 @@ sub object_by_key
     exists $args->{'required'} ? $args->{'required'} :
     exists $args->{'referential_integrity'} ? $args->{'referential_integrity'} : 1;
 
+  my $ref_integrity = 
+    ($fk && $fk->isa('Rose::DB::Object::Metadata::ForeignKey')) ? $fk->referential_integrity : 0;
+
   if(exists $args->{'required'} && exists $args->{'referential_integrity'} &&
     (!$args->{'required'} != !$$args->{'referential_integrity'}))
   {
@@ -1863,17 +1878,25 @@ sub object_by_key
 
         unless(defined $_[0]) # undef argument
         {
-          # Set the foreign key columns
-          while(my($local_column, $foreign_column) = each(%$fk_columns))
+          if($ref_integrity || $required)
           {
-            my $local_method = $meta->column_mutator_method_name($local_column);
-            $self->$local_method(undef);
+            local $fk->{'disable_column_triggers'} = 1;
+
+            # Set the foreign key columns
+            while(my($local_column, $foreign_column) = each(%$fk_columns))
+            {
+              next  if($meta->column($local_column)->is_primary_key_member);
+              my $local_method = $meta->column_mutator_method_name($local_column);
+              $self->$local_method(undef);
+            }
           }
 
           return $self->{$key} = undef;
         }
 
         my $object = __args_to_object($self, $key, $fk_class, \$fk_pk, \@_);
+
+        local $fk->{'disable_column_triggers'} = 1;
 
         while(my($local_column, $foreign_column) = each(%$fk_columns))
         {
@@ -1963,11 +1986,17 @@ sub object_by_key
 
         unless(defined $_[0]) # undef argument
         {
-          # Set the foreign key columns
-          while(my($local_column, $foreign_column) = each(%$fk_columns))
+          if($ref_integrity || $required)
           {
-            my $local_method = $meta->column_mutator_method_name($local_column);
-            $self->$local_method(undef);
+            local $fk->{'disable_column_triggers'} = 1;
+
+            # Set the foreign key columns
+            while(my($local_column, $foreign_column) = each(%$fk_columns))
+            {
+              next  if($meta->column($local_column)->is_primary_key_member);
+              my $local_method = $meta->column_mutator_method_name($local_column);
+              $self->$local_method(undef);
+            }
           }
 
           return $self->{$key} = undef;
@@ -2011,6 +2040,8 @@ sub object_by_key
               $object->save or die $object->error;
             }
           }
+
+          local $fk->{'disable_column_triggers'} = 1;
 
           while(my($local_column, $foreign_column) = each(%$fk_columns))
           {
@@ -2120,11 +2151,17 @@ sub object_by_key
 
         unless(defined $_[0]) # undef argument
         {
-          # Set the foreign key columns
-          while(my($local_column, $foreign_column) = each(%$fk_columns))
+          if($ref_integrity || $required)
           {
-            my $local_method = $meta->column_mutator_method_name($local_column);
-            $self->$local_method(undef);
+            local $fk->{'disable_column_triggers'} = 1;
+
+            # Set the foreign key columns
+            while(my($local_column, $foreign_column) = each(%$fk_columns))
+            {
+              next  if($meta->column($local_column)->is_primary_key_member);
+              my $local_method = $meta->column_mutator_method_name($local_column);
+              $self->$local_method(undef);
+            }
           }
 
           delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'};
@@ -2138,6 +2175,8 @@ sub object_by_key
 
         if($is_fk && (!$fk->requires_preexisting_parent_object || $self->{STATE_IN_DB()}))
         {
+          local $fk->{'disable_column_triggers'} = 1;
+
           # Set the foreign key columns
           while(my($local_column, $foreign_column) = each(%$fk_columns))
           {
@@ -2153,15 +2192,13 @@ sub object_by_key
         # Set the attribute
         $self->{$key} = $object;
 
-        #weaken(my $welf = $self);
-
         # Make the code that will run on save()
         my $save_code = sub
         {
-          my $welf = shift;
+          my($self, $args) = @_;
 
           # Bail if there's nothing to do
-          my $object = $welf->{$key} or return;
+          my $object = $self->{$key} or return;
 
           my $db;
 
@@ -2179,13 +2216,13 @@ sub object_by_key
 
           eval
           {
-            $db = $welf->db;
+            $db = $self->db;
             $object->db($db)  if($share_db);
 
             # Save the object, load or create if necessary
             if($object->{STATE_IN_DB()})
             {
-              $object->save or die $object->error;
+              $object->save(%$args) or die $object->error;
             }
             else
             {
@@ -2199,9 +2236,11 @@ sub object_by_key
 
               unless($ret)
               {
-                $object->save or die $object->error;
+                $object->save(%$args) or die $object->error;
               }
             }
+
+            local $fk->{'disable_column_triggers'} = 1;
 
             # Set the foreign key columns
             while(my($local_column, $foreign_column) = each(%$fk_columns))
@@ -2209,20 +2248,20 @@ sub object_by_key
               my $local_method   = $meta->column_mutator_method_name($local_column);
               my $foreign_method = $fk_meta->column_accessor_method_name($foreign_column);
 
-              $welf->$local_method($object->$foreign_method);
+              $self->$local_method($object->$foreign_method);
             }
 
-            return $welf->{$key} = $object;
+            return $self->{$key} = $object;
           };
 
           if($@)
           {
-            $welf->error("Could not add $name object - $@");
-            $meta->handle_error($welf);
+            $self->error("Could not add $name object - $@");
+            $meta->handle_error($self);
             return undef;
           }
 
-          return $welf->{$key};
+          return $self->{$key};
         };
 
         if($linked_up)
@@ -2325,11 +2364,17 @@ sub object_by_key
           if(delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} ||
              delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'})
           {
-            # Clear foreign key columns
-            foreach my $local_column (keys %$fk_columns)
+            if($ref_integrity || $required)
             {
-              my $local_method = $meta->column_accessor_method_name($local_column);
-              $self->$local_method(undef);
+              local $fk->{'disable_column_triggers'} = 1;
+
+              # Clear foreign key columns
+              foreach my $local_column (keys %$fk_columns)
+              {
+                next  if($meta->column($local_column)->is_primary_key_member);
+                my $local_method = $meta->column_accessor_method_name($local_column);
+                $self->$local_method(undef);
+              }
             }
 
             $self->{$key} = undef;
@@ -2361,12 +2406,18 @@ sub object_by_key
 
         $started_new_tx = ($ret == IN_TRANSACTION) ? 0 : 1;
 
-        # Clear columns that reference the foreign key
-        foreach my $local_column (keys %$fk_columns)
+        if($ref_integrity || $required)
         {
-          my $local_method = $meta->column_accessor_method_name($local_column);
-          $save_fk{$local_method} = $self->$local_method();
-          $self->$local_method(undef);
+          local $fk->{'disable_column_triggers'} = 1;
+
+          # Clear columns that reference the foreign key
+          foreach my $local_column (keys %$fk_columns)
+          {
+            next  if($meta->column($local_column)->is_primary_key_member);
+            my $local_method = $meta->column_accessor_method_name($local_column);
+            $save_fk{$local_method} = $self->$local_method();
+            $self->$local_method(undef);
+          }
         }
 
         # Forget about any value we were going to set on save
@@ -2444,11 +2495,17 @@ sub object_by_key
           if(delete $self->{ON_SAVE_ATTR_NAME()}{'pre'}{'fk'}{$fk_name}{'set'} ||
              delete $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$fk_name}{'set'})
           {
-            # Clear foreign key columns
-            foreach my $local_column (keys %$fk_columns)
+            if($ref_integrity || $required)
             {
-              my $local_method = $meta->column_accessor_method_name($local_column);
-              $self->$local_method(undef);
+              local $fk->{'disable_column_triggers'} = 1;
+
+              # Clear foreign key columns
+              foreach my $local_column (keys %$fk_columns)
+              {
+                next  if($meta->column($local_column)->is_primary_key_member);
+                my $local_method = $meta->column_accessor_method_name($local_column);
+                $self->$local_method(undef);
+              }
             }
 
             $self->{$key} = undef;
@@ -2465,12 +2522,18 @@ sub object_by_key
 
       my %save_fk;
 
-      # Clear columns that reference the foreign key, saving old values
-      foreach my $local_column (keys %$fk_columns)
+      if($ref_integrity || $required)
       {
-        my $local_method = $meta->column_accessor_method_name($local_column);
-        $save_fk{$local_method} = $self->$local_method();
-        $self->$local_method(undef);
+        local $fk->{'disable_column_triggers'} = 1;
+
+        # Clear columns that reference the foreign key, saving old values
+        foreach my $local_column (keys %$fk_columns)
+        {
+          next  if($meta->column($local_column)->is_primary_key_member);
+          my $local_method = $meta->column_accessor_method_name($local_column);
+          $save_fk{$local_method} = $self->$local_method();
+          $self->$local_method(undef);
+        }
       }
 
       # Forget about any value we were going to set on save
@@ -2480,33 +2543,34 @@ sub object_by_key
       # Clear the foreignobject attribute
       $self->{$key} = undef;
 
-      #weaken(my $welf = $self);
-
       # Make the code to run on save
       my $delete_code = sub
       {  
-        my $welf = shift;
+        my($self, $args) = @_;
+
+        my @delete_args = 
+          map { ($_ => $args->{$_}) } grep { exists $args->{$_} } qw(prepare_cached);
 
         my $db;
 
         eval
         {
-          $db = $welf->db;
+          $db = $self->db;
           $object->db($db)  if($share_db);
-          $object->delete(@_) or die $object->error;
+          $object->delete(@delete_args) or die $object->error;
         };
 
         if($@)
         {
-          $welf->error("Could not delete $name object - $@");
+          $self->error("Could not delete $name object - $@");
 
           # Restore old foreign key column values if prudent
           while(my($method, $value) = each(%save_fk))
           {
-            $welf->$method($value)  unless(defined $welf->$method);
+            $self->$method($value)  unless(defined $self->$method);
           }
 
-          $meta->handle_error($welf);
+          $meta->handle_error($self);
           return undef;
         }
 
@@ -2556,6 +2620,8 @@ sub objects_by_key
   my $query_args = $args->{'query_args'} || [];
   my $single     = $args->{'single'} || 0;
 
+  my $ft_count_method = $args->{'manager_count_method'} || 'get_objects_count';
+
   if($mgr_args->{'query'})
   {
     Carp::croak "Cannot use the key 'query' in the manager_args parameter ",
@@ -2584,7 +2650,129 @@ sub objects_by_key
                 "Please pass one or the other, not both.";
   }
 
-  if($interface eq 'find')
+  if($interface eq 'count')
+  {
+    my $cache_key = PRIVATE_PREFIX . '_' . $name;
+
+    $methods{$name} = sub
+    {
+      my($self) = shift;
+
+      my %args;
+
+      if(my $ref = ref $_[0])
+      {
+        if($ref eq 'HASH')
+        {
+          %args = (query => [ %{shift(@_)} ], @_);
+        }
+        elsif(ref $_[0] eq 'ARRAY')
+        {
+          %args = (query => shift, @_);
+        }
+      }
+      else { %args = @_ }
+
+      if(delete $args{'from_cache'})
+      {
+        if(keys %args)
+        {
+          Carp::croak "Additional parameters not allowed in call to ",
+                      "$name() with from_cache parameter";
+        }
+
+        if(defined $self->{$cache_key})
+        {
+          return wantarray ? @{$self->{$cache_key}} : $self->{$cache_key};
+        }
+      }
+
+      my $count;
+
+      # Get query key
+      my %key;
+
+      while(my($local_column, $foreign_column) = each(%$ft_columns))
+      {
+        my $local_method = $meta->column_accessor_method_name($local_column);
+
+        $key{$foreign_column} = $self->$local_method();
+
+        # Comment this out to allow null keys
+        unless(defined $key{$foreign_column})
+        {
+          keys(%$ft_columns); # reset iterator
+          $self->error("Could not fetch objects via $name() - the " .
+                       "$local_method attribute is undefined");
+          return;
+        }
+      }
+
+      my $cache = delete $args{'cache'};
+
+      # Merge query args
+      my @query = (%key, @$query_args, @{delete $args{'query'} || []});      
+
+      # Merge the rest of the arguments
+      foreach my $param (keys %args)
+      {
+        if(exists $mgr_args->{$param})
+        {
+          my $ref = ref $args{$param};
+
+          if($ref eq 'ARRAY')
+          {
+            unshift(@{$args{$param}}, ref $mgr_args->{$param} ? 
+                    @{$mgr_args->{$param}} :  $mgr_args->{$param});
+          }
+          elsif($ref eq 'HASH')
+          {
+            while(my($k, $v) = each(%{$mgr_args->{$param}}))
+            {
+              $args{$param}{$k} = $v  unless(exists $args{$param}{$k});
+            }
+          }
+        }
+      }
+
+      while(my($k, $v) = each(%$mgr_args))
+      {
+        $args{$k} = $v  unless(exists $args{$k});
+      }
+
+      # Make query for object count
+      eval
+      {
+        #local $Rose::DB::Object::Manager::Debug = 1;
+        if($share_db)
+        {
+          $count = 
+            $ft_manager->$ft_count_method(query => \@query, db => $self->db, %args)
+              or die $ft_manager->error;
+        }
+        else
+        {
+          $count = 
+            $ft_manager->$ft_count_method(query    => \@query, 
+                                          db       => $self->db,
+                                          share_db => 0, %args)
+              or die $ft_manager->error;
+        }
+      };
+
+      if($@ || !defined $count)
+      {
+        $self->error("Could not count $ft_class objects - " . $ft_manager->error);
+        $self->meta->handle_error($self);
+        return wantarray ? () : $count;
+      }
+
+      $self->{$cache_key} = $count  if($cache);
+
+      return $count;
+    };
+  }
+  elsif($interface eq 'find')
   {
     my $cache_key = PRIVATE_PREFIX . '_' . $name;
 
@@ -3143,11 +3331,9 @@ sub objects_by_key
         # Set the attribute
         $self->{$key} = $objects;
 
-        #weaken(my $welf = $self);
-
         my $save_code = sub
         {
-          my $welf = shift;
+          my($self, $args) = @_;
 
           # Set up join conditions and column map
           my(%key, %map);
@@ -3160,19 +3346,19 @@ sub objects_by_key
             my $local_method   = $meta->column_accessor_method_name($local_column);
             my $foreign_method = $ft_meta->column_accessor_method_name($foreign_column);
 
-            $key{$foreign_column} = $map{$foreign_method} = $welf->$local_method();
+            $key{$foreign_column} = $map{$foreign_method} = $self->$local_method();
 
             # Comment this out to allow null keys
             unless(defined $key{$foreign_column})
             {
               keys(%$ft_columns); # reset iterator
-              $welf->error("Could not set objects via $name() - the " .
+              $self->error("Could not set objects via $name() - the " .
                            "$local_method attribute is undefined");
               return;
             }
           }
 
-          my $db = $welf->db;
+          my $db = $self->db;
 
           # Delete any existing objects
           my $deleted = 
@@ -3183,7 +3369,7 @@ sub objects_by_key
 
           # Save all the objects.  Use the current list, even if it's
           # different than it was when the "set on save" was called.
-          foreach my $object (@{$welf->{$key} || []})
+          foreach my $object (@{$self->{$key} || []})
           {
             # It's essential to share the db so that the load()
             # below can see the delete (above) which happened in
@@ -3192,6 +3378,14 @@ sub objects_by_key
 
             # Map object to parent
             $object->init(%map);
+
+            # Mark all previously set-but-not-modified columns as modified
+            # if saving changes since this object may have been deleted by 
+            # the manager call above.
+            if($args->{'changes_only'})
+            {
+              $object->{MODIFIED_COLUMNS()}{$_} = 1  for(keys %{$object->{SET_COLUMNS()}});
+            }
 
             # Try to load the object if doesn't appear to exist already.
             # If anything was delete above, we have to try loading no
@@ -3213,23 +3407,23 @@ sub objects_by_key
             }
 
             # Save the object
-            $object->save or die $object->error;
+            $object->save(%$args) or die $object->error;
 
             # Not sharing?  Aw.
             $object->db(undef)  unless($share_db);
           }
 
           # Forget about any adds if we just set the list
-          if(defined $welf->{$key})
+          if(defined $self->{$key})
           {
             # Set to undef instead of deleting because this code ref
             # will be called while iterating over this very hash.
-            $welf->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} = undef;
+            $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} = undef;
           }
 
           # Blank the attribute, causing the objects to be fetched from
           # the db next time, if there's a custom sort order
-          $welf->{$key} = undef  if(defined $mgr_args->{'sort_by'});
+          $self->{$key} = undef  if(defined $mgr_args->{'sort_by'});
 
           return 1;
         };
@@ -3439,11 +3633,14 @@ sub objects_by_key
 
       $self->{$key} = undef;
 
-      #weaken(my $welf = $self);
+      #weaken(my $self = $self);
 
       my $delete_code = sub
       {
-        my $welf = shift;
+        my($self, $args) = @_;
+
+        my @delete_args = 
+          map { ($_ => $args->{$_}) } grep { exists $args->{$_} } qw(prepare_cached);
 
         # Set up join conditions and column map
         my(%key, %map);
@@ -3456,28 +3653,28 @@ sub objects_by_key
           my $local_method   = $meta->column_accessor_method_name($local_column);
           my $foreign_method = $ft_meta->column_accessor_method_name($foreign_column);
 
-          $key{$foreign_column} = $map{$foreign_method} = $welf->$local_method();
+          $key{$foreign_column} = $map{$foreign_method} = $self->$local_method();
 
           # Comment this out to allow null keys
           unless(defined $key{$foreign_column})
           {
             keys(%$ft_columns); # reset iterator
-            $welf->error("Could not set objects via $name() - the " .
+            $self->error("Could not set objects via $name() - the " .
                          "$local_method attribute is undefined");
             return;
           }
         }
 
-        my $db = $welf->db;
+        my $db = $self->db;
 
         # Delete existing objects
         my $deleted = 
           $ft_manager->$ft_delete_method(object_class => $ft_class,
                                          where => [ %key, @$query_args ], 
-                                         db => $db);
+                                         db => $db, @delete_args);
         die $ft_manager->error  unless(defined $deleted);
 
-        $welf->{$key} = undef;
+        $self->{$key} = undef;
 
         return 1;
       };
@@ -3656,11 +3853,9 @@ sub objects_by_key
         push(@{$self->{$key}}, @$objects);
       }
 
-      #weaken(my $welf = $self);
-
       my $add_code = sub
       {
-        my $welf = shift;
+        my($self, $args) = @_;
 
         # Set up column map
         my %map;
@@ -3673,18 +3868,18 @@ sub objects_by_key
           my $local_method   = $meta->column_accessor_method_name($local_column);
           my $foreign_method = $ft_meta->column_accessor_method_name($foreign_column);
 
-          $map{$foreign_method} = $welf->$local_method();
+          $map{$foreign_method} = $self->$local_method();
 
           # Comment this out to allow null keys
           unless(defined $map{$foreign_method})
           {
             keys(%$ft_columns); # reset iterator
-            die $welf->error("Could not add objects via $name() - the " .
+            die $self->error("Could not add objects via $name() - the " .
                              "$local_method attribute is undefined");
           }
         }
 
-        my $db = $welf->db;
+        my $db = $self->db;
 
         # Add all the objects.
         foreach my $object (@$objects)
@@ -3702,13 +3897,13 @@ sub objects_by_key
 
           unless($ret)
           {
-            $object->save or die $object->error;
+            $object->save(%$args) or die $object->error;
           }
         }
 
         # Blank the attribute, causing the objects to be fetched from
         # the db next time, if there's a custom sort order
-        $welf->{$key} = undef  if(defined $mgr_args->{'sort_by'});
+        $self->{$key} = undef  if(defined $mgr_args->{'sort_by'});
 
         return 1;
       };
@@ -3727,6 +3922,8 @@ sub objects_by_key
 # XXX: Anyway, make sure they stay in sync!
 use constant MAP_RECORD_METHOD => 'map_record';
 use constant DEFAULT_REL_KEY   => PRIVATE_PREFIX . '_default_rel_key';
+
+our %Made_Map_Record_Method;
 
 sub objects_by_map
 {
@@ -3748,6 +3945,8 @@ sub objects_by_map
   my $map_method   = $args->{'manager_method'} || 'get_objects';
   my $mgr_args     = $args->{'manager_args'} || {};
   my $query_args   = $args->{'query_args'} || [];
+
+  my $count_method = $args->{'manager_count_method'} || 'get_objects_count';
 
   if($mgr_args->{'query'})
   {
@@ -3975,15 +4174,323 @@ sub objects_by_map
     }
   }
 
-  if($map_record_method && !$map_to_class->can($map_record_method))
+  if($map_record_method)
   {
+    if($map_to_class->can($map_record_method) && 
+      (my $info = $Made_Map_Record_Method{"${map_to_class}::$map_record_method"}))
+    {
+      unless($info->{'rel_class'} eq $target_class &&
+             $info->{'rel_name'} eq $relationship->name)
+      {
+        Carp::croak "Already made a map record method named $map_record_method in ",
+                    "class $map_to_class on behalf of the relationship ",
+                    "'$info->{'rel_name'}' in class $info->{'rel_class'}.  ",
+                    "Please choose another name for the map record method for ",
+                    "the relationship named '", $relationship->name, "' in $target_class.";
+      }
+    }
+
     require Rose::DB::Object::Metadata::Relationship::ManyToMany;
 
-    Rose::DB::Object::Metadata::Relationship::ManyToMany::make_map_record_method(
-      $map_to_class, $map_record_method, $map_class);
+    unless($map_to_class->can($map_record_method))
+    {
+      Rose::DB::Object::Metadata::Relationship::ManyToMany::make_map_record_method(
+        $map_to_class, $map_record_method, $map_class);
+
+      $Made_Map_Record_Method{"${map_to_class}::$map_record_method"} =
+      {
+        rel_class => $target_class,
+        rel_name  => $relationship->name,
+      };
+    }
   }
 
-  if($interface eq 'get_set' || $interface eq 'get_set_load')
+  if($interface eq 'find')
+  {
+    my $cache_key = PRIVATE_PREFIX . '_' . $name;
+
+    $methods{$name} = sub
+    {
+      my($self) = shift;
+
+      my %args;
+
+      if(my $ref = ref $_[0])
+      {
+        if($ref eq 'HASH')
+        {
+          %args = (query => [ %{shift(@_)} ], @_);
+        }
+        elsif(ref $_[0] eq 'ARRAY')
+        {
+          %args = (query => shift, @_);
+        }
+      }
+      else { %args = @_ }
+
+      if(delete $args{'from_cache'})
+      {
+        if(keys %args)
+        {
+          Carp::croak "Additional parameters not allowed in call to ",
+                      "$name() with from_cache parameter";
+        }
+
+        if(defined $self->{$cache_key})
+        {
+          return wantarray ? @{$self->{$cache_key}} : $self->{$cache_key};
+        }
+      }
+
+      my %join_map_to_self;
+
+      while(my($map_column, $self_method) = each(%map_column_to_self_method))
+      {
+        $join_map_to_self{$map_column} = $self->$self_method();
+
+        # Comment this out to allow null keys
+        unless(defined $join_map_to_self{$map_column})
+        {
+          keys(%map_column_to_self_method); # reset iterator
+          $self->error("Could not fetch indirect objects via $name() - the " .
+                       "$self_method attribute is undefined");
+          return;
+        }
+      }
+
+      my $objs;
+
+      my $cache = delete $args{'cache'};
+
+      # Merge query args
+      my @query = (%join_map_to_self, @$query_args, @{delete $args{'query'} || []});
+
+      # Merge the rest of the arguments
+      foreach my $param (keys %args)
+      {
+        if(exists $mgr_args->{$param})
+        {
+          my $ref = ref $args{$param};
+
+          if($ref eq 'ARRAY')
+          {
+            unshift(@{$args{$param}}, ref $mgr_args->{$param} ? 
+                    @{$mgr_args->{$param}} :  $mgr_args->{$param});
+          }
+          elsif($ref eq 'HASH')
+          {
+            while(my($k, $v) = each(%{$mgr_args->{$param}}))
+            {
+              $args{$param}{$k} = $v  unless(exists $args{$param}{$k});
+            }
+          }
+        }
+      }
+
+      while(my($k, $v) = each(%$mgr_args))
+      {
+        $args{$k} = $v  unless(exists $args{$k});
+      }
+
+      eval
+      {
+        if($share_db)
+        {
+          $objs =
+            $map_manager->$map_method(query => \@query,
+                                      require_objects => $require_objects,
+                                      %$mgr_args, db => $self->db);
+        }
+        else
+        {
+          $objs = 
+            $map_manager->$map_method(query => \@query,
+                                      require_objects => $require_objects,
+                                      db => $self->db, share_db => 0,
+                                      %$mgr_args);
+        }
+      };
+
+      if($@ || !$objs)
+      {
+        $self->error("Could not find $foreign_class objects - " . $map_manager->error);
+        $self->meta->handle_error($self);
+        return wantarray ? () : $objs;
+      }
+
+      if($map_record_method)
+      {
+        $objs =
+        [
+          map 
+          {
+            my $map_rec = $_;
+            my $o = $map_rec->$map_to_method();
+
+            # This should work too, if we want to keep the ref
+            #if(refaddr($map_rec->{$map_to}) == refaddr($o))
+            #{
+            #  weaken($map_rec->{$map_to} = $o);
+            #}
+
+            # Ditch the map record's reference to the foreign object
+            delete $map_rec->{$map_to};
+            $o->$map_record_method($map_rec); 
+            $o;
+          }
+          @$objs
+        ];
+      }
+      else
+      {
+        $objs =
+        [
+          map 
+          {
+            # This should work too, if we want to keep the ref
+            #my $map_rec = $_;
+            #my $o = $map_rec->$map_to_method();
+            #
+            #if(refaddr($map_rec->{$map_to}) == refaddr($o))
+            #{
+            #  weaken($map_rec->{$map_to} = $o);
+            #}
+            #
+            #$o;
+
+            # Ditch the map record's reference to the foreign object
+            my $o = $_->$map_to_method();
+            $_->$map_to_method(undef);
+            $o;
+          }
+          @$objs 
+        ];
+      }
+
+      $self->{$cache_key} = $objs  if($cache);
+
+      return wantarray ? @$objs: $objs;
+    };
+  }
+  elsif($interface eq 'count')
+  {
+    my $cache_key = PRIVATE_PREFIX . '_' . $name;
+
+    $methods{$name} = sub
+    {
+      my($self) = shift;
+
+      my %args;
+
+      if(my $ref = ref $_[0])
+      {
+        if($ref eq 'HASH')
+        {
+          %args = (query => [ %{shift(@_)} ], @_);
+        }
+        elsif(ref $_[0] eq 'ARRAY')
+        {
+          %args = (query => shift, @_);
+        }
+      }
+      else { %args = @_ }
+
+      if(delete $args{'from_cache'})
+      {
+        if(keys %args)
+        {
+          Carp::croak "Additional parameters not allowed in call to ",
+                      "$name() with from_cache parameter";
+        }
+
+        if(defined $self->{$cache_key})
+        {
+          return wantarray ? @{$self->{$cache_key}} : $self->{$cache_key};
+        }
+      }
+
+      my %join_map_to_self;
+
+      while(my($map_column, $self_method) = each(%map_column_to_self_method))
+      {
+        $join_map_to_self{$map_column} = $self->$self_method();
+
+        # Comment this out to allow null keys
+        unless(defined $join_map_to_self{$map_column})
+        {
+          keys(%map_column_to_self_method); # reset iterator
+          $self->error("Could not count indirect objects via $name() - the " .
+                       "$self_method attribute is undefined");
+          return;
+        }
+      }
+
+      my $cache = delete $args{'cache'};
+
+      # Merge query args
+      my @query = (%join_map_to_self, @$query_args, @{delete $args{'query'} || []});
+
+      # Merge the rest of the arguments
+      foreach my $param (keys %args)
+      {
+        if(exists $mgr_args->{$param})
+        {
+          my $ref = ref $args{$param};
+
+          if($ref eq 'ARRAY')
+          {
+            unshift(@{$args{$param}}, ref $mgr_args->{$param} ? 
+                    @{$mgr_args->{$param}} :  $mgr_args->{$param});
+          }
+          elsif($ref eq 'HASH')
+          {
+            while(my($k, $v) = each(%{$mgr_args->{$param}}))
+            {
+              $args{$param}{$k} = $v  unless(exists $args{$param}{$k});
+            }
+          }
+        }
+      }
+
+      while(my($k, $v) = each(%$mgr_args))
+      {
+        $args{$k} = $v  unless(exists $args{$k});
+      }
+
+      my $count;
+
+      eval
+      {
+        if($share_db)
+        {
+          $count =
+            $map_manager->$count_method(query => \@query,
+                                        require_objects => $require_objects,
+                                        %$mgr_args, db => $self->db);
+        }
+        else
+        {
+          $count = 
+            $map_manager->$count_method(query => \@query,
+                                        require_objects => $require_objects,
+                                        db => $self->db, share_db => 0,
+                                        %$mgr_args);
+        }
+      };
+
+      if($@ || !defined $count)
+      {
+        $self->error("Could not count $foreign_class objects - " . $map_manager->error);
+        $self->meta->handle_error($self);
+        return $count;
+      }
+
+      $self->{$cache_key} = $count  if($cache);
+
+      return $count;
+    };
+  }
+  elsif($interface eq 'get_set' || $interface eq 'get_set_load')
   {
     $methods{$name} = sub
     {
@@ -4392,11 +4899,9 @@ sub objects_by_map
         # Set the attribute
         $self->{$key} = $objects;
 
-        #weaken(my $welf = $self);
-
         my $save_code = sub
         {
-          my $welf = shift;
+          my($self, $args) = @_;
 
           # Set up join conditions and map record connections
           my(%join_map_to_self,    # map column => self value
@@ -4407,19 +4912,19 @@ sub objects_by_map
             my $map_method = $map_meta->column_accessor_method_name($map_column);
 
             $method_map_to_self{$map_method} = $join_map_to_self{$map_column} = 
-              $welf->$self_method();
+              $self->$self_method();
 
             # Comment this out to allow null keys
             unless(defined $join_map_to_self{$map_column})
             {
               keys(%map_column_to_self_method); # reset iterator
-              $welf->error("Could not fetch indirect objects via $name() - the " .
+              $self->error("Could not fetch indirect objects via $name() - the " .
                            "$self_method attribute is undefined");
               return;
             }
           }
 
-          my $db = $welf->db;
+          my $db = $self->db;
 
           # Delete any existing objects
           my $deleted = 
@@ -4430,7 +4935,7 @@ sub objects_by_map
 
           # Save all the objects.  Use the current list, even if it's
           # different than it was when the "set on save" was called.
-          foreach my $object (@{$welf->{$key} || []})
+          foreach my $object (@{$self->{$key} || []})
           {
             # It's essential to share the db so that the load()
             # below can see the delete (above) which happened in
@@ -4452,7 +4957,15 @@ sub objects_by_map
             # Save the object, if necessary
             unless($in_db)
             {
-              $object->save or die $object->error;
+              # Mark all previously set-but-not-modified columns as modified
+              # if saving changes since this object may have been deleted by 
+              # the manager call above.
+              if($args->{'changes_only'})
+              {
+                $object->{MODIFIED_COLUMNS()}{$_} = 1  for(keys %{$object->{SET_COLUMNS()}});
+              }
+
+              $object->save(%$args) or die $object->error;
             }
 
             # Not sharing?  Aw.
@@ -4478,20 +4991,20 @@ sub objects_by_map
             }
 
             # Save the map record
-            $map_record->save or die $map_record->error;
+            $map_record->save(%$args) or die $map_record->error;
           }
 
           # Forget about any adds if we just set the list
-          if(defined $welf->{$key})
+          if(defined $self->{$key})
           {
             # Set to undef instead of deleting because this code ref
             # will be called while iterating over this very hash.
-            $welf->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} = undef;
+            $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} = undef;
           }
 
           # Blank the attribute, causing the objects to be fetched from
           # the db next time, if there's a custom sort order
-          $welf->{$key} = undef  if(defined $mgr_args->{'sort_by'});
+          $self->{$key} = undef  if(defined $mgr_args->{'sort_by'});
 
           return 1;
         };
@@ -4754,11 +5267,9 @@ sub objects_by_map
         push(@{$self->{$key}}, @$objects);
       }
 
-      #weaken(my $welf = $self);
-
       my $add_code = sub
       {
-        my $welf = shift;
+        my($self, $args) = @_;
 
         # Set up join conditions and map record connections
         my(%join_map_to_self,    # map column => self value
@@ -4769,19 +5280,19 @@ sub objects_by_map
           my $map_method = $map_meta->column_accessor_method_name($map_column);
 
           $method_map_to_self{$map_method} = $join_map_to_self{$map_column} = 
-            $welf->$self_method();
+            $self->$self_method();
 
           # Comment this out to allow null keys
           unless(defined $join_map_to_self{$map_column})
           {
             keys(%map_column_to_self_method); # reset iterator
-            $welf->error("Could not fetch indirect objects via $name() - the " .
+            $self->error("Could not fetch indirect objects via $name() - the " .
                          "$self_method attribute is undefined");
             return;
           }
         }
 
-        my $db = $welf->db;
+        my $db = $self->db;
 
         # Add all the objects.
         foreach my $object (@$objects)
@@ -4806,7 +5317,7 @@ sub objects_by_map
           # Save the object, if necessary
           unless($in_db)
           {
-            $object->save or die $object->error;
+            $object->save(%$args) or die $object->error;
           }
 
           # Not sharing?  Aw.
@@ -4827,7 +5338,7 @@ sub objects_by_map
 
         # Blank the attribute, causing the objects to be fetched from
         # the db next time, if there's a custom sort order
-        $welf->{$key} = undef  if(defined $mgr_args->{'sort_by'});
+        $self->{$key} = undef  if(defined $mgr_args->{'sort_by'});
 
         return 1;
       };
@@ -5710,6 +6221,10 @@ The name of the L<Rose::DB::Object::Manager>-derived class used to fetch the obj
 
 The name of the class method to call on C<manager_class> in order to fetch the objects.  Defaults to C<get_objects>.
 
+=item B<manager_count_method NAME>
+
+The name of the class method to call on C<manager_class> in order to count the objects.  Defaults to C<get_objects_count>.
+
 =item B<interface NAME>
 
 Choose the interface.  The C<get_set> interface is the default.
@@ -5732,6 +6247,18 @@ A reference to an array of arguments added to the value of the C<query> paramete
 
 =over 4
 
+=item B<count>
+
+Creates a method that will attempt to count L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object, plus any additional parameters passed to the method call.  Note that this method counts the objects I<in the database at the time of the call>.  This may be different than the number of objects attached to the current object or otherwise in memory.
+
+Since the objects counted are partially determined by the arguments passed to the method, the count is not retained.  It is simply returned.  Each call counts the specified objects again, even if the arguments are the same as the previous call.
+
+If the first argument is a reference to a hash or array, it is converted to a reference to an array (if necessary) and taken as the value of the C<query> parameter.  All arguments are passed on to the C<manager_class>'s C<manager_count_method> method, augmented by the key formed from attributes of the current object.  Query parameters are added to the existing contents of the C<query> parameter.  Other parameters replace existing parameters if the existing values are simple scalars, or augment existing parameters if the existing values are references to hashes or arrays.
+
+The count may fail for several reasons.  The count will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_count_method> method returns undef, the behavior is determined by the L<metadata object|Rose::DB::Object/meta>'s L<error_mode|Rose::DB::Object::Metadata/error_mode>.  If the mode is C<return>, that false value (in scalar context) or an empty list (in list context) is returned.
+
+If the count succeeds, the number is returned.  (If the count finds zero objects, the count will be 0.  This is still considered success.)
+
 =item B<find>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object, plus any additional parameters passed to the method call.  Since the objects fetched are partially determined by the arguments passed to the method, the list of objects is not retained.  It is simply returned.  Each call fetches the requested objects again, even if the arguments are the same as the previous call.
@@ -5750,11 +6277,11 @@ If passed a single argument of undef, the C<hash_key> used to store the objects 
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -5778,11 +6305,11 @@ Otherwise, the argument(s) must be a list or reference to an array containing it
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -5810,11 +6337,11 @@ Otherwise, the argument(s) must be a list or reference to an array containing it
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -5844,11 +6371,11 @@ The argument(s) must be a list or reference to an array containing items in one 
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -5872,11 +6399,11 @@ Otherwise, the argument(s) must be a list or reference to an array containing it
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -6181,6 +6708,10 @@ The name of the L<Rose::DB::Object::Manager>-derived class that the C<map_class>
 
 The name of the class method to call on C<manager_class> in order to fetch the objects.  Defaults to C<get_objects>.
 
+=item B<manager_count_method NAME>
+
+The name of the class method to call on C<manager_class> in order to count the objects.  Defaults to C<get_objects_count>.
+
 =item B<map_class CLASS>
 
 The name of the L<Rose::DB::Object>-derived class that maps between the other two L<Rose::DB::Object>-derived classes.  This class must have a foreign key and/or "many to one" relationship for each of the two tables that it maps between.
@@ -6211,6 +6742,28 @@ A reference to an array of arguments added to the value of the C<query> paramete
 
 =over 4
 
+=item B<count>
+
+Creates a method that will attempt to count L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>, plus any additional parameters passed to the method call.  Note that this method counts the objects I<in the database at the time of the call>.  This may be different than the number of objects attached to the current object or otherwise in memory.
+
+Since the objects counted are partially determined by the arguments passed to the method, the count is not retained.  It is simply returned.  Each call counts the specified objects again, even if the arguments are the same as the previous call.
+
+If the first argument is a reference to a hash or array, it is converted to a reference to an array (if necessary) and taken as the value of the C<query> parameter.  All arguments are passed on to the C<manager_class>'s C<manager_count_method> method, augmented by the mapping to the current object.  Query parameters are added to the existing contents of the C<query> parameter.  Other parameters replace existing parameters if the existing values are simple scalars, or augment existing parameters if the existing values are references to hashes or arrays.
+
+The count may fail for several reasons.  The count will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_count_method> method returns undef, the behavior is determined by the L<metadata object|Rose::DB::Object/meta>'s L<error_mode|Rose::DB::Object::Metadata/error_mode>.  If the mode is C<return>, that false value (in scalar context) or an empty list (in list context) is returned.
+
+If the count succeeds, the number is returned.  (If the count finds zero objects, the count will be 0.  This is still considered success.)
+
+=item B<find>
+
+Creates a method that will attempt to fetch L<Rose::DB::Object>-derived that are related to the current object through the C<map_class>, plus any additional parameters passed to the method call.  Since the objects fetched are partially determined by the arguments passed to the method, the list of objects is not retained.  It is simply returned.  Each call fetches the requested objects again, even if the arguments are the same as the previous call.
+
+If the first argument is a reference to a hash or array, it is converted to a reference to an array (if necessary) and taken as the value of the C<query> parameter.  All arguments are passed on to the C<manager_class>'s C<manager_method> method, augmented by the mapping to the current object.  Query parameters are added to the existing contents of the C<query> parameter.  Other parameters replace existing parameters if the existing values are simple scalars, or augment existing parameters if the existing values are references to hashes or arrays.
+
+The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, the behavior is determined by the L<metadata object|Rose::DB::Object/meta>'s L<error_mode|Rose::DB::Object::Metadata/error_mode>.  If the mode is C<return>, that false value (in scalar context) or an empty list (in list context) is returned.
+
+If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
+
 =item B<get_set>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects that are related to the current object through the C<map_class>.
@@ -6219,11 +6772,11 @@ If passed a single argument of undef, the C<hash_key> used to store the objects 
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -6245,11 +6798,11 @@ Otherwise, the argument(s) must be a list or reference to an array containing it
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -6277,11 +6830,11 @@ Otherwise, the argument(s) must be a list or reference to an array containing it
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -6311,11 +6864,11 @@ The argument(s) must be a list or reference to an array containing items in one 
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -6335,11 +6888,11 @@ Otherwise, the argument(s) must be a list or reference to an array containing it
 
 =over 4
 
-=item * An object of type C<class>
+=item * An object of type C<class>.
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -6415,7 +6968,7 @@ If true, the L<db|Rose::DB::Object/db> attribute of the current object is shared
 
 =item B<delete_now>
 
-Deletes a L<Rose::DB::Object>-derived object from the database based on a primary key formed from attributes of the current object.  First, the "parent" object will have all of its attributes that refer to the "foreign" set to null, and it will be saved into the database.  This needs to be done first because a database that enforces referential integrity will not allow a row to be deleted if it is still referenced by a foreign key in another table.
+Deletes a L<Rose::DB::Object>-derived object from the database based on a primary key formed from attributes of the current object.  If C<referential_integrity> or C<required> is true, then the "parent" object will have all of its attributes that refer to the "foreign" object (except any columns that are also part of the primary key) set to null , and it will be saved into the database.  This needs to be done first because a database that enforces referential integrity will not allow a row to be deleted if it is still referenced by a foreign key in another table.
 
 Any previously pending C<get_set_on_save> action is discarded.
 
@@ -6425,7 +6978,7 @@ Returns true if the foreign object was deleted successfully or did not exist in 
 
 =item B<delete_on_save>
 
-Deletes a L<Rose::DB::Object>-derived object from the database when the "parent" object is L<save|Rose::DB::Object/save>d, based on a primary key formed from attributes of the current object.  The "parent" object will have all of its attributes that refer to the "foreign" set to null immediately, but the actual delete will not be done until the parent is saved.
+Deletes a L<Rose::DB::Object>-derived object from the database when the "parent" object is L<save|Rose::DB::Object/save>d, based on a primary key formed from attributes of the current object.  If C<referential_integrity> or C<required> is true, then the "parent" object will have all of its attributes that refer to the "foreign" object (except any columns that are also part of the primary key) set to null immediately, but the actual delete will not be done until the parent is saved.
 
 Any previously pending C<get_set_on_save> action is discarded.
 
@@ -6437,7 +6990,7 @@ Returns true if the foreign object was deleted successfully or did not exist in 
 
 Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object.
 
-If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument must be one of the following:
+If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  If C<referential_integrity> or C<required> is true, then the columns that participate in the key are set to undef.  (If any key column is part of the primary key, however, it is not set to undef.)  Otherwise, the argument must be one of the following:
 
 =over 4
 
@@ -6447,7 +7000,7 @@ If passed a single argument of undef, the C<hash_key> used to store the object i
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -6467,7 +7020,7 @@ If the load succeeds, the object is returned.
 
 Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object, and will also save the object to the database when called with an appropriate object as an argument.
 
-If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument must be one of the following:
+If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  If C<referential_integrity> or C<required> is true, then the columns that participate in the key are set to undef.  (If any key column is part of the primary key, however, it is not set to undef.) Otherwise, the argument must be one of the following:
 
 =over 4
 
@@ -6477,7 +7030,7 @@ If passed a single argument of undef, the C<hash_key> used to store the object i
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 
@@ -6501,7 +7054,7 @@ If the load succeeds, the object is returned.
 
 Creates a method that will attempt to create and load a L<Rose::DB::Object>-derived object based on a primary key formed from attributes of the current object, and save the object when the "parent" object is L<save|Rose::DB::Object/save>d.
 
-If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  Otherwise, the argument must be one of the following:
+If passed a single argument of undef, the C<hash_key> used to store the object is set to undef.  If C<referential_integrity> or C<required> is true, then the columns that participate in the key are set to undef.  (If any key column is part of the primary key, however, it is not set to undef.) Otherwise, the argument must be one of the following:
 
 =over 4
 
@@ -6511,7 +7064,7 @@ If passed a single argument of undef, the C<hash_key> used to store the object i
 
 =item * A reference to a hash containing method name/value pairs.
 
-=item * A single scalar primary key value
+=item * A single scalar primary key value.
 
 =back
 

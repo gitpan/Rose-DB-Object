@@ -12,7 +12,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 
 our $Debug = 0;
 
-our $VERSION = '0.761';
+our $VERSION = '0.764';
 
 __PACKAGE__->default_auto_method_types(qw(find get_set_on_save add_on_save));
 
@@ -46,6 +46,13 @@ Rose::Object::MakeMethods::Generic->make_methods
 
 __PACKAGE__->method_maker_info
 (
+  count =>
+  {
+    class     => 'Rose::DB::Object::MakeMethods::Generic',
+    type      => 'objects_by_key',
+    interface => 'count',
+  },
+
   find =>
   {
     class     => 'Rose::DB::Object::MakeMethods::Generic',
@@ -121,6 +128,10 @@ sub build_method_name_for_type
   {
     return 'find_' . $self->name;
   }
+  elsif($type eq 'count')
+  {
+    return $self->name . '_count';
+  }
 
   return undef;
 }
@@ -171,6 +182,10 @@ This class inherits from L<Rose::DB::Object::Metadata::Relationship>. Inherited 
 
 =over 4
 
+=item C<count>
+
+L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_key|Rose::DB::Object::MakeMethods::Generic/objects_by_key>, C<interface =E<gt> 'count'> ...
+
 =item C<find>
 
 L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_key|Rose::DB::Object::MakeMethods::Generic/objects_by_key>, C<interface =E<gt> 'find'> ...
@@ -220,7 +235,11 @@ Return a method name for the relationship method type TYPE.
 
 For the method types "get_set", "get_set_now", and "get_set_on_save", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> is returned.
 
-For the method types "add_now" and "add_on_save", the relationship's  L<name|Rose::DB::Object::Metadata::Relationship/name> prefixed with "add_" is returned.
+For the method types "add_now" and "add_on_save", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> prefixed with "add_" is returned.
+
+For the method type "find", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> prefixed with "find_" is returned.
+
+For the method type "count", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> suffixed with "_count" is returned.
 
 Otherwise, undef is returned.
 

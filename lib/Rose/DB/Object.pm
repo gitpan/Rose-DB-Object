@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.763';
+our $VERSION = '0.764';
 
 our $Debug = 0;
 
@@ -157,7 +157,7 @@ sub load
   if(my $key = delete $args{'use_key'})
   {
     my @uk = grep { $_->name eq $key } $meta->unique_keys;
-    
+
     if(@uk == 1)
     {
       my $defined = 0;
@@ -172,7 +172,7 @@ sub load
         $meta->handle_error($self);
         return undef;
       }
-      
+
       if(@key_values != $defined)
       {
         $null_key = 1;
@@ -184,11 +184,11 @@ sub load
     @key_columns = $meta->primary_key_column_names;
     @key_methods = $meta->primary_key_column_accessor_names;
     @key_values  = grep { defined } map { $self->$_() } @key_methods;
-  
+
     unless(@key_values == @key_columns)
     {
       my $alt_columns;
-  
+
       # Prefer unique keys where we have defined values for all
       # key columns, but fall back to the first unique key found 
       # where we have at least one defined value.
@@ -199,16 +199,16 @@ sub load
         @key_methods = map { $meta->column_accessor_method_name($_) } @key_columns;
         @key_values  = map { $defined++ if(defined $_); $_ } 
                        map { $self->$_() } @key_methods;
-  
+
         if($defined == @key_columns)
         {
           $found_key = 1;
           last;
         }
-  
+
         $alt_columns ||= $cols  if($defined);
       }
-  
+
       if(!$found_key && $alt_columns)
       {
         @key_columns = @$alt_columns;
@@ -217,17 +217,17 @@ sub load
         $null_key    = 1;
         $found_key   = 1;
       }
-  
+
       unless($found_key)
       {
         @key_columns = $meta->primary_key_column_names;
-  
+
         $self->error("Cannot load " . ref($self) . " without a primary key (" .
                      join(', ', @key_columns) . ') with ' .
                      (@key_columns > 1 ? 'non-null values in all columns' : 
                                          'a non-null value') .
                      ' or another unique key with at least one non-null value.');
-  
+
         $meta->handle_error($self);
         return 0;
       }
@@ -478,6 +478,10 @@ sub save
     {
       my %did_set;
 
+      my %code_args = 
+        map { ($_ => $args{$_}) } grep { exists $args{$_} } 
+        qw(changes_only prepare_cached cascade);
+
       #
       # Do pre-save stuff
       #
@@ -497,7 +501,7 @@ sub save
         #}
 
         my $code   = $todo->{'fk'}{$fk_name}{'set'} or next;
-        my $object = $code->($self);
+        my $object = $code->($self, \%code_args);
 
         # Account for objects that evaluate to false to due overloading
         unless($object || ref $object)
@@ -543,7 +547,7 @@ sub save
           # Don't run the code to delete this object if we just set it above
           next  if($did_set{'fk'}{$fk_name}{Rose::DB::Object::Util::row_id($object)});
 
-          $code->($self) or die $self->error;
+          $code->($self, \%code_args) or die $self->error;
         }
       }
 
@@ -577,19 +581,19 @@ sub save
         # Set value(s)
         if($code  = $todo->{'rel'}{$rel_name}{'set'})
         {
-          $code->($self) or die $self->error;
+          $code->($self, \%code_args) or die $self->error;
         }
 
         # Delete value(s)
         if($code  = $todo->{'rel'}{$rel_name}{'delete'})
         {
-          $code->($self) or die $self->error;
+          $code->($self, \%code_args) or die $self->error;
         }
 
         # Add value(s)
         if($code  = $todo->{'rel'}{$rel_name}{'add'})
         {
-          $code->($self) or die $self->error;
+          $code->($self, \%code_args) or die $self->error;
         }
       }
 
@@ -2111,7 +2115,7 @@ all columns will be fetched from the database, even L<lazy|Rose::DB::Object::Met
 
 If this parameter is passed with a true value, and if the load failed because the row was L<not found|/not_found>, then the L<error_mode|Rose::DB::Object::Metadata/error_mode> setting is ignored and zero (0) is returned.  In the absence of an explicitly set value, this parameter defaults to the value returned my the L<metadata object|/meta>'s L<default_load_speculative|Rose::DB::Object::Metadata/default_load_speculative> method.
 
-=item B<use_key KEY>
+=item C<use_key KEY>
 
 Use the unique key L<name|Rose::DB::Object::Metadata::UniqueKey/name>d KEY to load the object.  This overrides the unique key selection process described above.  The key must have a defined value in at least one of its L<columns|Rose::DB::Object::Metadata::UniqueKey/columns>.
 
@@ -2172,7 +2176,7 @@ Actions associated with sub-objects that were added or deleted using one of the 
     # all within a single transaction.
     $product->save;
 
-See the "making methods" sections of the L<Rose::DB::Object::Relationship|Rose::DB::Object::Relationship/"MAKING METHODS"> and L<Rose::DB::Object::ForeignKey|Rose::DB::Object::ForeignKey/"MAKING METHODS"> documentation for a description of the "method map" associated with each relationship and foreign key.  Only the actions initiated through one of the "*_on_save" method types are handled when L<save()|/save> is called.  See the documentation for each individual "*_on_save" method type for more specific information.
+See the "making methods" sections of the L<Rose::DB::Object::Metadata::Relationship|Rose::DB::Object::Metadata::Relationship/"MAKING METHODS"> and L<Rose::DB::Object::Metadata::ForeignKey|Rose::DB::Object::Metadata::ForeignKey/"MAKING METHODS"> documentation for a description of the "method map" associated with each relationship and foreign key.  Only the actions initiated through one of the "*_on_save" method types are handled when L<save()|/save> is called.  See the documentation for each individual "*_on_save" method type for more specific information.
 
 Valid parameters to L<save()|/save> are:
 
@@ -2287,7 +2291,7 @@ L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object>
 
 =head1 CONTRIBUTORS
 
-Graham Barr, Lucian Dragus, Perrin Harkins, Cees Hek
+Graham Barr, David Christensen, Lucian Dragus, Perrin Harkins, Cees Hek, Teodor Zlatanov
 
 =head1 AUTHOR
 
