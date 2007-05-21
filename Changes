@@ -1,5 +1,16 @@
+0.764_03 (05.21.2007) - John Siracusa <siracusa@mindspring.com>
+
+    * Setting a BigInt column to undef no longer sets it to zero.
+      (Reported by Jeffrey Horn)
+    * Fixed a Manager bug that caused count queries to use incorrect
+      table aliases when passed empty with_objects or require_objects
+      array reference values.  (Reported by Denis Moskowitz)
+    * The use_key parameter to load() now dies if an invalid key is passed.
+      (Reported by Jonathan Vanasco)
+
 0.764 (05.04.2007) - John Siracusa <siracusa@mindspring.com>
 
+    * Added the strip() helper method.
     * Added a "find" method type to many-to-many relationships.
     * Added a "count" method type to ...-to-many relationships.
     * Added support for nested joins.
