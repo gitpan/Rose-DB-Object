@@ -1,9 +1,9 @@
 --- #YAML:1.0
 name:                Rose-DB-Object
-version:             0.764_03
+version:             0.765
 abstract:            ~
 license:             ~
-generated_by:        ExtUtils::MakeMaker version 6.32
+generated_by:        ExtUtils::MakeMaker version 6.36
 distribution_type:   module
 requires:     
     Bit::Vector::Overload:         0
@@ -16,7 +16,7 @@ requires:
     List::MoreUtils:               0
     Math::BigInt:                  1.77
     Rose::DateTime::Util:          0.532
-    Rose::DB:                      0.734
+    Rose::DB:                      0.735
     Rose::Object:                  0.84
     Scalar::Util:                  0
     Test::More:                    0

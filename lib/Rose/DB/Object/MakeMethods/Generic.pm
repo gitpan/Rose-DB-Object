@@ -18,7 +18,7 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.764';
+our $VERSION = '0.765';
 
 our $Debug = 0;
 
@@ -412,9 +412,9 @@ sub enum
       {
         my($self) = shift;
 
-        if(@_ && defined $_[0])
+        if(@_)
         {
-          Carp::croak "Invalid $name: '$_[0]'"  unless(exists $values{$_[0]});
+          Carp::croak "Invalid $name: '$_[0]'"  unless(!defined $_[0] || exists $values{$_[0]});
           $self->{MODIFIED_COLUMNS()}{$column_name} = 1  unless($self->{STATE_LOADING()});
           return $self->{$key} = $_[0];
         }
@@ -431,9 +431,9 @@ sub enum
       {
         my($self) = shift;
 
-        if(@_ && defined $_[0])
+        if(@_)
         {
-          Carp::croak "Invalid $name: '$_[0]'"  unless(exists $values{$_[0]});
+          Carp::croak "Invalid $name: '$_[0]'"  unless(!defined $_[0] || exists $values{$_[0]});
           $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
           return $self->{$key} = $_[0];
         }
@@ -449,9 +449,9 @@ sub enum
       {
         my($self) = shift;
 
-        if(@_ && defined $_[0])
+        if(@_)
         {
-          Carp::croak "Invalid $name: '$_[0]'"  unless(exists $values{$_[0]});
+          Carp::croak "Invalid $name: '$_[0]'"  unless(!defined $_[0] || exists $values{$_[0]});
           $self->{MODIFIED_COLUMNS()}{$column_name} = 1  unless($self->{STATE_LOADING()});
           return $self->{$key} = $_[0];
         }
@@ -467,7 +467,7 @@ sub enum
       my($self) = shift;
 
       Carp::croak "Missing argument in call to $name"  unless(@_);
-      Carp::croak "Invalid $name: '$_[0]'"  unless(exists $values{$_[0]});
+      Carp::croak "Invalid $name: '$_[0]'"  unless(!defined $_[0] || exists $values{$_[0]});
       $self->{MODIFIED_COLUMNS()}{$column_name} = 1   unless($self->{STATE_LOADING()});
       return $self->{$key} = $_[0];
     };
@@ -557,22 +557,22 @@ sub boolean
 
         if(@_)
         {
-          if($_[0])
+          if(my $value = $_[0])
           {
             if($self->{STATE_LOADING()})
             {
               $self->{$key} = undef;
-              return $self->{$formatted_key,$driver} = $_[0];
+              return $self->{$formatted_key,$driver} = $value;
             }
             else
             {
-              if($_[0] =~ /^(?:1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
+              if($value =~ /^(?:1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
               {
                 $self->{$formatted_key,$driver} = undef;
                 $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
                 return $self->{$key} = 1;
               }
-              elsif($_[0] =~ /^(?:0(?:\.0*)?|f(?:alse)?|no?)$/i)
+              elsif($value =~ /^(?:0(?:\.0*)?|f(?:alse)?|no?)$/i)
               {
                 $self->{$formatted_key,$driver} = undef;
                 $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
@@ -580,7 +580,7 @@ sub boolean
               }
               else
               {
-                my $value = $db->parse_boolean($_[0]);
+                my $value = $db->parse_boolean($value);
                 Carp::croak($db->error)  unless(defined $value);
                 $self->{$formatted_key,$driver} = undef;
                 $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
@@ -631,22 +631,22 @@ sub boolean
           my $db = $self->db or die "Missing Rose::DB object attribute";
           my $driver = $db->driver || 'unknown';
 
-          if($_[0])
+          if(my $value = $_[0])
           {
             if($self->{STATE_LOADING()})
             {
               $self->{$key} = undef;
-              return $self->{$formatted_key,$driver} = $_[0];
+              return $self->{$formatted_key,$driver} = $value;
             }
             else
             {
-              if($_[0] =~ /^(?:1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
+              if($value =~ /^(?:1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
               {
                 $self->{$formatted_key,$driver} = undef;
                 $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
                 return $self->{$key} = 1;
               }
-              elsif($_[0] =~ /^(?:0(?:\.0*)?|f(?:alse)?|no?)$/i)
+              elsif($value =~ /^(?:0(?:\.0*)?|f(?:alse)?|no?)$/i)
               {
                 $self->{$formatted_key,$driver} = undef;
                 $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
@@ -654,7 +654,7 @@ sub boolean
               }
               else
               {
-                my $value = $db->parse_boolean($_[0]);
+                my $value = $db->parse_boolean($value);
                 Carp::croak($db->error)  unless(defined $value);
                 $self->{$formatted_key,$driver} = undef;
                 $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
@@ -665,7 +665,7 @@ sub boolean
 
           $self->{$formatted_key,$driver} = undef;
           $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
-          return $self->{$key} = 0;
+          return $self->{$key} = defined $_[0] ? 0 : undef;
         }
 
         if($self->{STATE_SAVING()})
@@ -759,22 +759,22 @@ sub boolean
       my $db = $self->db or die "Missing Rose::DB object attribute";
       my $driver = $db->driver || 'unknown';
 
-      if($_[0])
+      if(my $value = $_[0])
       {
         if($self->{STATE_LOADING()})
         {
           $self->{$key} = undef;
-          return $self->{$formatted_key,$driver} = $_[0];
+          return $self->{$formatted_key,$driver} = $value;
         }
         else
         {
-          if($_[0] =~ /^(?:0*1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
+          if($value =~ /^(?:0*1(?:\.0*)?|t(?:rue)?|y(?:es)?)$/i)
           {
             $self->{$formatted_key,$driver} = undef;
             $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
             return $self->{$key} = 1;
           }
-          elsif($_[0] =~ /^(?:0+(?:\.0*)?|f(?:alse)?|no?)$/i)
+          elsif($value =~ /^(?:0+(?:\.0*)?|f(?:alse)?|no?)$/i)
           {
             $self->{$formatted_key,$driver} = undef;
             $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
@@ -782,7 +782,7 @@ sub boolean
           }
           else
           {
-            my $value = $db->parse_boolean($_[0]);
+            my $value = $db->parse_boolean($value);
             Carp::croak($db->error)  unless(defined $value);
             $self->{$formatted_key,$driver} = undef;
             $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
@@ -792,7 +792,7 @@ sub boolean
       }
 
       $self->{$formatted_key,$driver} = undef;
-      return $self->{$key} = 0;
+      return $self->{$key} = defined $_[0] ? 0 : undef;
     }
   }
   else { Carp::croak "Unknown interface: $interface" }
@@ -1463,6 +1463,8 @@ sub set
 
   my $formatted_key = column_value_formatted_key($key);
 
+  my $value_type = $args->{'value_type'} || 'scalar';
+
   my %methods;
 
   if($interface eq 'get_set')
@@ -1487,7 +1489,7 @@ sub set
           }
           else
           {
-            my $set = $db->parse_set(@_);
+            my $set = $db->parse_set(@_, { value_type => $value_type });
 
             if($choices)
             {
@@ -1513,8 +1515,9 @@ sub set
         }
         elsif(!defined $self->{$key})
         {
-          my $set = $db->parse_set(defined $self->{$formatted_key,$driver} ? 
-                                   $self->{$formatted_key,$driver} : $default);
+          my $set = $db->parse_set((defined $self->{$formatted_key,$driver} ? 
+                                    $self->{$formatted_key,$driver} : $default),
+                                   { value_type => $value_type });
 
           if($choices)
           {
@@ -1543,7 +1546,7 @@ sub set
         # Pull default through if necessary
         unless(defined $self->{$key} || defined $self->{$formatted_key,$driver})
         {
-          $self->{$key} = $db->parse_set($default);
+          $self->{$key} = $db->parse_set($default, { value_type => $value_type });
 
           if(!defined $default || defined $self->{$key})
           {
@@ -1585,7 +1588,7 @@ sub set
           }
           else
           {
-            my $set = $db->parse_set(@_);
+            my $set = $db->parse_set(@_, { value_type => $value_type });
 
             if($choices)
             {
@@ -1630,7 +1633,7 @@ sub set
 
         if(defined $self->{$formatted_key,$driver})
         {
-          $self->{$key} = $db->parse_set($self->{$formatted_key,$driver});
+          $self->{$key} = $db->parse_set($self->{$formatted_key,$driver}, { value_type => $value_type });
           $self->{$formatted_key,$driver} = undef;
 
           return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
@@ -1655,7 +1658,7 @@ sub set
 
         if(!defined $self->{$key} && (!$self->{STATE_SAVING()} || !defined $self->{$formatted_key,$driver}))
         {
-          my $set = $db->parse_set($default);
+          my $set = $db->parse_set($default, { value_type => $value_type });
 
           if($choices)
           {
@@ -1697,7 +1700,7 @@ sub set
 
         if(defined $self->{$formatted_key,$driver})
         {
-          $self->{$key} = $db->parse_set($self->{$formatted_key,$driver});
+          $self->{$key} = $db->parse_set($self->{$formatted_key,$driver}, { value_type => $value_type });
           $self->{$formatted_key,$driver} = undef;
 
           return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
@@ -1735,7 +1738,7 @@ sub set
 
         if(defined $self->{$formatted_key,$driver})
         {
-          $self->{$key} = $db->parse_set($self->{$formatted_key,$driver});
+          $self->{$key} = $db->parse_set($self->{$formatted_key,$driver}, { value_type => $value_type });
           $self->{$formatted_key,$driver} = undef;
 
           return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
@@ -1763,7 +1766,7 @@ sub set
       }
       else
       {
-        my $set = $db->parse_set(@_);
+        my $set = $db->parse_set(@_, { value_type => $value_type });
 
         if($choices)
         {
@@ -1805,7 +1808,7 @@ sub set
 
       if(defined $self->{$formatted_key,$driver})
       {
-        $self->{$key} = $db->parse_set($self->{$formatted_key,$driver});
+        $self->{$key} = $db->parse_set($self->{$formatted_key,$driver}, { value_type => $value_type });
         $self->{$formatted_key,$driver} = undef;
 
         return defined $self->{$key} ? wantarray ? @{$self->{$key}} : $self->{$key} : undef;
@@ -2339,6 +2342,7 @@ sub object_by_key
     }
 
     my $fk_name = $fk->name;
+    my $is_fk = $fk->type eq 'foreign key' ? 1 : 0;
 
     $methods{$name} = sub
     {
@@ -2470,6 +2474,7 @@ sub object_by_key
     }
 
     my $fk_name = $fk->name;
+    my $is_fk = $fk->type eq 'foreign key' ? 1 : 0;
 
     $methods{$name} = sub
     {
@@ -2579,7 +2584,7 @@ sub object_by_key
 
       # Add the on save code to the list
       push(@{$self->{ON_SAVE_ATTR_NAME()}{'post'}{'fk'}{$fk_name}{'delete'}}, 
-           { code => $delete_code, object => $object });
+           { code => $delete_code, object => $object, is_fk => $is_fk });
 
       return 1;
     };
@@ -2605,7 +2610,8 @@ sub objects_by_key
   weaken(my $meta = $target_class->meta);
   my $ft_pk;
 
-  unless(exists $args->{'key_columns'} || exists $args->{'query_args'})
+  unless(exists $args->{'key_columns'} || exists $args->{'query_args'} || 
+         exists $args->{'join_args'})
   {
     # The key_columns attr is aliased to column_map when used 
     # through the OneToMany relationship.
@@ -2620,6 +2626,8 @@ sub objects_by_key
   my $query_args = $args->{'query_args'} || [];
   my $single     = $args->{'single'} || 0;
 
+  push(@$query_args, @{$args->{'join_args'} || []});
+
   my $ft_count_method = $args->{'manager_count_method'} || 'get_objects_count';
 
   if($mgr_args->{'query'})
@@ -2628,10 +2636,10 @@ sub objects_by_key
                 "hash.  Use the separate query_args parameter instead";
   }
 
-  if(@$query_args % 2 != 0)
-  {
-    Carp::croak "Odd number of arguments passed in query_args parameter";
-  }
+  #if(@$query_args % 2 != 0)
+  #{
+  #  Carp::croak "Odd number of arguments passed in query_args parameter";
+  #}
 
   unless($ft_manager)
   {
@@ -2740,6 +2748,8 @@ sub objects_by_key
         $args{$k} = $v  unless(exists $args{$k});
       }
 
+      $args{'multi_many_ok'} = 1;
+
       # Make query for object count
       eval
       {
@@ -2747,16 +2757,14 @@ sub objects_by_key
         if($share_db)
         {
           $count = 
-            $ft_manager->$ft_count_method(query => \@query, db => $self->db, %args)
-              or die $ft_manager->error;
+            $ft_manager->$ft_count_method(query => \@query, db => $self->db, %args);
         }
         else
         {
           $count = 
             $ft_manager->$ft_count_method(query    => \@query, 
                                           db       => $self->db,
-                                          share_db => 0, %args)
-              or die $ft_manager->error;
+                                          share_db => 0, %args);
         }
       };
 
@@ -3946,6 +3954,8 @@ sub objects_by_map
   my $mgr_args     = $args->{'manager_args'} || {};
   my $query_args   = $args->{'query_args'} || [];
 
+  push(@$query_args, @{$args->{'join_args'} || []});
+
   my $count_method = $args->{'manager_count_method'} || 'get_objects_count';
 
   if($mgr_args->{'query'})
@@ -3958,10 +3968,10 @@ sub objects_by_map
 
   my $map_delete_method = $args->{'map_delete_method'} || 'delete_objects';
 
-  if(@$query_args % 2 != 0)
-  {
-    Carp::croak "Odd number of arguments passed in query_args parameter";
-  }
+  #if(@$query_args % 2 != 0)
+  #{
+  #  Carp::croak "Odd number of arguments passed in query_args parameter";
+  #}
 
   unless($map_manager)
   {
@@ -4299,7 +4309,7 @@ sub objects_by_map
           $objs =
             $map_manager->$map_method(query => \@query,
                                       require_objects => $require_objects,
-                                      %$mgr_args, db => $self->db);
+                                      %args, db => $self->db);
         }
         else
         {
@@ -4307,13 +4317,13 @@ sub objects_by_map
             $map_manager->$map_method(query => \@query,
                                       require_objects => $require_objects,
                                       db => $self->db, share_db => 0,
-                                      %$mgr_args);
+                                      %args);
         }
       };
 
       if($@ || !$objs)
       {
-        $self->error("Could not find $foreign_class objects - " . $map_manager->error);
+        $self->error("Could not find $foreign_class objects - " . ($@ || $map_manager->error));
         $self->meta->handle_error($self);
         return wantarray ? () : $objs;
       }
@@ -4456,6 +4466,8 @@ sub objects_by_map
       {
         $args{$k} = $v  unless(exists $args{$k});
       }
+
+      $args{'multi_many_ok'} = 1;
 
       my $count;
 
@@ -4723,7 +4735,7 @@ sub objects_by_map
             # Create or retrieve map record, connected to self
             if($map_record_method)
             {
-              $map_record = $object->$map_record_method();
+              $map_record = $object->$map_record_method() || $map_class->new;
               $map_record->init(%method_map_to_self, db => $db);
             }
             else
@@ -4737,8 +4749,23 @@ sub objects_by_map
               $map_record->$map_method($object->$remote_method);
             }
 
-            # Save the map record
-            $map_record->save or die $map_record->error;
+            $in_db = $map_record->{STATE_IN_DB()};
+
+            # Try to load the map record if doesn't appear to exist already
+            unless($in_db)
+            {
+              my $dbh = $map_record->dbh;
+  
+              # It's okay if this fails (e.g., if the primary key is undefined)
+              local $dbh->{'PrintError'} = 0;
+              eval { $in_db = $map_record->load(speculative => 1) };
+            }
+  
+            # Save the map record, if necessary
+            unless($in_db)
+            {
+              $map_record->save or die $map_record->error;
+            }
           }
 
           # Assign to attribute or blank the attribute, causing the objects
@@ -4976,7 +5003,7 @@ sub objects_by_map
             # Create or retrieve map record, connected to self
             if($map_record_method)
             {
-              $map_record = $object->$map_record_method();
+              $map_record = $object->$map_record_method() || $map_class->new;
               $map_record->init(%method_map_to_self, db => $db);
             }
             else
@@ -4990,8 +5017,23 @@ sub objects_by_map
               $map_record->$map_method($object->$remote_method);
             }
 
-            # Save the map record
-            $map_record->save(%$args) or die $map_record->error;
+            $in_db = $map_record->{STATE_IN_DB()};
+  
+            # Try to load the map record if doesn't appear to exist already
+            unless($in_db)
+            {
+              my $dbh = $map_record->dbh;
+  
+              # It's okay if this fails (e.g., if the primary key is undefined)
+              local $dbh->{'PrintError'} = 0;
+              eval { $in_db = $map_record->load(speculative => 1) };
+            }
+  
+            # Save the map record, if necessary
+            unless($in_db)
+            {
+              $map_record->save or die $map_record->error;
+            }
           }
 
           # Forget about any adds if we just set the list
@@ -5217,8 +5259,23 @@ sub objects_by_map
             $map_record->$map_method($object->$remote_method);
           }
 
-          # Save the map record
-          $map_record->save or die $map_record->error;
+          $in_db = $map_record->{STATE_IN_DB()};
+
+          # Try to load the map record if doesn't appear to exist already
+          unless($in_db)
+          {
+            my $dbh = $map_record->dbh;
+
+            # It's okay if this fails (e.g., if the primary key is undefined)
+            local $dbh->{'PrintError'} = 0;
+            eval { $in_db = $map_record->load(speculative => 1) };
+          }
+
+          # Save the map record, if necessary
+          unless($in_db)
+          {
+            $map_record->save or die $map_record->error;
+          }
         }
 
         # Clear the existing list, forcing it to be reloaded next time
@@ -5332,8 +5389,23 @@ sub objects_by_map
             $map_record->$map_method($object->$remote_method);
           }
 
-          # Save the map record
-          $map_record->save or die $map_record->error;
+          $in_db = $map_record->{STATE_IN_DB()};
+
+          # Try to load the map record if doesn't appear to exist already
+          unless($in_db)
+          {
+            my $dbh = $map_record->dbh;
+
+            # It's okay if this fails (e.g., if the primary key is undefined)
+            local $dbh->{'PrintError'} = 0;
+            eval { $in_db = $map_record->load(speculative => 1) };
+          }
+
+          # Save the map record, if necessary
+          unless($in_db)
+          {
+            $map_record->save or die $map_record->error;
+          }
         }
 
         # Blank the attribute, causing the objects to be fetched from
@@ -7514,7 +7586,7 @@ Example:
 
 =head1 AUTHOR
 
-John C. Siracusa (siracusa@mindspring.com)
+John C. Siracusa (siracusa@gmail.com)
 
 =head1 COPYRIGHT
 

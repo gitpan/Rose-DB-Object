@@ -8,11 +8,11 @@ use Rose::DB::Object::MakeMethods::Generic;
 use Rose::DB::Object::Metadata::Column;
 our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
-our $VERSION = '0.764';
+our $VERSION = '0.765';
 
 __PACKAGE__->add_common_method_maker_argument_names
 (
-  qw(default check_in)
+  qw(default check_in value_type)
 );
 
 Rose::Object::MakeMethods::Generic->make_methods
@@ -108,11 +108,15 @@ Parse VALUE and return a reference to an array containing the set values.  DB is
 
 Returns "set".
 
+=item B<value_type [TYPE]>
+
+Get or set the name of the data type contained in this set.  Valid values for TYPE are C<bigfloat>, C<bigint>, C<bignum>, C<character>, C<decimal>, C<float>, C<integer>, C<numeric>, C<scalar>, and C<varchar>.
+
 =back
 
 =head1 AUTHOR
 
-John C. Siracusa (siracusa@mindspring.com)
+John C. Siracusa (siracusa@gmail.com)
 
 =head1 COPYRIGHT
 

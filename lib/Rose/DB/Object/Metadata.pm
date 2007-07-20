@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.764';
+our $VERSION = '0.765';
 
 our $Debug = 0;
 
@@ -68,7 +68,7 @@ use Rose::Object::MakeMethods::Generic
     default_smart_modification  => { default => 0 },
   ],
 
-  array =>
+  'array --get_set_inited' =>
   [
     'columns_ordered',
   ]
@@ -775,7 +775,7 @@ sub delete_column
   delete $self->{'columns'}{$name};
 
   # Remove from ordered list too  
-  my $columns = $self->columns_ordered || [];
+  my $columns = $self->columns_ordered;
 
   for(my $i = 0; $i < @$columns; $i++)
   {
@@ -797,7 +797,7 @@ sub delete_columns
   return;
 }
 
-sub first_column { my $c = shift->columns_ordered || [];  return $c->[0] }
+sub first_column { shift->columns_ordered->[0] }
 
 sub sync_keys_to_columns
 {
@@ -805,14 +805,16 @@ sub sync_keys_to_columns
 
   $self->_clear_column_generated_values;
 
-  my %columns = map { $_->name => 1 } $self->columns;
+  my %columns = map { $_->name => 1 } $self->columns_ordered;
 
   foreach my $col_name ($self->primary_key_column_names)
   {
     unless($columns{$col_name})
     {
-      $self->primary_key(undef);
-      last;
+      Carp::croak "Primary key column '$col_name' is not in the column list for ",
+                  $self->class;
+      #$self->primary_key(undef);
+      #last;
     }
   }
 
@@ -822,7 +824,12 @@ sub sync_keys_to_columns
   {
     foreach my $col_name ($uk->column_names)
     {
-      next UK  unless($columns{$col_name});
+      unless($columns{$col_name})
+      {
+        Carp::croak "Column '$col_name' found in unique key is not in the column list for ",
+                    $self->class;
+        #next UK;
+      }
     }
 
     push(@valid_uks, $uk);
@@ -870,15 +877,13 @@ sub columns
     $self->add_columns(@_);
   }
 
-  return wantarray ?
-    (sort { $a->name cmp $b->name } values %{$self->{'columns'} ||= {}}) :
-    [ sort { $a->name cmp $b->name } values %{$self->{'columns'} ||= {}} ];
+  return $self->columns_ordered;
 }
 
 sub num_columns
 {
   my($self) = shift;
-  return $self->{'num_columns'} ||= scalar(@{$self->columns});
+  return $self->{'num_columns'} ||= scalar(@{$self->columns_ordered});
 }
 
 sub nonlazy_columns
@@ -886,8 +891,8 @@ sub nonlazy_columns
   my($self) = shift;
 
   return wantarray ?
-    (sort { $a->name cmp $b->name } grep { !$_->lazy } values %{$self->{'columns'} ||= {}}) :
-    [ sort { $a->name cmp $b->name } grep { !$_->lazy } values %{$self->{'columns'} ||= {}} ];
+    (grep { !$_->lazy } $self->columns_ordered) :
+    [ grep { !$_->lazy } $self->columns_ordered ];
 }
 
 sub lazy_columns
@@ -895,8 +900,8 @@ sub lazy_columns
   my($self) = shift;
 
   return wantarray ?
-    (sort { $a->name cmp $b->name } grep { $_->lazy } values %{$self->{'columns'} ||= {}}) :
-    [ sort { $a->name cmp $b->name } grep { $_->lazy } values %{$self->{'columns'} ||= {}} ];
+    (grep { $_->lazy } $self->columns_ordered) :
+    [ grep { $_->lazy } $self->columns_ordered ];
 }
 
 sub add_columns
@@ -1544,10 +1549,13 @@ sub register_class
   my $db = $self->db;
 
   my $catalog = $self->select_catalog($db);
-  my $schema  = $self->select_schema($db);
+  my $schema  = $db ? ($db->registration_schema || $self->select_schema($db)) :
+                $self->select_schema($db);;
 
   $catalog  = NULL_CATALOG  unless(defined $catalog);
   $schema   = NULL_SCHEMA   unless(defined $schema);
+
+  my $default_schema = $db ? $db->default_implicit_schema : undef;
 
   my $table = $self->table 
     or Carp::croak "Missing table for metadata object $self";
@@ -1566,13 +1574,12 @@ sub register_class
   # Ug, have to store lowercase versions too because MySQL sometimes returns
   # lowercase names for tables that are actually mixed case.  Grrr...
   $reg->{'catalog-schema-table',$catalog,$schema,$table} =
-    $reg->{'schema-table',$schema,$table}  =
-    $reg->{'catalog-table',$catalog,$table} =
     $reg->{'table',$table} =
     $reg->{'lc-catalog-schema-table',$catalog,$schema,lc $table} =
-    $reg->{'lc-schema-table',$schema,lc $table}  =
-    $reg->{'lc-catalog-table',$catalog,lc $table} =
     $reg->{'lc-table',lc $table} = $class;
+
+  $reg->{'catalog-schema-table',$catalog,$default_schema,$table} = $class
+    if(defined $default_schema);
 
   push(@{$reg->{'classes'}}, $class);
 
@@ -1625,29 +1632,25 @@ sub class_for
   # wont' show up in a catalog, schema, or table name, so I'm guarding
   # against someone changing it to "-" elsewhere in the code or whatever.
   local $; = "\034";
-
-  my $f_table =
+                        
+  my $f_class =
     $reg->{'catalog-schema-table',$catalog,$schema,$table} ||
     $reg->{'catalog-schema-table',$catalog,$default_schema,$table} ||
-    $reg->{'schema-table',$schema,$table}  ||
-    $reg->{'catalog-table',$catalog,$table} ||
-    $reg->{'table',$table};
+    ($schema eq NULL_SCHEMA && $default_schema eq NULL_SCHEMA ? $reg->{'lc-table',$table} : undef);
 
   # Ug, have to check lowercase versions too because MySQL sometimes returns
   # lowercase names for tables that are actually mixed case.  Grrr...
-  unless($f_table)
+  unless($f_class)
   {
     $table = lc $table;
 
     return
       $reg->{'lc-catalog-schema-table',$catalog,$schema,$table} ||
       $reg->{'lc-catalog-schema-table',$catalog,$default_schema,$table} ||
-      $reg->{'lc-schema-table',$schema,$table}  ||
-      $reg->{'lc-catalog-table',$catalog,$table} ||
-      $reg->{'lc-table',$table};  
+      ($schema eq NULL_SCHEMA && $default_schema eq NULL_SCHEMA ? $reg->{'lc-table',$table} : undef);
   }
 
-  return $f_table;
+  return $f_class;
 }
 
 #sub made_method_for_column 
@@ -1672,7 +1675,7 @@ sub make_column_methods
     $self->column($column_name)->alias($alias);
   }
 
-  foreach my $column ($self->columns)
+  foreach my $column ($self->columns_ordered)
   {
     my $name = $column->name;
     my $method;
@@ -1736,7 +1739,7 @@ sub make_column_methods
 
   # This rule is relaxed for now...
   # Must have an rw accessor for every column
-  #my $columns = $self->columns;
+  #my $columns = $self->columns_ordered;
   #
   #unless(keys %methods == @$columns)
   #{
@@ -2586,7 +2589,7 @@ sub _sequence_name
 sub column_names
 {
   my($self) = shift;
-  $self->{'column_names'} ||= [ sort { $a cmp $b } keys %{$self->{'columns'} ||= {}} ];
+  $self->{'column_names'} ||= [ map { $_->name } $self->columns_ordered ];
   return wantarray ? @{$self->{'column_names'}} : $self->{'column_names'};
 }
 
@@ -2617,7 +2620,7 @@ sub column_names_string_sql
   my($self, $db) = @_;
 
   return $self->{'column_names_string_sql'}{$db->{'id'}} ||= 
-    join(', ', map { $_->name_sql($db) } sort { $a->name cmp $b->name } $self->columns);
+    join(', ', map { $_->name_sql($db) } $self->columns_ordered);
 }
 
 sub column_names_sql
@@ -2625,7 +2628,7 @@ sub column_names_sql
   my($self, $db) = @_;
 
   my $list = $self->{'column_names_sql'}{$db->{'id'}} ||= 
-    [ map { $_->name_sql($db) } $self->columns ];
+    [ map { $_->name_sql($db) } $self->columns_ordered ];
 
   return wantarray ? @$list : $list;
 }
@@ -2643,7 +2646,7 @@ sub select_columns_string_sql
   my($self, $db) = @_;
 
   return $self->{'select_columns_string_sql'}{$db->{'id'}} ||= 
-    join(', ', map { $_->select_sql($db) } sort { $a->name cmp $b->name } $self->columns);
+    join(', ', map { $_->select_sql($db) } $self->columns_ordered);
 }
 
 sub select_columns_sql
@@ -2651,7 +2654,7 @@ sub select_columns_sql
   my($self, $db) = @_;
 
   my $list = $self->{'select_columns_sql'}{$db->{'id'}} ||= 
-    [ map { $_->select_sql($db) } sort { $a->name cmp $b->name } $self->columns ];
+    [ map { $_->select_sql($db) } $self->columns_ordered ];
 
   return wantarray ? @$list : $list;
 }
@@ -2662,7 +2665,7 @@ sub method_column
 
   unless(defined $self->{'method_columns'})
   {
-    foreach my $column ($self->columns)
+    foreach my $column ($self->columns_ordered)
     {
       foreach my $type ($column->defined_method_types)
       {
@@ -2737,7 +2740,7 @@ sub column_db_value_hash_keys
   my($self) = shift;
 
   $self->{'column_db_value_hash_keys'} ||= 
-    { map { $_->mutator_method_name => $_->db_value_hash_key } $self->columns };
+    { map { $_->mutator_method_name => $_->db_value_hash_key } $self->columns_ordered };
 
   return wantarray ? %{$self->{'column_db_value_hash_keys'}} :
                      $self->{'column_db_value_hash_keys'};
@@ -2950,7 +2953,7 @@ sub update_all_sql
     {
       '    ' . $_->name_sql($db) . ' = ' . $_->update_placeholder_sql($db)
     } 
-    grep { !$key{$_->name} } $self->columns) .
+    grep { !$key{$_->name} } $self->columns_ordered) .
     "\nWHERE " . 
     join(' AND ', map 
     {
@@ -2970,23 +2973,41 @@ sub update_sql
 
   my %key = map { ($_ => 1) } @$key_columns;
 
-  no warnings;
-  return ($self->{'update_sql_prefix'}{$db->{'id'}} ||
+  no warnings 'uninitialized';
+
+  my @columns = 
+    grep { !$key{$_->name} && (!$_->lazy || $obj->{LAZY_LOADED_KEY()}{$_->name}) } 
+    $self->columns_ordered;
+
+  my @exec;
+
+  unless($self->dbi_requires_bind_param($db))
+  {
+    my $method_name = $self->column_accessor_method_names_hash;
+  
+    foreach my $column (@columns)
+    {
+      my $method = $method_name->{$column->{'name'}};
+      push(@exec, $obj->$method());
+    }
+  }
+
+  return (($self->{'update_sql_prefix'}{$db->{'id'}} ||
           $self->init_update_sql_prefix($db)) .
     join(",\n", map 
     {
       '    ' . $_->name_sql($db) . ' = ' . $_->update_placeholder_sql($db)
     } 
-    grep { !$key{$_->name} && (!$_->lazy || 
-           $obj->{LAZY_LOADED_KEY()}{$_->name}) } 
-    $self->columns) .
+    @columns) .
     "\nWHERE " . 
     join(' AND ', map 
     {
       my $c = $self->column($_);
       $c->name_sql($db) . ' = ' . $c->query_placeholder_sql($db)
     }
-    @$key_columns);
+    @$key_columns),
+    \@exec,
+    \@columns);
 }
 
 sub init_update_sql_prefix
@@ -3062,7 +3083,7 @@ sub update_changes_only_sql
 #   my @bind;
 #   my @updates;
 # 
-#   foreach my $column (grep { !$key{$_} } $self->columns)
+#   foreach my $column (grep { !$key{$_} } $self->columns_ordered)
 #   {
 #     my $method = $self->column_method($column->name);
 #     my $value  = $obj->$method();
@@ -3108,7 +3129,7 @@ sub update_sql_with_inlining
 
   foreach my $column (grep { !$key{$_} && (!$_->{'lazy'} || 
                              $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } 
-                      $self->columns)
+                      $self->columns_ordered)
   {
     my $method = $self->column_accessor_method_name($column->name);
     my $value  = $obj->$method();
@@ -3172,7 +3193,7 @@ sub update_changes_only_sql_with_inlining
 
   my $do_bind_params = $self->dbi_requires_bind_param($db);
 
-  foreach my $column (grep { !$key{$_->{'name'}} && $modified->{$_->{'name'}} } $self->columns)
+  foreach my $column (grep { !$key{$_->{'name'}} && $modified->{$_->{'name'}} } $self->columns_ordered)
   {
     my $method = $self->column_accessor_method_name($column->name);
     my $value  = $obj->$method();
@@ -3232,7 +3253,7 @@ sub insert_changes_only_sql
   my($self, $obj, $db) = @_;
 
   my $modified = $obj->{MODIFIED_COLUMNS()} || {};
-  my @modified = grep { $modified->{$_->{'name'}} || $_->default_exists } $self->columns;
+  my @modified = grep { $modified->{$_->{'name'}} || $_->default_exists } $self->columns_ordered;
 
   unless(@modified)
   {
@@ -3243,7 +3264,7 @@ sub insert_changes_only_sql
     {
       return 
         'INSERT INTO ' . $self->fq_table_sql($db) . ' (' .
-        ($self->columns)[-1]->name_sql($db) . ') VALUES (DEFAULT)',
+        ($self->columns_ordered)[-1]->name_sql($db) . ') VALUES (DEFAULT)',
         [];
     }
     else
@@ -3275,7 +3296,7 @@ sub insert_columns_placeholders_sql
 {
   my($self, $db) = @_;
   return $self->{'insert_columns_placeholders_sql'}{$db->{'id'}} ||= 
-    join(",\n", map { '  ' . $_->insert_placeholder_sql($db) } $self->columns)
+    join(",\n", map { '  ' . $_->insert_placeholder_sql($db) } $self->columns_ordered)
 }
 
 sub insert_and_on_duplicate_key_update_sql
@@ -3293,7 +3314,7 @@ sub insert_and_on_duplicate_key_update_sql
        ($self->primary_key_column_names, 
         keys %{$obj->{MODIFIED_COLUMNS()} || {}})) :
       (grep { (!$_->{'lazy'} || $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } 
-       $self->columns);
+       $self->columns_ordered);
 
     @names = map { $_->name_sql($db) } @columns;
 
@@ -3331,7 +3352,7 @@ sub insert_and_on_duplicate_key_update_sql
     @columns = $changes_only ?
       (map { $self->column($_) } grep { !$skip{"$_"} } keys %{$obj->{MODIFIED_COLUMNS()} || {}}) :
       (grep { !$skip{"$_"} && (!$_->{'lazy'} || 
-              $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } $self->columns);
+              $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } $self->columns_ordered);
 
     @names = map { $_->name_sql($db) } @columns;
 
@@ -3368,7 +3389,7 @@ sub insert_sql_with_inlining
 
   my $do_bind_params = $self->dbi_requires_bind_param($db);
 
-  foreach my $column ($self->columns)
+  foreach my $column ($self->columns_ordered)
   {
     my $method = $self->column_accessor_method_name($column->name);
     my $value  = $obj->$method();
@@ -3425,7 +3446,7 @@ sub insert_and_on_duplicate_key_update_with_inlining_sql
        ($self->primary_key_column_names, 
         keys %{$obj->{MODIFIED_COLUMNS()} || {}})) :
       (grep { (!$_->{'lazy'} || $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } 
-       $self->columns);
+       $self->columns_ordered);
 
     @names = map { $_->name_sql($db) } @columns;
   }
@@ -3457,7 +3478,7 @@ sub insert_and_on_duplicate_key_update_with_inlining_sql
     @columns = $changes_only ?
       (map { $self->column($_) } grep { !$skip{"$_"} } keys %{$obj->{MODIFIED_COLUMNS()} || {}}) :
       (grep { !$skip{"$_"} && (!$_->{'lazy'} || 
-              $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } $self->columns);
+              $obj->{LAZY_LOADED_KEY()}{$_->{'name'}}) } $self->columns_ordered);
 
     @names = map { $_->name_sql($db) } @columns;
   }
@@ -3504,7 +3525,7 @@ sub insert_changes_only_sql_with_inlining
   my $db = $obj->db or Carp::croak "Missing db";
 
   my $modified = $obj->{MODIFIED_COLUMNS()} || {};
-  my @modified = grep { $modified->{$_->{'name'}} || $_->default_exists } $self->columns;
+  my @modified = grep { $modified->{$_->{'name'}} || $_->default_exists } $self->columns_ordered;
 
   unless(@modified)
   {
@@ -3515,7 +3536,7 @@ sub insert_changes_only_sql_with_inlining
     {
       return 
         'INSERT INTO ' . $self->fq_table_sql($db) . ' (' .
-        ($self->columns)[-1]->name_sql($db) . ') VALUES (DEFAULT)',
+        ($self->columns_ordered)[-1]->name_sql($db) . ') VALUES (DEFAULT)',
         [];
     }
     else
@@ -3635,14 +3656,14 @@ sub refresh_lazy_column_tracking
   $self->column_mutator_method_names;
   $self->column_rw_method_names;
 
-  return $self->{'has_lazy_columns'} = grep { $_->lazy } $self->columns;
+  return $self->{'has_lazy_columns'} = grep { $_->lazy } $self->columns_ordered;
 }
 
 sub has_lazy_columns
 {
   my($self) = shift;
   return $self->{'has_lazy_columns'}  if(defined $self->{'has_lazy_columns'});
-  return $self->{'has_lazy_columns'} = grep { $_->lazy } $self->columns;
+  return $self->{'has_lazy_columns'} = grep { $_->lazy } $self->columns_ordered;
 }
 
 sub prime_all_caches
@@ -3837,7 +3858,7 @@ sub dbi_requires_bind_param
   return $self->{'dbi_requires_bind_param'}{$db->{'id'}}  
     if(defined $self->{'dbi_requires_bind_param'}{$db->{'id'}});
 
-  foreach my $column ($self->columns)
+  foreach my $column ($self->columns_ordered)
   {
     if($column->dbi_requires_bind_param($db))
     {
@@ -3917,6 +3938,8 @@ sub perl_manager_class
 
   return<<"EOF";
 package $args{'class'};
+
+use strict;
 
 $isa
 
@@ -4483,7 +4506,7 @@ Call L<prime_caches|/prime_caches> on all L<registered_classes|/registered_class
 
 =over 4
 
-=item C<db DB>
+=item B<db DB>
 
 A L<Rose::DB>-derived object used to determine which data source the cached metadata will be generated on behalf of.  (Each data source has its own set of cached metadata.)  This parameter is optional.  If it is not passed, then the L<Rose::DB>-derived object returned by the L<init_db|Rose::DB::Object/init_db> method for each L<class|/class> will be used instead.
 
@@ -5204,7 +5227,7 @@ PARAMS are name/value pairs.  Valid parameters are:
 
 =over 4
 
-=item C<db DB>
+=item B<db DB>
 
 A L<Rose::DB>-derived object used to determine which data source the cached metadata will be generated on behalf of.  (Each data source has its own set of cached metadata.)  This parameter is optional.  If it is not passed, then the L<Rose::DB>-derived object returned by the L<init_db|Rose::DB::Object/init_db> method for this L<class|/class> will be used instead.
 
@@ -5521,19 +5544,19 @@ By default, if a class is a L<map class|Rose::DB::Object::Metadata::Relationship
 
 B<Note:> If some classes that are not actually map classes are being skipped, you should not use this parameter to force them to be included.  It's more appropriate to make your own custom L<convention manager|Rose::DB::Object::ConventionManager> subclass and then override the L<is_map_class|Rose::DB::Object::ConventionManager/is_map_class> method to make the correct determination.
 
-=item C<replace_existing BOOL> 
+=item B<replace_existing BOOL> 
 
 If true, then the auto-generated relationships replace any existing relationships.  Otherwise, any existing relationships are left as-is.
 
-=item C<relationship_types ARRAYREF>
+=item B<relationship_types ARRAYREF>
 
 A reference to an array of relationship L<type|Rose::DB::Object::Metadata::Relationship/type> names.  Only relationships of these types will be created.  If omitted, relationships of L<all types|/relationship_type_classes> will be created.  If passed a reference to an emoty array, no relationships will be created.
 
-=item C<types ARRAYREF>
+=item B<types ARRAYREF>
 
 This is an alias for the C<relationship_types> parameter.
 
-=item C<with_relationships [ BOOL | ARRAYREF ]>
+=item B<with_relationships [ BOOL | ARRAYREF ]>
 
 This is the same as the C<relationship_types> parameter except that it also accepts a boolean value.  If true, then relationships of L<all types|/relationship_type_classes> will be created.  If false, then none will be created.
 
@@ -5603,19 +5626,19 @@ Auto-initialize the columns, primary key, foreign keys, and unique keys, then re
 
 =over 4
 
-=item * braces STYLE
+=item B<braces STYLE>
 
 The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
-=item * indent INT
+=item B<indent INT>
 
 The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
-=item * isa CLASSES
+=item B<isa CLASSES>
 
 The list of base classes to use in the generated class definition.  CLASSES should be a single class name, or a reference to an array of class names.  The default base class is L<Rose::DB::Object>.
 
-=item * use_setup BOOL
+=item B<use_setup BOOL>
 
 If true, then the generated class definition will include a call to the L<setup|/setup> method.  Otherwise, the generated code will contain individual methods calls.  The default value for this parameter is B<true>; the L<setup|/setup> method is the recommended way to initialize a class.
 
@@ -5832,15 +5855,15 @@ Auto-initialize the columns (if necessary), then return the Perl source code tha
 
 =over 4
 
-=item * braces STYLE
+=item B<braces STYLE>
 
 The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
-=item * for_setup BOOL
+=item B<for_setup BOOL>
 
 If true, then the generated Perl code will be a method/arguments pair suitable for use as a parameter to L<setup|/setup> method.  The default is false.
 
-=item * indent INT
+=item B<indent INT>
 
 The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
@@ -5854,15 +5877,15 @@ Auto-initialize the foreign keys (if necessary), then return the Perl source cod
 
 =over 4
 
-=item * braces STYLE
+=item B<braces STYLE>
 
 The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
-=item * for_setup BOOL
+=item B<for_setup BOOL>
 
 If true, then the generated Perl code will be a method/arguments pair suitable for use as a parameter to L<setup|/setup> method.  The default is false.
 
-=item * indent INT
+=item B<indent INT>
 
 The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
@@ -5876,15 +5899,15 @@ Returns a Perl class definition for a L<Rose::DB::Object::Manager>-derived class
 
 =over 4
 
-=item * base_name NAME
+=item B<base_name NAME>
 
 The value of the L<base_name|Rose::DB::Object::Manager/base_name> parameter that will be passed to the call to L<Rose::DB::Object::Manager>'s L<make_manager_methods|Rose::DB::Object::Manager/make_manager_methods> method.  Defaults to the return value of the L<convention manager|/convention_manager>'s L<class_to_table_plural|Rose::DB::Object::ConventionManager/class_to_table_plural> method.
 
-=item * class CLASS
+=item B<class CLASS>
 
 The name of the manager class.  Defaults to the L<object class|/class> with "::Manager" appended.
 
-=item * isa CLASSES
+=item B<isa CLASSES>
 
 The name of a single class or a reference to an array of class names to be included in the C<@ISA> array for the manager class.  One of these classes must inherit from L<Rose::DB::Object::Manager>.  Defaults to L<Rose::DB::Object::Manager>.
 
@@ -5927,15 +5950,15 @@ Auto-initialize the relationships (if necessary), then return the Perl source co
 
 =over 4
 
-=item * braces STYLE
+=item B<braces STYLE>
 
 The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
-=item * for_setup BOOL
+=item B<for_setup BOOL>
 
 If true, then the generated Perl code will be a method/arguments pair suitable for use as a parameter to L<setup|/setup> method.  The default is false.
 
-=item * indent INT
+=item B<indent INT>
 
 The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
@@ -5949,15 +5972,15 @@ Auto-initialize the table name (if necessary), then return the Perl source code 
 
 =over 4
 
-=item * braces STYLE
+=item B<braces STYLE>
 
 The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
-=item * for_setup BOOL
+=item B<for_setup BOOL>
 
 If true, then the generated Perl code will be a method/arguments pair suitable for use as a parameter to L<setup|/setup> method.  The default is false.
 
-=item * indent INT
+=item B<indent INT>
 
 The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
@@ -5971,19 +5994,19 @@ Auto-initialize the unique keys, then return the Perl source code that is equiva
 
 =over 4
 
-=item * braces STYLE
+=item B<braces STYLE>
 
 The brace style to use in the generated Perl code.  STYLE must be either "k&r" or "bsd".  The default value is determined by the return value of the L<default_perl_braces|/default_perl_braces> class method.
 
-=item * for_setup BOOL
+=item B<for_setup BOOL>
 
 If true, then the generated Perl code will be a method/arguments pair suitable for use as a parameter to L<setup|/setup> method.  The default is false.
 
-=item * indent INT
+=item B<indent INT>
 
 The integer number of spaces to use for each level of indenting in the generated Perl code.  The default value is determined by the return value of the L<default_perl_indent|/default_perl_indent> class method.
 
-=item * style STYLE
+=item B<style STYLE>
 
 Determines the style the initialization used in the generated Perl code.  STYLE must be "array" or "object".  The default is determined by the return value of the class method L<default_perl_unique_key_style|/default_perl_unique_key_style>.
 
@@ -6014,7 +6037,7 @@ The "object" style sets unique keys using calls to the L<Rose::DB::Object::Metad
 
 =head1 AUTHOR
 
-John C. Siracusa (siracusa@mindspring.com)
+John C. Siracusa (siracusa@gmail.com)
 
 =head1 COPYRIGHT
 

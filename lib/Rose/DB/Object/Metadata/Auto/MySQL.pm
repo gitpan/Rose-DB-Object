@@ -151,7 +151,7 @@ EOF
                 " in database '$db_name'";
           }
 
-          my $foreign_class = $self->class_for(table => $foreign_table);
+          my $foreign_class = $self->class_for(table => $foreign_table, schema => $db_name);
 
           unless($foreign_class)
           {

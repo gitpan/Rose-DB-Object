@@ -58,6 +58,7 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
       db           => $db,
       share_db     => 1,
       query_is_sql => 1,
+      #debug => 1,
       query        =>
       [
         id         => { ge => 1 },
@@ -65,6 +66,10 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
         name       => 'John',  
         flag       => 't',
         flag2      => 'f',
+        flag2      => { is => \q(false) },
+        flag2      => { is_not => \q(true) },
+        flag2      => { is_not => undef },
+        '!flag2'   => { is => undef },
         status     => 'active',
         bits       => '00001',
         fixed      => { like => 'nee%' },
@@ -2304,6 +2309,7 @@ EOF
   $objs = 
     Rose::DB::Object::Manager->get_objects(
       db           => $db,
+      #debug => 1,
       object_class => 'MyPgObject',
       require_objects => [ 'nicks.type', 'nicks.type', 'nicks' ],
       with_objects    => [ 'nicks.type.t2', 'nicks.alts' ],
@@ -2720,9 +2726,9 @@ EOF
     't2.nick, id, t2.id, name, UPPER(name) AS derived, fk1',
     't1.id, t2.nick, t2.id, t1.name, UPPER(name) AS derived, t1.fk1',
     'rose_db_object_nicks.id, rose_db_object_test.id, rose_db_object_nicks.nick, rose_db_object_test.name, UPPER(name) AS derived',
-    [ qw(id name t2.nick nicks.id), 'UPPER(name) AS derived' ],
+    [ \q(t1.id + 0 AS id), qw(name t2.nick nicks.id), \q(UPPER(name) AS derived) ],
     [ qw(t2.nick t2.id t1.id t1.name), 'UPPER(name) AS derived' ],
-    [ 'UPPER(name) AS derived', qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
+    [ \q(UPPER(name) AS derived), qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
     [ qw(rose_db_object_test.id rose_db_object_nicks.nick rose_db_object_test.name rose_db_object_nicks.id), 'UPPER(name) AS derived' ],
     [ qw(rose_db_object_test.id rose_db_object_test.name rose_db_object_nicks.nick t2.id), 'UPPER(name) AS derived' ],
   );
@@ -5568,9 +5574,9 @@ EOF
     't2.nick, id, t2.id, name, UPPER(name) AS derived, fk1',
     't1.id, t2.nick, t2.id, t1.name, UPPER(name) AS derived, t1.fk1',
     'rose_db_object_nicks.id, rose_db_object_test.id, rose_db_object_nicks.nick, rose_db_object_test.name, UPPER(name) AS derived',
-    [ qw(id name t2.nick nicks.id), 'UPPER(name) AS derived' ],
+    [ \q(t1.id + 0 AS id), qw(name t2.nick nicks.id), \q(UPPER(name) AS derived) ],
     [ qw(t2.nick t2.id t1.id t1.name), 'UPPER(name) AS derived' ],
-    [ 'UPPER(name) AS derived', qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
+    [ \q(UPPER(name) AS derived), qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
     [ qw(rose_db_object_test.id rose_db_object_nicks.nick rose_db_object_test.name rose_db_object_nicks.id), 'UPPER(name) AS derived' ],
     [ qw(rose_db_object_test.id rose_db_object_test.name rose_db_object_nicks.nick t2.id), 'UPPER(name) AS derived' ],
   );
@@ -8370,9 +8376,9 @@ EOF
     't2.nick, id, t2.id, name, UPPER(name) AS derived, fk1',
     't1.id, t2.nick, t2.id, t1.name, UPPER(name) AS derived, t1.fk1',
     'rose_db_object_nicks.id, rose_db_object_test.id, rose_db_object_nicks.nick, rose_db_object_test.name, UPPER(name) AS derived',
-    [ qw(id name t2.nick nicks.id), 'UPPER(name) AS derived' ],
+    [ \q(t1.id + 0 AS id), qw(name t2.nick nicks.id), \q(UPPER(name) AS derived) ],
     [ qw(t2.nick t2.id t1.id t1.name), 'UPPER(name) AS derived' ],
-    [ 'UPPER(name) AS derived', qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
+    [ \q(UPPER(name) AS derived), qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
     [ qw(rose_db_object_test.id rose_db_object_nicks.nick rose_db_object_test.name rose_db_object_nicks.id), 'UPPER(name) AS derived' ],
     [ qw(rose_db_object_test.id rose_db_object_test.name rose_db_object_nicks.nick t2.id), 'UPPER(name) AS derived' ],
   );
@@ -8634,7 +8640,7 @@ SKIP: foreach my $db_type (qw(sqlite))
       ],
       clauses => [ "LOWER(status) LIKE 'ac%'" ],
       limit   => 5,
-      sort_by => 'id');
+      sort_by => [ 'id', \q(LOWER(name)) ]);
 
   is(ref $objs, 'ARRAY', "get_objects() 1 - $db_type");
   $objs ||= [];
@@ -11135,9 +11141,9 @@ EOF
     't2.nick, id, t2.id, name, UPPER(name) AS derived, fk1',
     't1.id, t2.nick, t2.id, t1.name, UPPER(name) AS derived, t1.fk1',
     'rose_db_object_nicks.id, rose_db_object_test.id, rose_db_object_nicks.nick, rose_db_object_test.name, UPPER(name) AS derived',
-    [ qw(id name t2.nick nicks.id), 'UPPER(name) AS derived' ],
+    [ \q(t1.id + 0 AS id), qw(name t2.nick nicks.id), \q(UPPER(name) AS derived) ],
     [ qw(t2.nick t2.id t1.id t1.name), 'UPPER(name) AS derived' ],
-    [ 'UPPER(name) AS derived', qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
+    [ \q(UPPER(name) AS derived), qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
     [ qw(rose_db_object_test.id rose_db_object_nicks.nick rose_db_object_test.name rose_db_object_nicks.id), 'UPPER(name) AS derived' ],
     [ qw(rose_db_object_test.id rose_db_object_test.name rose_db_object_nicks.nick t2.id), 'UPPER(name) AS derived' ],
   );
@@ -13930,9 +13936,9 @@ EOF
       't2.nick, id, t2.id, name, UPPER(name) AS derived, fk1',
       't1.id, t2.nick, t2.id, t1.name, UPPER(name) AS derived, t1.fk1',
       'rose_db_object_nicks.id, rose_db_object_test.id, rose_db_object_nicks.nick, rose_db_object_test.name, UPPER(name) AS derived',
-      [ qw(id name t2.nick nicks.id), 'UPPER(name) AS derived' ],
+      [ \q(t1.id + 0 AS id), qw(name t2.nick nicks.id), \q(UPPER(name) AS derived) ],
       [ qw(t2.nick t2.id t1.id t1.name), 'UPPER(name) AS derived' ],
-      [ 'UPPER(name) AS derived', qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
+      [ \q(UPPER(name) AS derived), qw(t2.id rose_db_object_nicks.nick rose_db_object_test.id rose_db_object_test.name) ],
       [ qw(rose_db_object_test.id rose_db_object_nicks.nick rose_db_object_test.name rose_db_object_nicks.id), 'UPPER(name) AS derived' ],
       [ qw(rose_db_object_test.id rose_db_object_test.name rose_db_object_nicks.nick t2.id), 'UPPER(name) AS derived' ],
     );
@@ -14641,6 +14647,8 @@ EOF
     Test::More::is(MyPgObject->meta->perl_manager_class(class => 'MyPgObjectMgr'), 
                   <<"EOF", 'perl_manager_class - pg');
 package MyPgObjectMgr;
+
+use strict;
 
 use Rose::DB::Object::Manager;
 our \@ISA = qw(Rose::DB::Object::Manager);

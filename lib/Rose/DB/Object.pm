@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.764_03';
+our $VERSION = '0.765';
 
 our $Debug = 0;
 
@@ -491,16 +491,6 @@ sub save
 
       foreach my $fk_name (keys %{$todo->{'fk'}})
       {
-        # No real need to check for this, I suppose.  Still, the 'fk' name
-        # for the hash key above could be a bit better...
-        #my $fk = $meta->foreign_key($fk_name) || $meta->relationship($fk_name);
-        #
-        #unless(UNIVERSAL::isa($fk, 'Rose::DB::Object::Metadata::ForeignKey') ||
-        #       $fk->type =~ /^(?:one|many) to one$/)
-        #{
-        #  Carp::confess "No foreign key or '... to one' relationship named '$fk_name'";
-        #}
-
         my $code   = $todo->{'fk'}{$fk_name}{'set'} or next;
         my $object = $code->($self, \%code_args);
 
@@ -534,12 +524,9 @@ sub save
 
       $todo = $self->{ON_SAVE_ATTR_NAME()}{'post'};
 
-      # Foreign keys
+      # Foreign keys (and some fk-like relationships)
       foreach my $fk_name (keys %{$todo->{'fk'}})
       {
-        my $fk = $meta->foreign_key($fk_name) 
-          or Carp::confess "No foreign key named '$fk_name'";
-
         foreach my $item (@{$todo->{'fk'}{$fk_name}{'delete'} || []})
         {
           my $code   = $item->{'code'};
@@ -574,9 +561,6 @@ sub save
       # Relationships
       foreach my $rel_name (keys %{$todo->{'rel'}})
       {
-        my $rel = $meta->relationship($rel_name) 
-          or Carp::confess "No relationship named '$rel_name'";
-
         my $code;
 
         # Set value(s)
@@ -818,34 +802,42 @@ sub update
       }
       elsif($meta->has_lazy_columns)
       {
-        my $sql = $meta->update_sql($self, \@key_columns, $db);
+        my($sql, $bind, $columns) = $meta->update_sql($self, \@key_columns, $db);
 
         # $meta->prepare_update_options (defunct)
         my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
                                     $dbh->prepare($sql);
 
-        my %key = map { ($_ => 1) } @key_methods;
-
-        my $method_name = $meta->column_accessor_method_names_hash;
-
-        my @exec;
-
-        foreach my $column (grep { !$key{$_->{'name'}} } $meta->columns)
-        {
-          no warnings;
-          next if($column->{'lazy'} && !$self->{LAZY_LOADED_KEY()}{$column->{'name'}});
-          my $method = $method_name->{$column->{'name'}};
-          push(@exec, $self->$method());
-        }
-
         if($Debug)
         {
           no warnings;
-          warn "$sql - bind params: ", 
-            join(', ', @exec, grep { defined } @key_values), "\n";
+          warn "$sql - bind params: ", join(', ', @$bind, @key_values), "\n";
         }
 
-        $sth->execute(@exec, @key_values);
+        if($meta->dbi_requires_bind_param($db))
+        {
+          my $i = 1;
+
+          foreach my $column (@$columns)
+          {
+            my $method = $column->accessor_method_name;
+            $sth->bind_param($i++,  $self->$method(), $column->dbi_bind_param_attrs($db));
+          }
+
+          my $kv_idx = 0;
+
+          foreach my $column_name (@key_columns)
+          {
+            my $column = $meta->column($column_name);
+            $sth->bind_param($i++, $key_values[$kv_idx++], $column->dbi_bind_param_attrs($db));
+          }
+
+          $sth->execute;
+        }
+        else
+        {
+          $sth->execute(@$bind, @key_values);
+        }
       }
       else
       {
@@ -871,7 +863,7 @@ sub update
         {
           my $i = 1;
 
-          foreach my $column (grep { !$key{$_->name} } $meta->columns)
+          foreach my $column (grep { !$key{$_->name} } $meta->columns_ordered)
           {
             my $method = $column->accessor_method_name;
             $sth->bind_param($i++,  $self->$method(), $column->dbi_bind_param_attrs($db));
@@ -1098,7 +1090,7 @@ sub insert
         {
           my $i = 1;
 
-          foreach my $column ($meta->columns)
+          foreach my $column ($meta->columns_ordered)
           {
             my $method = $column->accessor_method_name;
             $sth->bind_param($i++,  $self->$method(), $column->dbi_bind_param_attrs($db));
@@ -2044,7 +2036,7 @@ PARAMS are optional name/value pairs.  Valid PARAMS are:
 
 =over 4
 
-=item C<cascade TYPE>
+=item B<cascade TYPE>
 
 Also process related rows.  TYPE must be "delete", "null", or "1".  The value "1" is an alias for "delete".  Passing an illegal TYPE value will cause a fatal error.
 
@@ -2056,7 +2048,7 @@ For each "one to one" relationship or foreign key with a "one to one" L<relation
 
 In all modes, if the L<db|/db> is not currently in a transaction, a new transaction is started.  If any part of the cascaded delete fails, the transaction is rolled back.
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will delete the object.  If omitted, the default value is determined by the L<metadata object|/meta>'s L<dbi_prepare_cached|Rose::DB::Object::Metadata/dbi_prepare_cached> class method.
 
@@ -2076,13 +2068,13 @@ PARAMS are optional name/value pairs.  Valid PARAMS are:
 
 =over 4
 
-=item C<changes_only BOOL>
+=item B<changes_only BOOL>
 
 If true, then only the columns whose values have been modified will be included in the insert query.  Otherwise, all columns will be included.  Note that any column that has a L<default|Rose::DB::Object::Metadata::Column/default> value set in its L<column metadata|Rose::DB::Object::Metadata::Column> is considered "modified" during an insert operation.
 
 If omitted, the default value of this parameter is determined by the L<metadata object|/meta>'s L<default_insert_changes_only|Rose::DB::Object::Metadata/default_insert_changes_only> class method, which returns false by default.
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will insert the object.  If omitted, the default value is determined by the L<metadata object|/meta>'s L<dbi_prepare_cached|Rose::DB::Object::Metadata/dbi_prepare_cached> class method.
 
@@ -2102,25 +2094,25 @@ PARAMS are optional name/value pairs.  Valid PARAMS are:
 
 =over 4
 
-=item C<nonlazy BOOL>
+=item B<nonlazy BOOL>
 
 If true, then all columns will be fetched from the database, even L<lazy|Rose::DB::Object::Metadata::Column/load_on_demand> columns.  If omitted, the default is false.
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL query that will load the object.  If omitted, the default value is determined by the L<metadata object|/meta>'s L<dbi_prepare_cached|Rose::DB::Object::Metadata/dbi_prepare_cached> class method.
 
 all columns will be fetched from the database, even L<lazy|Rose::DB::Object::Metadata::Column/load_on_demand> columns.  If omitted, the default is false.
 
-=item C<speculative BOOL>
+=item B<speculative BOOL>
 
 If this parameter is passed with a true value, and if the load failed because the row was L<not found|/not_found>, then the L<error_mode|Rose::DB::Object::Metadata/error_mode> setting is ignored and zero (0) is returned.  In the absence of an explicitly set value, this parameter defaults to the value returned my the L<metadata object|/meta>'s L<default_load_speculative|Rose::DB::Object::Metadata/default_load_speculative> method.
 
-=item C<use_key KEY>
+=item B<use_key KEY>
 
 Use the unique key L<name|Rose::DB::Object::Metadata::UniqueKey/name>d KEY to load the object.  This overrides the unique key selection process described above.  The key must have a defined value in at least one of its L<columns|Rose::DB::Object::Metadata::UniqueKey/columns>.
 
-=item C<with OBJECTS>
+=item B<with OBJECTS>
 
 Load the object and the specified "foreign objects" simultaneously.  OBJECTS should be a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names.
 
@@ -2183,7 +2175,7 @@ Valid parameters to L<save()|/save> are:
 
 =over 4
 
-=item C<cascade BOOL>
+=item B<cascade BOOL>
 
 If true, then sub-objects related to this object through a foreign key or relationship that have been previously loaded using methods called on this object and that contain unsaved changes will be L<saved|/save> after the parent object is saved.  This proceeds recursively through all sub-objects.  (All other parameters to the original call to L<save|/save> are also passed on when saving sub-objects.)
 
@@ -2201,21 +2193,21 @@ Example:
     # The Product object and the modified Color object are saved
     $p->save(cascade => 1);
 
-=item C<changes_only BOOL>
+=item B<changes_only BOOL>
 
 If true, then only the columns whose values have been modified will be included in the insert or update query.  Otherwise, all eligible columns will be included.  Note that any column that has a L<default|Rose::DB::Object::Metadata::Column/default> value set in its L<column metadata|Rose::DB::Object::Metadata::Column> is considered "modified" during an insert operation.
 
 If omitted, the default value of this parameter is determined by the L<metadata object|/meta>'s L<default_update_changes_only|Rose::DB::Object::Metadata/default_update_changes_only> class method on update, and the L<default_insert_changes_only|Rose::DB::Object::Metadata/default_insert_changes_only> class method on insert, both of which return false by default.
 
-=item C<insert BOOL>
+=item B<insert BOOL>
 
 If set to a true value, then an L<insert|/insert> is attempted, regardless of whether or not the object was previously L<load|/load>ed from the database.
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will save the object.  If omitted, the default value is determined by the L<metadata object|/meta>'s L<dbi_prepare_cached|Rose::DB::Object::Metadata/dbi_prepare_cached> class method.
 
-=item C<update BOOL>
+=item B<update BOOL>
 
 If set to a true value, then an L<update|/update> is attempted, regardless of whether or not the object was previously L<load|/load>ed from the database.
 
@@ -2235,11 +2227,11 @@ PARAMS are optional name/value pairs.  Valid PARAMS are:
 
 =over 4
 
-=item C<changes_only BOOL>
+=item B<changes_only BOOL>
 
 If true, then only the columns whose values have been modified will be updated.  Otherwise, all columns whose values have been loaded from the database will be updated.  If omitted, the default value of this parameter is determined by the L<metadata object|/meta>'s L<default_update_changes_only|Rose::DB::Object::Metadata/default_update_changes_only> class method, which returns false by default.
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will insert the object.  If omitted, the default value of this parameter is determined by the L<metadata object|/meta>'s L<dbi_prepare_cached|Rose::DB::Object::Metadata/dbi_prepare_cached> class method.
 
@@ -2292,11 +2284,11 @@ L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object>
 
 =head1 CONTRIBUTORS
 
-Graham Barr, David Christensen, Lucian Dragus, Perrin Harkins, Cees Hek, Teodor Zlatanov
+Graham Barr, David Christensen, Lucian Dragus, Perrin Harkins, Cees Hek, Michael Reece, Teodor Zlatanov
 
 =head1 AUTHOR
 
-John C. Siracusa (siracusa@mindspring.com)
+John C. Siracusa (siracusa@gmail.com)
 
 =head1 COPYRIGHT
 

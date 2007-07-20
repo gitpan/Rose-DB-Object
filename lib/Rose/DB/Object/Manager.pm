@@ -5,7 +5,7 @@ use strict;
 use Carp();
 
 use List::Util qw(first);
-use List::MoreUtils qw(uniq);
+#use List::MoreUtils qw(uniq);
 use Scalar::Util qw(weaken refaddr);
 
 use Rose::DB::Object::Iterator;
@@ -79,6 +79,32 @@ sub handle_error
   }
 
   return 1;
+}
+
+sub normalize_get_objects_args
+{
+  # Handle all these arg forms:
+  #
+  #   get_objects(a => b, c => d, ...);
+  #   get_objects([ ... ], a => b, c => d, ...)
+  #   get_objects({ ... }, a => b, c => d, ...)
+
+  if(ref $_[1])
+  {
+    my $class = shift;
+
+    if(ref $_[0] eq 'HASH')
+    {
+      return ($class, query => [ %{shift(@_)} ], @_);
+    }
+    elsif(ref $_[0] eq 'ARRAY')
+    {
+      return ($class, query => shift, @_);
+    }
+    else { Carp::croak 'Invalid arguments: ', join(', ', @_) }
+  }
+
+  return @_;
 }
 
 # XXX: These are duplicated from ManyToMany.pm because I don't want to use()
@@ -338,6 +364,9 @@ sub get_objects
   my $hints            = delete $args{'hints'} || {};
   my $select           = $args{'select'};
 
+  my $table_aliases    = exists $args{'table_aliases'} ? 
+    $args{'table_aliases'} : ($args{'table_aliases'} = 1);
+
   $with_objects    = undef  if(ref $with_objects && !@$with_objects);
   $require_objects = undef  if(ref $require_objects && !@$require_objects);
 
@@ -424,7 +453,7 @@ sub get_objects
 
     if(ref $with_objects) # copy argument (shallow copy)
     {
-      $with_objects = [ uniq @$with_objects ];
+      $with_objects = [ @$with_objects ]; #[ uniq @$with_objects ];
     }
     else
     {
@@ -471,7 +500,7 @@ sub get_objects
   {
     if(ref $require_objects) # copy argument (shallow copy)
     {
-      $require_objects = [ uniq @$require_objects ];
+      $require_objects = [ @$require_objects ]; #[ uniq @$require_objects ];
     }
     else
     {
@@ -649,18 +678,17 @@ sub get_objects
   # Pre-process sort_by args
   if(my $sort_by = $args{'sort_by'})
   {
-    if($num_subtables > 0)
+    $sort_by = [ $sort_by ]  unless(ref $sort_by eq 'ARRAY');
+
+    if($num_subtables == 0 && defined $table_aliases && $table_aliases == 0)
     {
-      $sort_by = [ $sort_by ]  unless(ref $sort_by);
-    }
-    else # trim t1. or primary table prefixes
-    {
+      # trim t1. or primary table prefixes
       my $prefix_re = '\b(?:t1|' . $meta->table . ')\.';
       $prefix_re = qr($prefix_re);
 
-      foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
+      foreach my $sort (@$sort_by)
       {
-        $sort =~ s/$prefix_re//g;
+        $sort =~ s/$prefix_re//g  unless(ref $sort);
       }
     }
 
@@ -692,6 +720,15 @@ sub get_objects
     # more than one object.
     foreach my $name (@$with_objects)
     {
+      my $tn_name = $name;
+
+      if(index($tn_name, '.') > 0) # dot at start is invalid, so "> 0" is correct
+      {
+        $tn_name =~ /^(.+)\.([^.]+)$/;
+      }
+
+      $rel_tn{$tn_name} = $i + 1; # note the tN table number of this relationship
+
       my $key;
 
       # Chase down multi-level keys: e.g., colors.name.types
@@ -699,8 +736,7 @@ sub get_objects
       {
         #$deep_joins = 1;
 
-        my $chase_meta  = $meta;
-        my $chase_class = $meta->class;
+        my $chase_meta = $meta;
 
         while($name =~ /\G([^.]+)(?:\.|$)/g)
         {
@@ -708,8 +744,9 @@ sub get_objects
 
           $key = $chase_meta->foreign_key($sub_name) ||
                  $chase_meta->relationship($sub_name) ||
-                 Carp::confess "$chase_class - no foreign key or ",
-                               "relationship named '$sub_name'";
+                 Carp::confess "Invalid with_objects or require_objects argument: ",
+                               "no foreign key or relationship named '$sub_name' ",
+                               'found in ', $chase_meta->class;
 
           $chase_meta = $key->can('foreign_class') ? 
             $key->foreign_class->meta : $key->class->meta;
@@ -718,7 +755,9 @@ sub get_objects
       else
       {
         $key = $meta->foreign_key($name) || $meta->relationship($name) ||
-          Carp::confess "$class - no foreign key or relationship named '$name'";
+          Carp::confess "Invalid with_objects or require_objects argument: ",
+                        "no foreign key or relationship named '$name' ",
+                        "found in $class";
       }
 
       my $rel_type = $key->type;
@@ -819,7 +858,7 @@ sub get_objects
         $belongs_to[$i] = 0;
       }
 
-      $rel_tn{$arg} = $i + 1; # note the tN table number of this relationship
+      #$rel_tn{$arg} = $i + 1; # note the tN table number of this relationship
 
       my $rel = $parent_meta->foreign_key($name) || 
                 $parent_meta->relationship($name) ||
@@ -850,7 +889,14 @@ sub get_objects
           {
             my $param = $query_args->[$i];
 
-            unless($param =~ s/^t2\./$rel_tn{$arg}./)
+            if(ref $param)
+            {
+              push(@{$args{'query'}}, $param);
+              $i--;
+              next;
+            }
+
+            unless($param =~ s/^t2\./t$rel_tn{$arg}./)
             {
               $param = "t$rel_tn{$arg}.$param"  unless($param =~ /^t\d+\./);
             }
@@ -896,8 +942,8 @@ sub get_objects
           $rel->method_name('get_set_now') ||
           $rel->method_name('get_set_on_save') ||
           Carp::confess "No 'get_set', 'get_set_now', or 'get_set_on_save' ",
-                        "method found for relationship '$name' in class ",
-                        "$class";
+                        "method found for $rel_type '$name' in class ",
+                        $rel->parent->class;
 
         #$subobject_keys[$i - 1] = $rel->hash_key;
 
@@ -910,10 +956,10 @@ sub get_objects
         while(my($local_column, $foreign_column) = each(%$ft_columns))
         {
           # Use outer joins to handle duplicate or optional information.
-          # Foreign keys that have all non-null columns are never outer-
-          # joined, however.
+          # Foreign keys that have all non-null columns are not outer-
+          # joined when nested joins are enabled, however.
           if(!($rel_type eq 'foreign key' && $rel->is_required &&
-               $rel->referential_integrity && !$nested_joins) &&
+               $rel->referential_integrity && $nested_joins) &&
              ($outer_joins_only || $with_objects{$arg}))
           {
             # Aliased table names
@@ -1015,21 +1061,16 @@ sub get_objects
           if($mgr_args->{'sort_by'} && (!%fetch || 
              ($fetch{$tables[-1]} && !$fetch{$rel_names[-1]})))
           {
-            my $sort_by = $mgr_args->{'sort_by'};
+            my $sort_by = ref $mgr_args->{'sort_by'} eq 'ARRAY' ?
+              [ @{$mgr_args->{'sort_by'}} ] : [ $mgr_args->{'sort_by'} ];
 
-            foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
+            foreach my $sort (@$sort_by)
             {
-              $sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t$i.$sort/;
+              $sort =~ s/^(['"`]?)(\w+)\1(\s+(?:ASC|DESC))?$/t$i.$1$2$1$3/i
+                unless(ref $sort);
             }
 
-            if($args{'sort_by'})
-            {
-              push(@{$args{'sort_by'}}, $sort_by);
-            }
-            else
-            {
-              $args{'sort_by'} = ref $sort_by ? [ @$sort_by ] : [ $sort_by ]
-            }
+            push(@{$args{'sort_by'}}, @$sort_by);
           }
         }
       }
@@ -1254,7 +1295,7 @@ sub get_objects
             # Fully-qualified table names
             #push(@{$joins[$i]{'conditions'}}, "$tables[-2].$local_column = $tables[-1].$foreign_column");
 
-            $joins[$i]{'type'} = 'LEFT JOIN';
+            $joins[$i]{'type'} = 'LEFT OUTER JOIN';
             $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
           }
           else
@@ -1290,22 +1331,17 @@ sub get_objects
           if($mgr_args->{'sort_by'} && (!%fetch || 
              ($fetch{$tables[-1]} && !$fetch{$rel_names[-1]})))
           {
-            my $sort_by = $mgr_args->{'sort_by'};
+            my $sort_by = ref $mgr_args->{'sort_by'} eq 'ARRAY' ?
+              [ @{$mgr_args->{'sort_by'}} ] : [ $mgr_args->{'sort_by'} ];
 
             # translate un-prefixed simple columns
-            foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
+            foreach my $sort (@$sort_by)
             {
-              $sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t$i.$sort/;
+              $sort =~ s/^(['"`]?)(\w+)\1(\s+(?:ASC|DESC))?$/t$i.$1$2$1$3/i
+                unless(ref $sort);
             }
 
-            if($args{'sort_by'})
-            {
-              push(@{$args{'sort_by'}}, $sort_by);
-            }
-            else
-            {
-              $args{'sort_by'} = ref $sort_by ? [ @$sort_by ] : [ $sort_by ]
-            }
+            push(@{$args{'sort_by'}}, @$sort_by);
           }
         }
       }
@@ -1358,17 +1394,19 @@ sub get_objects
     {
       my($column, $tn);
 
+      next  if(ref $item eq 'SCALAR');
+
       if(index($item, '.') < 0 && $item !~ /\s+ AS \s+ \w+ \s* \Z/xi)
       {
         $expand_dotstar = 1  if($item eq '*');
         $column = $item;
-        $item = "t1.$item"  if($num_subtables > 0);
+        $item = "t1.$item"  if($table_aliases > 0);
         $tn = 1;
       }
       elsif($item =~ /^t(\d+)\.(.+)$/)
       {
         $tn     = $1;
-        $item   = $2 if($num_subtables == 0);
+        $item   = $2 unless($table_aliases);
         $column = $2;
         $expand_dotstar = 1  if($item =~ /^t\d+\.\*$/);
       }
@@ -1399,6 +1437,8 @@ sub get_objects
 
       foreach my $item (@$select)
       {
+        next  if(ref $item eq 'SCALAR');
+
         unless($item =~ /^(?: t(\d+)\. )? \* $/x)
         {
           push(@select, $item);
@@ -1407,7 +1447,7 @@ sub get_objects
 
         my $tn = $1 || 1;
         my $meta = $meta{$classes{$tables[$tn - 1]}};
-        my $prefix = $num_subtables ? "t$tn." : '';
+        my $prefix = $table_aliases ? "t$tn." : '';
 
         foreach my $column ($meta->columns)
         {
@@ -1459,9 +1499,23 @@ sub get_objects
 
     BUILD_SQL:
     {
-      my $select = $use_distinct ? 'COUNT(DISTINCT ' .
-        join(', ', map { "t1.$_" } $meta->primary_key_column_names) . ')' :
-        'COUNT(*)';
+      my($select, $wrap);
+
+      my $pk_columns = $meta->primary_key_column_names;
+
+      if(!$use_distinct || @$pk_columns == 1 || 
+         $db->supports_multi_column_count_distinct)
+      {
+        $select = $use_distinct ? 
+          'COUNT(DISTINCT ' . join(', ', map { "t1.$_" } @$pk_columns) . ')' :
+          'COUNT(*)';
+      }
+      else
+      {
+        $select = $use_distinct ? 
+          'DISTINCT ' . join(', ', map { "t1.$_" } @$pk_columns) : 'COUNT(*)';
+        $wrap = 1;
+      }
 
       local $Carp::CarpLevel = $Carp::CarpLevel + 1;
 
@@ -1479,6 +1533,11 @@ sub get_objects
                      pretty      => $Debug,
                      bind_params => \@bind_params,
                      %args);
+
+      if($wrap)
+      {
+        $sql = "SELECT COUNT(*) FROM ($sql) sq";
+      }
     }
 
     if($return_sql)
@@ -1492,7 +1551,7 @@ sub get_objects
     eval
     {
       local $dbh->{'RaiseError'} = 1;
-      $Debug && warn "$sql\n";
+      $Debug && warn "$sql (", join(', ', @$bind), ")\n";
       my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
                                   $dbh->prepare($sql);
 
@@ -1535,7 +1594,7 @@ sub get_objects
     # Alter sort_by SQL, replacing table and relationship names with aliases.
     # This is to prevent databases like Postgres from "adding missing FROM
     # clause"s.  See: http://sql-info.de/postgresql/postgres-gotchas.html#1_5
-    if($num_subtables > 0)
+    if($table_aliases)
     {
       my $i = 0;
 
@@ -1548,9 +1607,10 @@ sub get_objects
         # Conditionalize schema part, if necessary
         $table_unquoted =~ s/^([^.]+\.)/(?:\Q$1\E)?/;
 
-        foreach my $sort (@$sort_by)
+        foreach my $sort (grep { !ref } @$sort_by)
         {
-          unless($sort =~ s/^(['"`]?)\w+\1(?:\s+(?:ASC|DESC))?$/t1.$sort/ ||
+          no warnings 'uninitialized';
+          unless($sort =~ s/^(['"`]?)(\w+)\1(\s+(?:ASC|DESC))?$/t1.$1$2$1$3/i ||
                  $sort =~ s/\b$table_unquoted\./t$i./g)
           {
             if(my $rel_name = $rel_name{"t$i"})
@@ -1573,7 +1633,7 @@ sub get_objects
 
         foreach my $sort (@$sort_by)
         {
-          if($sort =~ /^t1\./)
+          if(!ref $sort && $sort =~ /^t1\./)
           {
             $do_prefix = 0;
             last;
@@ -1588,14 +1648,16 @@ sub get_objects
     }
     else # otherwise, trim t1. prefixes
     {
-      foreach my $sort (ref $sort_by ? @$sort_by : $sort_by)
+      my $prefix_re = '\b(?:t1|' . $meta->table . ')\.';
+      $prefix_re = qr($prefix_re);
+
+      foreach my $sort (@$sort_by)
       {
-        $sort =~ s/\bt1\.//g;
+        $sort =~ s/$prefix_re//g  unless(ref $sort);
       }
     }
 
     # TODO: remove duplicate/redundant sort conditions
-
     $args{'sort_by'} = $sort_by;
   }
   elsif($num_to_many_rels > 0 && (!%fetch || (keys %fetch || 0) > 2))
@@ -1672,7 +1734,7 @@ sub get_objects
 
         foreach my $arg (@{$args{'sort_by'}})
         {
-          push(@sort_by, $arg)  if(index($arg, 't1.') == 0);
+          push(@sort_by, $arg)  if(index((ref $arg ? $$arg : $arg), 't1.') == 0);
         }
 
         $sub_args{'sort_by'} = \@sort_by;
@@ -1697,7 +1759,16 @@ sub get_objects
           ($sub_args{'with_objects'} && (!ref $sub_args{'with_objects'} || @{$sub_args{'with_objects'}})) ||
           ($sub_args{'require_objects'} && (!ref $sub_args{'require_objects'} || @{$sub_args{'require_objects'}}));
 
-        $columns = $multi_table ?
+        if($multi_table)
+        {
+          $table_aliases = 1;
+        }
+        else
+        {
+          $table_aliases = $multi_table  unless(defined $table_aliases);
+        }
+
+        $columns = $table_aliases ?
           join(', ', map { "t1.$_" } @{$columns{$tables[0]}}) :
           join(', ', map { $_ } @{$columns{$tables[0]}});
       }
@@ -1764,7 +1835,7 @@ sub get_objects
       {
         my($class, $table_num, $column);
 
-        my $item = $orig_item;
+        my $item = (ref $orig_item eq 'SCALAR') ? $$orig_item : $orig_item;
 
         if($item =~ s/\s+AS\s+(\w.+)$//i)
         {
@@ -2828,7 +2899,9 @@ sub delete_objects
 
   $args{'query'} = delete $args{'where'};
 
-  unless(($args{'query'} && @{$args{'query'}}) || delete $args{'all'})
+  unless(($args{'query'} && @{$args{'query'}}) || 
+         ($args{'clauses'} && @{$args{'clauses'}}) ||
+         delete $args{'all'})
   {
     Carp::croak "$class - Refusing to delete all rows from the table '",
                 $meta->fq_table($db), "' without an explict ",
@@ -2846,8 +2919,9 @@ sub delete_objects
   my @bind_params;
   $args{'bind_params'} = \@bind_params;
 
+  # Avert your eyes...
   my($where, $bind) = 
-    $class->get_objects(%args, return_sql => 1, where_only => 1);
+    $class->get_objects(%args, return_sql => 1, where_only => 1, table_aliases => undef);
 
   my $sql = 'DELETE FROM ' . $meta->fq_table_sql($db) .
             ($where ? " WHERE\n$where" : '');
@@ -2951,8 +3025,14 @@ sub update_objects
 
   $args{'query'} = $set;
 
+  # Avert your eyes...
   my($set_sql, $set_bind) = 
-    $class->get_objects(%args, return_sql => 1, where_only => 1, logic => ',', set => 1);
+    $class->get_objects(%args,
+                        return_sql    => 1,
+                        where_only    => 1,
+                        logic         => ',', 
+                        set           => 1, 
+                        table_aliases => 0);
 
   my $sql;
 
@@ -2963,7 +3043,10 @@ sub update_objects
     my $where_sql;
 
     ($where_sql, $where_bind) = 
-      $class->get_objects(%args, return_sql => 1, where_only => 1);
+      $class->get_objects(%args, 
+                          return_sql    => 1,
+                          where_only    => 1,
+                          table_aliases => 0);
 
     $sql = 'UPDATE ' . $meta->fq_table_sql($db) . 
            "\nSET\n$set_sql\nWHERE\n$where_sql";
@@ -2978,7 +3061,7 @@ sub update_objects
   eval
   {
     local $dbh->{'RaiseError'} = 1;  
-    $Debug && warn "$sql\n";
+    $Debug && warn "$sql (", join(', ', @$set_bind, @$where_bind), ")\n";
 
     # $meta->prepare_bulk_update_options (defunct)
     my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
@@ -3117,7 +3200,7 @@ sub get_objects_from_sql
   {
     local $dbh->{'RaiseError'} = 1;
 
-    $Debug && warn "$sql\n";
+    $Debug && warn "$sql (", join(', ', @$exec_args), ")\n";
     my $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
                                 $dbh->prepare($sql) or die $dbh->errstr;
 
@@ -3237,7 +3320,7 @@ sub get_objects_iterator_from_sql
   {
     local $dbh->{'RaiseError'} = 1;
 
-    $Debug && warn "$sql\n";
+    $Debug && warn "$sql (", join(', ', @$exec_args), ")\n";
     $sth = $prepare_cached ? $dbh->prepare_cached($sql, undef, 3) : 
                              $dbh->prepare($sql) or die $dbh->errstr;
 
@@ -3716,23 +3799,23 @@ Valid parameters are:
 
 =over 4
 
-=item C<all BOOL>
+=item B<all BOOL>
 
 If set to a true value, this parameter indicates an explicit request to delete all rows from the table.  If both the C<all> and the C<where> parameters are passed, a fatal error will occur.
 
-=item C<db DB>
+=item B<db DB>
 
 A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>. 
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will delete the objects.  If omitted, the default value is determined by the L<dbi_prepare_cached|/dbi_prepare_cached> class method.
 
-=item C<object_class CLASS>
+=item B<object_class CLASS>
 
 The name of the L<Rose::DB::Object>-derived class that fronts the table from which rows are to be deleted.  This parameter is required; a fatal error will occur if it is omitted.  Defaults to the value returned by the L<object_class|/object_class> class method.
 
-=item C<where ARRAYREF>
+=item B<where ARRAYREF>
 
 The query parameters, passed as a reference to an array of name/value pairs.  These pairs are used to formulate the "where" clause of the SQL query that is used to delete the rows from the table.  Arbitrarily nested boolean logic is supported.
 
@@ -3837,7 +3920,7 @@ Valid parameters to L<get_objects|/get_objects> are:
 
 =over 4
 
-=item C<allow_empty_lists BOOL>
+=item B<allow_empty_lists BOOL>
 
 If set to true, C<query> parameters with empty lists as values are allowed.  For example:
 
@@ -3852,11 +3935,11 @@ If set to true, C<query> parameters with empty lists as values are allowed.  For
 
 By default, passing an empty list as a value will cause a fatal error.
 
-=item C<db DB>
+=item B<db DB>
 
 A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>.
 
-=item C<distinct [ BOOL | ARRAYREF ]>
+=item B<distinct [ BOOL | ARRAYREF ]>
 
 If set to any kind of true value, then the "DISTINCT" SQL keyword will be added to the "SELECT" statement.  Specific values trigger the behaviors described below.
 
@@ -3866,13 +3949,13 @@ If set to a reference to an array of table names, "tN" table aliases, or relatio
 
 This parameter conflicts with the C<fetch_only> parameter in the case where both provide a list of table names or aliases.  In this case, if the value of the C<distinct> parameter is also reference to an array table names or aliases, then a fatal error will occur.
 
-=item C<fetch_only ARRAYREF>
+=item B<fetch_only ARRAYREF>
 
 ARRAYREF should be a reference to an array of table names or "tN" table aliases. Only the columns from the corresponding tables will be fetched.  In the case of relationships that involve more than one table, only the "most distant" table is considered.  (e.g., The map table is ignored in a "many to many" relationship.)  Columns from the primary table ("t1") are always selected, regardless of whether or not it appears in the list.
 
 This parameter conflicts with the C<distinct> parameter in the case where both provide a list of table names or aliases.  In this case, then a fatal error will occur.
 
-=item C<inject_results BOOL>
+=item B<inject_results BOOL>
 
 If true, then the data returned from the database will be directly "injected" into the objects returned by this method, bypassing the constructor and column mutator methods for each object class.  The default is false.  This parameter is ignored (i.e., treated as if it were false) if the C<select> parameter is passed.
 
@@ -3880,27 +3963,27 @@ This parameter is useful for situations where the performance of L<get_objects|/
 
 The default L<Rose::DB::Object> L<constructor|Rose::DB::Object/new> and the column mutator methods created by the column classes included in the L<Rose::DB::Object> module distribution do not have any side-effects and should therefore be safe to use with this parameter.
 
-=item C<limit NUM>
+=item B<limit NUM>
 
 Return a maximum of NUM objects.
 
-=item C<limit_with_subselect BOOL>
+=item B<limit_with_subselect BOOL>
 
 This parameter controls whether or not this method will consider using a sub-query to express  C<limit>/C<offset> constraints when fetching sub-objects related through one of the "...-to-many" relationship types.  Not all databases support this syntax, and not all queries can use it even in supported databases.  If this parameter is true, the feature will be used when possible.
 
 The default value is determined by the L<default_limit_with_subselect|/default_limit_with_subselect> class method.
 
-=item C<nested_joins BOOL>
+=item B<nested_joins BOOL>
 
 This parameter controls whether or not this method will consider using nested JOIN syntax when fetching related objects.  Not all databases support this syntax, and not all queries will use it even in supported databases.  If this parameter is true, the feature will be used when possible.
 
 The default value is determined by the L<default_nested_joins|/default_nested_joins> class method.
 
-=item C<multi_many_ok BOOL>
+=item B<multi_many_ok BOOL>
 
 If true, do not print a warning when attempting to do multiple LEFT OUTER JOINs against tables related by "... to many" relationships.  See the documentation for the C<with_objects> parameter for more information.
 
-=item C<nonlazy [ BOOL | ARRAYREF ]>
+=item B<nonlazy [ BOOL | ARRAYREF ]>
 
 By default, L<get_objects|/get_objects> will honor all L<load-on-demand columns|Rose::DB::Object::Metadata::Column/load_on_demand> when fetching objects.  Use this parameter to override that behavior and select all columns instead.
 
@@ -3908,21 +3991,21 @@ If the value is a true boolean value (typically "1"), then all columns will be f
 
 The value can also be a reference to an array of relationship names.  The sub-objects corresponding to each relationship name will have all their columns selected.  To refer to the main class (the "t1" table), use the special name "self".
 
-=item C<object_args HASHREF>
+=item B<object_args HASHREF>
 
 A reference to a hash of name/value pairs to be passed to the constructor of each C<object_class> object fetched, in addition to the values from the database.
 
-=item C<object_class CLASS>
+=item B<object_class CLASS>
 
 The name of the L<Rose::DB::Object>-derived objects to be fetched.  This parameter is required; a fatal error will occur if it is omitted.  Defaults to the value returned by the L<object_class|/object_class> class method.
 
-=item C<offset NUM>
+=item B<offset NUM>
 
 Skip the first NUM rows.  If the database supports some sort of "limit with offset" syntax (e.g., "LIMIT 10 OFFSET 20") then it will be used.  Otherwise, the first NUM rows will be fetched and then discarded.
 
 This parameter can only be used along with the C<limit> parameter, otherwise a fatal error will occur.
 
-=item C<page NUM>
+=item B<page NUM>
 
 Show page number NUM of objects.  Pages are numbered starting from 1.  A page number less than or equal to zero causes the page number to default to 1.
 
@@ -3930,17 +4013,17 @@ The number of objects per page can be set by the C<per_page> parameter.  If the 
 
 If this parameter is included along with either of the C<limit> or <offset> parameters, a fatal error will occur.
 
-=item C<per_page NUM>
+=item B<per_page NUM>
 
 The number of objects per C<page>.   Defaults to the value returned by the L<default_objects_per_page|/default_objects_per_page> class method (20, by default).
 
 If this parameter is included along with either of the C<limit> or <offset> parameters, a fatal error will occur.
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will fetch the objects.  If omitted, the default value is determined by the L<dbi_prepare_cached|/dbi_prepare_cached> class method.
 
-=item C<query ARRAYREF>
+=item B<query ARRAYREF>
 
 The query parameters, passed as a reference to an array of name/value pairs.  These pairs are used to formulate the "where" clause of the SQL query that, in turn, is used to fetch the objects from the database.  Arbitrarily nested boolean logic is supported.
 
@@ -3956,17 +4039,17 @@ To select only products whose vendors are in the United States, use a query argu
 
 This assumes that the C<Product> class has a relationship or foreign key named "vendor" that points to the product's C<Vendor>, and that the C<Vendor> class has a foreign key or relationship named "region" that points to the vendor's C<Region>, and that 'vendor.region' (or any foreign key or relationship name chain that begins with 'vendor.region.') is an argument to the C<with_objects> or C<require_objects> parameters.
 
-=item C<require_objects ARRAYREF>
+=item B<require_objects ARRAYREF>
 
 Only fetch rows from the primary table that have all of the associated sub-objects listed in ARRAYREF, a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names defined for C<object_class>.  The supported relationship types are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>," "L<one to many|Rose::DB::Object::Metadata::Relationship::OneToMany>," and  "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>".
 
-For each foreign key or relationship listed in ARRAYREF, another table will be added to the query via an implicit inner join.  The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.
+For each foreign key or relationship name listed in ARRAYREF, another table will be added to the query via an implicit inner join.  The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.
 
 Foreign key and relationship names may be chained, with dots (".") separating each name.  For example, imagine three tables, C<products>, C<vendors>, and C<regions>, fronted by three L<Rose::DB::Object>-derived classes, C<Product>, C<Vendor>, and C<Region>, respectively.  Each C<Product> has a C<Vendor>, and each C<Vendor> has a C<Region>.
 
 To fetch C<Product>s along with their C<Vendor>s, and their vendors' C<Region>s, provide a C<with_objects> argument like this:
 
-    with_objects => [ 'vendor.region' ],
+    require_objects => [ 'vendor.region' ],
 
 This assumes that the C<Product> class has a relationship or foreign key named "vendor" that points to the product's C<Vendor>, and that the C<Vendor> class has a foreign key or relationship named "region" that points to the vendor's C<Region>.
 
@@ -3976,7 +4059,7 @@ B<Warning:> there may be a geometric explosion of redundant data returned by the
 
 B<Note:> the C<require_objects> list currently cannot be used to simultaneously fetch two objects that both front the same database table, I<but are of different classes>.  One workaround is to make one class use a synonym or alias for one of the tables.  Another option is to make one table a trivial view of the other.  The objective is to get the table names to be different for each different class (even if it's just a matter of letter case, if your database is not case-sensitive when it comes to table names).
 
-=item C<select [ LIST | ARRAYREF ]>
+=item B<select [ CLAUSE | ARRAYREF ]>
 
 Select only the columns specified in either a comma-separated string of column names or a reference to an array of column names.  Strings are naively split between each comma.  If you need more complex parsing, please use the array-reference argument format instead.
 
@@ -3986,25 +4069,35 @@ Unprefixed columns are assumed to belong to the primary table ("t1") and are exp
 
 If the column name is "*" (e.g., C<t1.*>) then all columns from that table are selected.
 
+If an item in the referenced array is itself a reference to a scalar, then that item will be dereferenced and passed through unmodified.
+
 If selecting sub-objects via the C<with_objects> or C<require_objects> parameters, you must select the primary key columns from each sub-object table.  Failure to do so will cause those sub-objects I<not> to be created.
+
+Be warned that you should provide some way to determine which column or method and which class an item belongs to: a tN prefix, a column name, or at the very least an "... AS ..." alias clause.
 
 This parameter conflicts with the C<fetch_only> parameter.  A fatal error will occur if both are used in the same call.
 
 If this parameter is omitted, then all columns from all participating tables are selected (optionally modified by the C<nonlazy> parameter).
 
-=item C<share_db BOOL>
+=item B<share_db BOOL>
 
 If true, C<db> will be passed to each L<Rose::DB::Object>-derived object when it is constructed.  Defaults to true.
 
-=item C<sort_by [ CLAUSE | ARRAYREF ]>
+=item B<sort_by [ CLAUSE | ARRAYREF ]>
 
-A fully formed SQL "ORDER BY ..." clause, sans the words "ORDER BY", or a reference to an array of strings to be joined with a comma and appended to the "ORDER BY" clause.
+A fully formed SQL "ORDER BY ..." clause, sans the words "ORDER BY", or a reference to an array of strings or scalar references to be de-refrenced as needed, joined with a comma, and appended to the "ORDER BY" clause.
 
-Within each string, any instance of "NAME." will be replaced with the appropriate "tN." table alias, where NAME is a table, foreign key, or relationship name.  All unprefixed simple column names are assumed to belong to the primary table ("t1").
+If an argument is a reference to a scalar, then it is passed through to the ORDER BY clause unmodified.
+
+Otherwise, within each string, any instance of "NAME." will be replaced with the appropriate "tN." table alias, where NAME is a table, foreign key, or relationship name.  All unprefixed simple column names are assumed to belong to the primary table ("t1").
 
 If selecting sub-objects (via C<require_objects> or C<with_objects>) that are related through "one to many" or "many to many" relationships, the first condition in the sort order clause must be a column in the primary table (t1).  If this condition is not met, the list of primary key columns will be added to the beginning of the sort order clause automatically.
 
-=item C<unique_aliases BOOL>
+=item B<table_aliases BOOL>
+
+When only a single table is used in q auery, this parameter controls whether or not the "tN" aliases are used.  If the parameter is not passed, then tables are aliased.  If it is passed with a false value, then tables are not aliased.  When more than one table participates in a query, the "tN" table aliases are always used and this option is ignored.
+
+=item B<unique_aliases BOOL>
 
 If true, and if there is no explicit value for the C<select> parameter and more than one table is participating in the query, then each selected column will be given a unique alias by prefixing it with its table alias and an underscore.  The default value is false.  Example:
 
@@ -4021,7 +4114,7 @@ If true, and if there is no explicit value for the C<select> parameter and more 
 
 These unique aliases provide a technique of last resort for unambiguously addressing a column in a query clause.
 
-=item C<with_map_records [ BOOL | METHOD | HASHREF ]>
+=item B<with_map_records [ BOOL | METHOD | HASHREF ]>
 
 When fetching related objects through a "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>" relationship, objects of the L<map class|Rose::DB::Object::Metadata::Relationship::ManyToMany/map_class> are not retrieved by default.  Use this parameter to override the default behavior.
 
@@ -4031,11 +4124,11 @@ If a method name is provided instead, then each object fetched through a mapping
 
 If the value is a reference to a hash, then the keys of the hash should be "many to many" relationship names, and the values should be the method names through which the maps records will be available for each relationship.
 
-=item C<with_objects ARRAYREF>
+=item B<with_objects ARRAYREF>
 
 Also fetch sub-objects (if any) associated with rows in the primary table based on a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names defined for C<object_class>.  The supported relationship types are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>," "L<one to many|Rose::DB::Object::Metadata::Relationship::OneToMany>," and  "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>".
 
-For each foreign key or relationship listed in ARRAYREF, another table will be added to the query via an explicit LEFT OUTER JOIN.  (Foreign keys whose columns are all NOT NULL are the exception, however.  They are always fetched via inner joins.)   The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|/SYNOPSIS> for an example.
+For each foreign key or relationship name listed in ARRAYREF, another table will be added to the query via an explicit LEFT OUTER JOIN.  (Foreign keys whose columns are all NOT NULL are the exception, however.  They are always fetched via inner joins.)   The join conditions will be constructed automatically based on the foreign key or relationship definitions.  Note that each related table must have a L<Rose::DB::Object>-derived class fronting it.  See the L<synopsis|/SYNOPSIS> for an example.
 
 "Many to many" relationships are a special case.  They will add two tables to the query (the "map" table plus the table with the actual data), which will offset the "tN" table numbering by one extra table.
 
@@ -4065,27 +4158,27 @@ Fetch objects using a custom SQL query.  Pass either a single SQL query string o
 
 =over 4
 
-=item C<args ARRAYREF>
+=item B<args ARRAYREF>
 
 A reference to an array of arguments to be passed to L<DBI>'s L<execute|DBI/execute> method when the query is run.  The number of items in this array must exactly match the number of placeholders in the SQL query.
 
-=item C<db DB>
+=item B<db DB>
 
 A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>.
 
-=item C<object_class CLASS>
+=item B<object_class CLASS>
 
 The class name of the L<Rose::DB::Object>-derived objects to be fetched.  Defaults to the value returned by the L<object_class|/object_class> class method.
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will fetch the objects.  If omitted, the default value is determined by the L<dbi_prepare_cached|/dbi_prepare_cached> class method.
 
-=item C<share_db BOOL>
+=item B<share_db BOOL>
 
 If true, C<db> will be passed to each L<Rose::DB::Object>-derived object when it is constructed.  Defaults to true.
 
-=item C<sql SQL>
+=item B<sql SQL>
 
 The SQL query string.  This parameter is required.
 
@@ -4369,31 +4462,31 @@ Pass either a method name and an SQL query string or name/value parameters as ar
 
 =over 4
 
-=item C<iterator BOOL>
+=item B<iterator BOOL>
 
 If true, the method created will return a L<Rose::DB::Object::Iterator> object.
 
-=item C<object_class CLASS>
+=item B<object_class CLASS>
 
 The class name of the L<Rose::DB::Object>-derived objects to be fetched.  Defaults to the value returned by the L<object_class|/object_class> class method.
 
-=item C<params ARRAYREF>
+=item B<params ARRAYREF>
 
 To allow the method that will be created to accept named parameters (name/value pairs) instead of positional parameters, provide a reference to an array of parameter names in the order that they should be passed to the call to L<DBI>'s L<execute|DBI/execute> method.
 
-=item C<method NAME>
+=item B<method NAME>
 
 The name of the method to be created.  This parameter is required.
 
-=item C<prepare_cached BOOL>
+=item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL statement that will fetch the objects.  If omitted, the default value is determined by the L<dbi_prepare_cached|/dbi_prepare_cached> class method.
 
-=item C<share_db BOOL>
+=item B<share_db BOOL>
 
 If true, C<db> will be passed to each L<Rose::DB::Object>-derived object when it is constructed.  Defaults to true.
 
-=item C<sql SQL>
+=item B<sql SQL>
 
 The SQL query string.  This parameter is required.
 
@@ -4462,6 +4555,44 @@ Examples:
       $iterator->finish  if(...); # finish early?
     }
 
+=item B<normalize_get_objects_args [ARGS]>
+
+This method takes ARGS in the forms accepted by L<get_objects|/get_objects> (and other similar methods) and normalizes them into name/value pairs.  Since L<get_objects|/get_objects> can take arguments in many forms, this method is useful when overriding L<get_objects|/get_objects> in a custom L<Rose::DB::Object::Manager> subclass.  Example:
+
+
+    package Product::Manager;
+
+    use base 'Rose::DB::Object::Manager'; 
+
+    use Product;
+
+    sub object_class { 'Product' }
+    ...
+
+    sub get_products
+    {
+      my($class, %args) = shift->normalize_get_objects_args(@_);
+
+      # Detect, extract, and handle custom argument
+      if(delete $args{'active_only'})
+      {
+        push(@{$args{'query'}}, status => 'active');
+      }
+
+      return $class->get_objects(%args); # call through to normal method
+    }
+
+Now all of the following calls will work:
+
+    $products =
+      Product::Manager->get_products([ type => 'boat' ], sort_by => 'name');
+
+    $products =
+      Product::Manager->get_products({ name => { like => '%Dog%' } });
+
+    $products =
+      Product::Manager->get_products([ id => { gt => 123 } ], active_only => 1);
+
 =item B<object_class>
 
 Returns the class name of the L<Rose::DB::Object>-derived objects to be managed by this class.  Override this method in your subclass.  The default implementation returns undef.
@@ -4493,23 +4624,27 @@ Valid parameters are:
 
 =over 4
 
-=item C<all BOOL>
+=item B<all BOOL>
 
 If set to a true value, this parameter indicates an explicit request to update all rows in the table.  If both the C<all> and the C<where> parameters are passed, a fatal error will occur.
 
-=item C<db DB>
+=item B<db DB>
 
 A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>.
 
-=item C<object_class CLASS>
+=item B<object_class CLASS>
 
 The class name of the L<Rose::DB::Object>-derived class that fronts the table whose rows will to be updated.  This parameter is required; a fatal error will occur if it is omitted.  Defaults to the value returned by the L<object_class|/object_class> class method.
 
-=item C<set PARAMS>
+=item B<set PARAMS>
 
 The names and values of the columns to be updated.  PARAMS should be a reference to a hash.  Each key of the hash should be a column name or column get/set method name.  If a value is a simple scalar, then it is passed through the get/set method that services the column before being incorporated into the SQL query.
 
-If a value is a reference to a hash, then it must contain a single key named "sql" and a corresponding value that will be incorporated into the SQL query as-is.  For example, this method call:
+If a value is a reference to a scalar, then it is dereferenced and incorporated into the SQL query as-is.
+
+If a value is a reference to a hash, then it must contain a single key named "sql" and a corresponding value that will be incorporated into the SQL query as-is.
+
+Example:
 
   $num_rows_updated =
     Product::Manager->update_products(
@@ -4517,6 +4652,7 @@ If a value is a reference to a hash, then it must contain a single key named "sq
       {
         end_date   => DateTime->now,
         region_num => { sql => 'region_num * -1' }
+        count      => \q(count + 1),
         status     => 'defunct',
       },
       where =>
@@ -4530,11 +4666,12 @@ If a value is a reference to a hash, then it must contain a single key named "sq
         ],
       ]);
 
-would produce the an SQL statement something like this (depending on the database vendor, and assuming the current date was September 20th, 2005):
+The call above would execute an SQL statement something like the one shown below (depending on the database vendor, and assuming the current date was September 20th, 2005):
 
     UPDATE products SET
       end_date   = '2005-09-20',
       region_num = region_num * -1,
+      count      = count + 1, 
       status     = 'defunct'
     WHERE
       status IN ('stale', 'old') AND
@@ -4544,7 +4681,7 @@ would produce the an SQL statement something like this (depending on the databas
         end_date   > '2005-09-20'
       )
 
-=item C<where PARAMS>
+=item B<where PARAMS>
 
 The query parameters, passed as a reference to an array of name/value pairs.  These PARAMS are used to formulate the "where" clause of the SQL query that is used to update the rows in the table.  Arbitrarily nested boolean logic is supported.
 
@@ -4572,7 +4709,7 @@ L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object>
 
 =head1 AUTHOR
 
-John C. Siracusa (siracusa@mindspring.com)
+John C. Siracusa (siracusa@gmail.com)
 
 =head1 COPYRIGHT
 

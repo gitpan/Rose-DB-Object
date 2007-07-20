@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.764';
+our $VERSION = '0.765';
 
 our $Debug = 0;
 
@@ -25,6 +25,8 @@ our %OP_MAP =
   like         => 'LIKE',
   ilike        => 'ILIKE',
   rlike        => 'RLIKE',
+  is           => 'IS',
+  is_not       => 'IS NOT',
   lt           => '<',
   le           => '<=',
   ge           => '>=',
@@ -83,6 +85,8 @@ sub build_select
   my $from_and_where_only = delete $args{'from_and_where_only'};
   my $allow_empty_lists   = $args{'allow_empty_lists'};
   my $unique_aliases = $args{'unique_aliases'};
+  my $table_aliases  = exists $args{'table_aliases'} ? 
+    $args{'table_aliases'} : ($args{'table_aliases'} = 1);
 
   if($args{'limit'})
   {
@@ -134,6 +138,7 @@ sub build_select
                          where_only => 1,
                          query => $query,
                          logic => uc $query_arg->[$i],
+                         table_map => $table_map,
                          set => $set);
 
           push(@bind, @$bind);
@@ -145,6 +150,7 @@ sub build_select
                          where_only => 1,
                          query => $query,
                          logic => uc $query_arg->[$i],
+                         table_map => $table_map,
                          set => $set);
         }
 
@@ -187,11 +193,11 @@ sub build_select
                         "bind arguments";
           }
 
-          push(@clauses, ${shift(@$list)});
+          push(@clauses, ${$list->[0]});
 
           if($do_bind)
           {
-            push(@bind, @$list);
+            push(@bind, @$list[1 .. $#$list]);
             push(@$bind_params, undef); # need to offset this list with empty items
           }
         }
@@ -206,8 +212,8 @@ sub build_select
 
   my $query_is_sql = $args{'query_is_sql'};
 
-  $select   = join(', ', @$select)    if(ref $select);
-  $sort_by  = join(', ', @$sort_by)   if(ref $sort_by);
+  $select   = join(', ', map { ref $_ ? $$_ : $_ } @$select)    if(ref $select);
+  $sort_by  = join(', ', map { ref $_ ? $$_ : $_ } @$sort_by)   if(ref $sort_by);
   $group_by = join(', ', @$group_by)  if(ref $group_by);
 
   my($not, $op, @select_columns, %column_count);
@@ -224,6 +230,15 @@ sub build_select
 
   my $multi_table = @$tables > 1 ? 1 : 0;
   my $table_num = 1;
+
+  if($multi_table)
+  {
+    $table_aliases = 1;
+  }
+  else
+  {
+    $table_aliases = $multi_table  unless(defined $table_aliases);
+  }
 
   my($db, %proto, $do_bind_params); # db object and prototype objects used for formatting values
 
@@ -315,7 +330,7 @@ sub build_select
 
       unless($query_only_columns || !$select_columns{$column})
       {
-        if($multi_table)
+        if($table_aliases)
         {
           push(@select_columns, 
             $obj_meta ? 
@@ -350,7 +365,10 @@ sub build_select
         {
           my $col_meta;
 
-          unless($query_is_sql)
+          my $val_ref    = ref $val;
+          my $scalar_ref = $val_ref eq 'SCALAR';
+
+          unless($query_is_sql || $scalar_ref)
           {      
             my $obj;
 
@@ -392,22 +410,37 @@ sub build_select
           }
 
           my $placeholder = $col_meta ? $col_meta->query_placeholder_sql($db) : '?';
-          my $sql_column = $multi_table ? $short_column :
+          my $sql_column = $table_aliases ? $short_column :
                            $db ? $db->auto_quote_column_name($column) : $column;
 
-          if(ref($val))
+          if($val_ref)
           {
+            $val = $$val  if($scalar_ref);
+
             push(@clauses, _build_clause($dbh, $sql_column, $op, $val, $not, 
                                          undef, ($do_bind ? \@bind : undef),
-                                         $db, $col_meta, undef, $set, 
+                                         $db, $col_meta, $scalar_ref, $set, 
                                          $placeholder, $bind_params, 
                                          $allow_empty_lists));
           }
           elsif(!defined $val)
           {
-            no warnings 'uninitialized';
-            push(@clauses, $set ? "$sql_column = NULL" : 
-                                  ("$sql_column IS " . (($not || $op eq '<>') ? "NOT " : '') . 'NULL'));
+            no warnings 'uninitialized';            
+
+            if($set)
+            {
+              push(@clauses, "$sql_column = NULL");
+            }
+            elsif($op eq 'IS' || $op eq 'IS NOT')
+            {
+              push(@clauses, ($not ? 'NOT(' : '') . "$sql_column IS " .
+                             ($op eq 'IS NOT' ? 'NOT ' : '') . 'NULL' .
+                             ($not ? ')' : ''));
+            }
+            else
+            {
+              push(@clauses, ("$sql_column IS " . (($not || $op eq '<>') ? "NOT " : '') . 'NULL'));
+            }
           }
           else
           {
@@ -637,11 +670,11 @@ sub build_select
 
       if($db)
       {
-        $from_tables_sql = $multi_table ?
+        $from_tables_sql = $table_aliases ?
           join(",\n", map 
           {
             $i++;
-            '  ' . $db->format_table_with_alias($_, "t$i", $hints->{"t$i"})
+            '  ' . $db->format_table_with_alias($_, "t$i", $hints->{"t$i"} || ($i == 1 ? $hints : undef))
           } @$tables_sql) :
           '  ' . (($oracle_hack || keys %$hints) ? 
             $db->format_table_with_alias($tables_sql->[0], "t1", $hints->{'t1'} || $hints) :
@@ -649,7 +682,7 @@ sub build_select
       }
       else
       {
-        $from_tables_sql = $multi_table ?
+        $from_tables_sql = $table_aliases ?
           join(",\n", map { $i++; "  $_ t$i" } @$tables_sql) :
           "  $tables_sql->[0]";
       }
@@ -806,8 +839,19 @@ sub _build_clause
     }
 
     no warnings 'uninitialized';
-    return $set ? ("$field = NULL") :
-                  ("$field IS " . (($not || $op eq '<>') ? "NOT " : '') . 'NULL');
+    if($set)
+    {
+      return "$field = NULL";
+    }
+    elsif($op eq 'IS' || $op eq 'IS NOT')
+    {
+      return ($not ? 'NOT(' : '') . "$field IS " .
+             ($op eq 'IS NOT' ? 'NOT ' : '') . 'NULL' . ($not ? ')' : '');
+    }
+    else
+    {
+      return "$field IS " . (($not || $op eq '<>') ? 'NOT ' : '') . 'NULL';
+    }
   }
 
   if($ref eq 'ARRAY')
@@ -962,8 +1006,9 @@ sub _build_clause
       }
       else
       {
-
-        Carp::croak "Don't know how to handle comparison values: $vals->{$raw_op}";
+        Carp::croak "Don't know how to handle comparison operator '$raw_op' " .
+                    ($col_meta ? ' for column ' . $col_meta->name : '') . 
+                    ": $vals->{$raw_op}";
       }
     }
 
@@ -995,7 +1040,9 @@ sub _build_clause
     }
   }
 
-  Carp::croak "Don't know how to handle comparison values $vals";
+  Carp::croak "Don't know how to handle comparison" .
+              ($col_meta ? ' for column ' . $col_meta->name : '') . 
+              ": $vals";
 }
 
 sub _build_nested_join
@@ -1068,7 +1115,9 @@ sub _format_value
 
   $depth ||= 1;
 
-  if(!ref $value || $asis)
+  my $val_ref = ref $value;
+
+  if(!$val_ref || $asis)
   {
     unless(ref $store eq 'HASH' && $Op_Arg_PassThru{$param})
     {
@@ -1093,7 +1142,7 @@ sub _format_value
       }
     }
   }
-  elsif(ref $value eq 'ARRAY')
+  elsif($val_ref eq 'ARRAY')
   {
     Carp::croak "Empty list not allowed for $param query parameter"
       unless(@$value || $allow_empty_lists);
@@ -1115,7 +1164,7 @@ sub _format_value
       $value = \@vals;
     }
   }
-  elsif(ref $value eq 'HASH')
+  elsif($val_ref eq 'HASH')
   {
     foreach my $key (keys %$value)
     {
@@ -1342,6 +1391,8 @@ Undefined values are translated to the keyword NULL when included in a multi-val
     like                LIKE
     ilike               ILIKE
     rlike               RLIKE
+    is                  IS
+    is_not              IS NOT
     ne                  <>
     eq                  =
     lt                  <
@@ -1687,9 +1738,11 @@ Usually, this overhead is dwarfed by the time required for the database to servi
 
 The names of the columns to select from the table.  COLUMNS may be a string of comma-separated column names, or a reference to an array of column names.  If this parameter is omitted, it defaults to all of the columns in all of the tables participating in the query (according to the value of the C<columns> argument).
 
-=item B<sort_by CLAUSE>
+=item B<sort_by [ CLAUSE | ARRAYREF ]>
 
 A fully formed SQL "ORDER BY ..." clause, sans the words "ORDER BY", or a reference to an array of strings to be joined with a comma and appended to the "ORDER BY" clause.
+
+If an item in the referenced array is itself a reference to a scalar, then that item will be dereferenced and passed through unmodified.
 
 =item B<tables TABLES>
 
@@ -1736,7 +1789,7 @@ This works the same as the C<build_select()> function, except that it only retur
 
 =head1 AUTHOR
 
-John C. Siracusa (siracusa@mindspring.com)
+John C. Siracusa (siracusa@gmail.com)
 
 =head1 COPYRIGHT
 
