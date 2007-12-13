@@ -14,7 +14,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 
 use Rose::DB::Object::Constants qw(PRIVATE_PREFIX);
 
-our $VERSION = '0.759';
+our $VERSION = '0.766';
 
 our $Debug = 0;
 
@@ -219,13 +219,25 @@ sub is_ready_to_make_methods
   eval
   {
     my $map_class = $self->map_class or die "Missing map class";
-    my $map_meta  = $map_class->meta or die "Missing map class meta";
+
+    unless(UNIVERSAL::isa($map_class, 'Rose::DB::Object'))
+    {
+      die Rose::DB::Object::Exception::ClassNotReady->new(
+        "Map class $map_class not yet ready");
+    }
+
+    my $map_meta  = $map_class->meta or die
+      Rose::DB::Object::Exception::ClassNotReady->new(
+        "Missing meta object for $map_class");
+
     my $map_from  = $self->map_from;
     my $map_to    = $self->map_to;
     my $relationship = $self;
 
     my $target_class = $self->parent->class;
-    my $meta         = $target_class->meta;
+    my $meta         = $target_class->meta or die
+      Rose::DB::Object::Exception::ClassNotReady->new(
+        "Missing meta object for $target_class");
 
     my($map_to_class, $map_to_meta, $map_to_method);
 
@@ -305,9 +317,18 @@ sub is_ready_to_make_methods
             "class other than $target_class.  Please specify one " .
             "by name with a 'foreign' parameter in the 'map' hash");
         }
-
+    
         $map_to_class = $item->class;
-        $map_to_meta  = $map_to_class->meta;
+
+        unless(UNIVERSAL::isa($map_to_class, 'Rose::DB::Object'))
+        {
+          die Rose::DB::Object::Exception::ClassNotReady->new(
+            "Map-to-class $map_to_class not yet ready");
+        }
+
+        $map_to_meta  = $map_to_class->meta or die
+          Rose::DB::Object::Exception::ClassNotReady->new(
+            "Missing meta object for $map_to_class");
 
         my $map_columns = 
           $item->can('column_map') ? $item->column_map : $item->key_columns;
@@ -406,14 +427,25 @@ sub is_ready_to_make_methods
     }
   };
 
-  if($@ && ($Debug || $Rose::DB::Object::Metadata::Debug))
+  if(my $error = $@)
   {
-    my $err = "$@";
-    $err =~ s/ at .*//;
-    warn $self->parent->class, ': many-to-many relationship ', $self->name, " NOT READY - $err";
+    if($Debug || $Rose::DB::Object::Metadata::Debug)
+    {
+      my $err = $error;
+      $err =~ s/ at .*//;
+      warn $self->parent->class, ': many-to-many relationship ', $self->name, " NOT READY - $err";
+    }
+
+    die $error  unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception::ClassNotReady'));
   }
 
   return $@ ? 0 : 1;
+}
+
+sub perl_relationship_definition_attributes
+{
+  grep { $_ !~ /^(?:column_map|foreign_class)$/ }
+    shift->SUPER::perl_relationship_definition_attributes(@_);
 }
 
 1;
@@ -655,6 +687,8 @@ Return a method name for the relationship method type TYPE.
 For the method types "get_set", "get_set_now", and "get_set_on_save", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> is returned.
 
 For the method types "add_now" and "add_on_save", the relationship's  L<name|Rose::DB::Object::Metadata::Relationship/name> prefixed with "add_" is returned.
+
+For the method type "count", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> suffixed with "_count" is returned.
 
 Otherwise, undef is returned.
 

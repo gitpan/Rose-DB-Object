@@ -22,7 +22,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 our $Triggers_Key      = 'triggers';
 our $Trigger_Index_Key = 'trigger_index';
 
-our $VERSION = '0.764';
+our $VERSION = '0.766';
 
 use overload
 (
@@ -32,10 +32,15 @@ use overload
 
 __PACKAGE__->add_default_auto_method_types('get_set');
 
-__PACKAGE__->add_common_method_maker_argument_names(qw(column default type hash_key smart_modification));
+__PACKAGE__->add_common_method_maker_argument_names(qw(column default type hash_key smart_modification undef_overrides_default));
 
 use Rose::Class::MakeMethods::Generic
 (
+  inheritable_scalar =>
+  [
+    'default_undef_overrides_default'
+  ],
+
   inheritable_hash =>
   [
     event_method_type  => { hash_key => 'event_method_types' },
@@ -69,6 +74,7 @@ Rose::Object::MakeMethods::Generic->make_methods
   scalar => 
   [
     'alias',
+    'error',
     'ordinal_position',
     'parse_error',
     __PACKAGE__->common_method_maker_argument_names,
@@ -98,6 +104,36 @@ __PACKAGE__->method_maker_info
     type  => 'scalar',
   },
 );
+
+sub undef_overrides_default
+{
+  my($self) = shift;
+
+  if(@_)
+  {
+    return $self->{'undef_overrides_default'} = $_[0] ? 1 : 0;
+  }
+
+  return $self->{'undef_overrides_default'}
+    if(defined $self->{'undef_overrides_default'});
+
+  my $parent_default = $self->parent ? $self->parent->column_undef_overrides_default : undef;
+
+  return defined $parent_default ? $parent_default :  ref($self)->default_undef_overrides_default;
+}
+
+sub validate_specification
+{
+  my($self) = shift;
+
+  if($self->not_null && $self->{'undef_overrides_default'})
+  {
+    $self->error('True value for not_null attribute conflicts with true value for undef_overrides_default attribute.');
+    return 0;
+  }
+
+  return 1;
+}
 
 use constant ANY_DB => "\0ANY_DB\0";
 
@@ -357,7 +393,7 @@ sub perl_column_definition_attributes
     if($attr =~ /^(?: name(?:_sql)? | is_primary_key_member | 
                   primary_key_position | method_name | method_code |
                   made_method_types | ordinal_position | select_sql |
-                  (?:builtin_)?triggers | 
+                  undef_overrides_default | (?:builtin_)?triggers | 
                   (?:builtin_)?trigger_index )$/x)
     {
       next ATTR;
@@ -383,6 +419,12 @@ sub perl_column_definition_attributes
     elsif($attr eq 'smart_modification' && 
           (($self->smart_modification == ref($self)->new->smart_modification) ||
            ($self->parent && $self->smart_modification == $self->parent->default_smart_modification)))
+    {
+      next ATTR;
+    }
+    elsif($attr eq 'undef_overrides_default' && 
+          (($self->undef_overrides_default == ref($self)->new->undef_overrides_default) ||
+           ($self->parent && $self->undef_overrides_default == $self->parent->column_undef_overrides_default)))
     {
       next ATTR;
     }
@@ -1552,6 +1594,12 @@ For performance reasons, none of the column classes bundled with L<Rose::DB::Obj
 
 Get or set the default list of L<auto_method_types|/auto_method_types>.  TYPES should be a list of column method types.  Returns the list of default column method types (in list context) or a reference to an array of the default column method types (in scalar context).  The default list contains only the "get_set" column method type.
 
+=item B<default_undef_overrides_default [BOOL]>
+
+Get or set the default value of the L<undef_overrides_default|/undef_overrides_default> attribute.  The default value is undef.
+
+This default only applies when the column does not have a parent metadata object or if the metadata object's L<column_undef_overrides_default|Rose::DB::Object::Metadata/column_undef_overrides_default> method returns undef.
+
 =back
 
 =head1 CONSTRUCTOR
@@ -1847,6 +1895,54 @@ Returns true if L<triggers|/TRIGGERS> are disabled for this column, false otherw
 =item B<type>
 
 Returns the (possibly abstract) data type of the column.  The default implementation returns "scalar".
+
+=item B<undef_overrides_default [BOOL]>
+
+Get or set a boolean value that indicates whether or not setting the column to an undef value overrides the column's L<default|/default> value.
+
+The default value of this attribute is determined by the parent L<metadata|Rose::DB::Object::Metadata> object's L<column_undef_overrides_default|Rose::DB::Object::Metadata/column_undef_overrides_default> method, or the column's L<default_undef_overrides_default|/default_undef_overrides_default> class method id the metadata object's L<column_undef_overrides_default|Rose::DB::Object::Metadata/column_undef_overrides_default> method returns undef, or if the column has no parent metadata object.
+
+Example: consider a L<Rose::DB::Object>-derived C<Person> class with a C<name> column set up like this:
+
+    package Person;
+    ...
+       columns =>
+       [
+         name => { type => 'varchar', default => 'John Doe' },
+         ...
+       ],
+    ...
+
+The following behavior is the same regardless of the setting of the L<undef_overrides_default|/undef_overrides_default> attribute for the C<name> column:
+
+    $p = Person->new;
+    print $p->name; # John Doe
+
+    $p->name('Larry Wall');
+    print $p->name; # Larry Wall
+
+If L<undef_overrides_default|/undef_overrides_default> is B<false> for the C<name> column, then this is the behavior of explicitly setting the column to undef:
+
+    $p->name(undef);
+    print $p->name; # John Doe
+
+If L<undef_overrides_default|/undef_overrides_default> is B<true> for the C<name> column, then this is the behavior of explicitly setting the column to undef:
+
+    $p->name(undef);
+    print $p->name; # undef
+
+The L<undef_overrides_default|/undef_overrides_default> attribute can be set directly on the column:
+
+    name => { type => 'varchar', default => 'John Doe', 
+              undef_overrides_default => 1 },
+
+or it can be set class-wide using the L<meta|Rose::DB::Object/meta> object's L<column_undef_overrides_default|Rose::DB::Object::Metadata/column_undef_overrides_default> attribute:
+
+    Person->meta->column_undef_overrides_default(1);
+
+or it can be set for all classes that use a given L<Rose::DB::Object::Metadata>-derived class using the L<default_column_undef_overrides_default|Rose::DB::Object::Metadata/default_column_undef_overrides_default> class method:
+
+    My::DB::Object::Metadata->default_column_undef_overrides_default(1);
 
 =back
 

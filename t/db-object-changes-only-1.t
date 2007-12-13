@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 486;
+use Test::More tests => 494;
 
 BEGIN 
 {
@@ -870,14 +870,28 @@ SKIP: foreach my $db_type ('informix')
 
 SKIP: foreach my $db_type ('sqlite')
 {
-  skip("SQLite tests", 80)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 88)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
-  my $o = MySQLiteObject->new(name => 'John',
-                              k1   => 1,
-                              k2   => undef,
-                              k3   => 3);
+  my $o = MySQLiteObject->new;
+  
+  $o->k1(0);
+
+  ok(has_modified_columns($o), "has_modified_columns() zero - $db_type");
+
+  $o->k1(undef);
+
+  ok(has_modified_columns($o), "has_modified_columns() undef - $db_type");
+  
+  $o = MySQLiteObject->new(name => 'John',
+                           k1   => 0,
+                           k2   => undef,
+                           k3   => 3);
+
+  ok(get_column_value_modified($o, 'k1'), "zero modification - $db_type");
+
+  $o->k1(1);
 
   ok(ref $o && $o->isa('MySQLiteObject'), "new() 1 - $db_type");
 
@@ -1083,6 +1097,29 @@ SKIP: foreach my $db_type ('sqlite')
     ok($o->save(changes_only => 1), "noop update smart 1 - $db_type");
   }
 
+  $o->num(undef);
+  $o->save;
+  
+  $o->num(0);
+  ok(has_modified_columns($o), "zero mod 1 - $db_type");
+  $o->save(changes_only => 1);
+  
+  $o->num(0);
+  ok(!has_modified_columns($o), "zero mod 2 - $db_type");
+  $o->save(changes_only => 1);
+
+  $o->num(undef);
+  ok(has_modified_columns($o), "undef mod - $db_type");
+  $o->save(changes_only => 1);
+  $o->load;
+
+  $o->num('');
+  ok(has_modified_columns($o), "empty string mod 1 - $db_type");
+  $o->save(changes_only => 1);
+  $o->load;
+
+  is($o->num, '', "empty string mod 2 - $db_type");
+  
   $o = MySQLiteObject4->new(id => 1)->save;
   $o = MySQLiteObject4->new(id => 1)->load;
   ok($o->save, "noop update pk only 1 - $db_type");

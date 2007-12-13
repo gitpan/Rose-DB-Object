@@ -266,15 +266,15 @@ sub auto_foreign_key_name
       {
         return $name . $s;
       }
-
-      my $i = 1;
-
-      # Give up and go with numbers...
-      $i++  while($self->method_name_conflicts($name . $i) ||
-                  $used_names->{$name . $i});
-
-      return $name . $i;
     }
+
+    my $i = 1;
+
+    # Give up and go with numbers...
+    $i++  while($self->method_name_conflicts($name . $i) ||
+                $used_names->{$name . $i});
+
+    return $name . $i;
   }
 
   return $name;
@@ -314,14 +314,14 @@ sub auto_relationship_name_one_to_many
       {
         return $name . $s;
       }
-
-      my $i = 1;
-
-      # Give up and go with numbers...
-      $i++  while($self->method_name_conflicts($name . $i));
-
-      return $name . $i;
     }
+
+    my $i = 1;
+
+    # Give up and go with numbers...
+    $i++  while($self->method_name_conflicts($name . $i));
+
+    return $name . $i;
   }
 
   return $name;
@@ -342,14 +342,14 @@ sub auto_relationship_name_many_to_many
       {
         return $name . $s;
       }
-
-      my $i = 1;
-
-      # Give up and go with numbers...
-      $i++  while($self->method_name_conflicts($name . $i));
-
-      return $name . $i;
     }
+
+    my $i = 1;
+
+    # Give up and go with numbers...
+    $i++  while($self->method_name_conflicts($name . $i));
+
+    return $name . $i;
   }
 
   return $name;
@@ -370,14 +370,14 @@ sub auto_relationship_name_one_to_one
       {
         return $name . $s;
       }
-
-      my $i = 1;
-
-      # Give up and go with numbers...
-      $i++  while($self->method_name_conflicts($name . $i));
-
-      return $name . $i;
     }
+
+    my $i = 1;
+
+    # Give up and go with numbers...
+    $i++  while($self->method_name_conflicts($name . $i));
+
+    return $name . $i;
   }
 
   return $name;
@@ -1300,7 +1300,7 @@ But that's a bit of a pain to do in every single class.  An easier way to do it 
     # The big pay-off: smart plurals!
     print __PACKAGE__->meta->table; # "people"
 
-You might wonder why I don't use L<Lingua::EN::Inflect> in L<Rose::DB::Object::ConventionManager> to save you this effort.  The answer is that the L<Rose::DB::Object::ConventionManager> module adds almost a megabyte of memory overhead on my system.  I'd rather not incur that overhead just for the sake of being more clever about naming conventions.  Furthermore, as primitive as the default plural-forming is, at least it's deterministic.  Guessing what L<Lingua::EN::Inflect> will return is not always easy, and the results can change depending on which version L<Lingua::EN::Inflect> you have installed.
+You might wonder why I don't use L<Lingua::EN::Inflect> in L<Rose::DB::Object::ConventionManager> to save you this effort.  The answer is that the L<Lingua::EN::Inflect> module adds almost a megabyte of memory overhead on my system.  I'd rather not incur that overhead just for the sake of being more clever about naming conventions.  Furthermore, as primitive as the default plural-forming is, at least it's deterministic.  Guessing what L<Lingua::EN::Inflect> will return is not always easy, and the results can change depending on which version L<Lingua::EN::Inflect> you have installed.
 
 =head1 EXAMPLE
 
@@ -1479,6 +1479,8 @@ Let's add some data:
   INSERT INTO product_colors (product_id, color_code) VALUES (3, 'CC2');
   INSERT INTO product_colors (product_id, color_code) VALUES (3, 'CC3');
 
+(Be aware that not all databases are smart enough to track explicitly setting serial column values as shown in the INSERT statements above.  Subsequent auto-generated serial values may conflict with the explicitly set serial column values already in the table.  Values are set explicitly here to make the examples easier to follow.  In "real" code, you should let the serial columns populate automatically.) 
+
 Finally, the classes in action:
 
   $p = My::Product->new(id => 1)->load;
@@ -1531,7 +1533,7 @@ Not a single table, column, foreign key, or relationship is specified, yet every
   # "red, green"
   print join(', ', map { $_->name } $p->colors), "\n";
 
-More precisely, everything still works I<provided> that you load all the of the related modules.  For example, if you don't load C<My::Auto::Product> but don't load C<My::Auto::Price> (either from within the C<My::Auto::Product> class or in your program itself), then the C<My::Auto::Product> will not have a C<prices()> method (since your program will have no knowledge of the C<My::Auto::Price> class).  Use the L<loader|Rose::DB::Object::Loader> if you want to set up a bunch of related classes automatically without worrying about this kind of thing.
+More precisely, everything still works I<provided> that you load all the of the related modules.  For example, if you load C<My::Auto::Product> but don't load C<My::Auto::Price> (either from within the C<My::Auto::Product> class or in your program itself), then the C<My::Auto::Product> will not have a C<prices()> method (since your program will have no knowledge of the C<My::Auto::Price> class).  Use the L<loader|Rose::DB::Object::Loader> if you want to set up a bunch of related classes automatically without worrying about this kind of thing.
 
 Anyway, I don't recommend this kind of extreme approach, but it is an effective demonstration of the power of the convention manager.
 

@@ -1,3 +1,27 @@
+0.766 (12.13.2007) - John Siracusa <siracusa@gmail.com>
+
+    * Added the unique_key_by_name() metadata method.
+    * Added the ability to do unrestricted joins in some circumstances.
+    * Added the remember_all() class method to Rose::DB::Object::Cached.
+    * Added the undef_overrides_default column attribute.
+    * The key_column() method in the ForeignKey class now works correctly.
+      (Patch by Christopher Masto)
+    * Further synced datetime and timestamp method-maker code.
+    * Added a test suite exclusion for DBD::SQLite 1.14, which still suffers 
+      from this bug: http://rt.cpan.org/Public/Bug/Display.html?id=21472
+    * Improved detection of fatal errors during class setup.
+    * Added a "gotchas" section to the Loader documentation.
+    * Fixed propagation of db objects in update and delete Manager methods.
+    * Fixed a bug that caused some cached SQL to persist incorrectly after
+      inheritance.  (Patch by Daniel Koch)
+    * Fiddled with not_found() detection.  (Changes suggested by Philip Dye)
+    * Made one-to-one relationships (attempt to) work even when uniqueness is 
+      not apparent in the metadata.
+    * The Loader no longer chokes on SQLite columns that use the 
+      current_timestamp keyword.  (Reported by George Hartzell)
+    * Setting undef integer attributes to zero is now correctly detected 
+      as a modification.
+
 0.765 (07.21.2007) - John Siracusa <siracusa@gmail.com>
 
     * Added a value_type attribute to SET columns.

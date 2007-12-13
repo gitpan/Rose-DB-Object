@@ -45,7 +45,7 @@ use Rose::Object::MakeMethods::Generic
 
   hash =>
   [
-    _key_column  => { hash_key  => 'key_columns' },
+    _key_column  => { hash_key  => '_key_columns' },
     _key_columns => { interface => 'get_set_all' },
   ],
 );
@@ -272,7 +272,9 @@ sub is_ready_to_make_methods
       Rose::DB::Object::Exception::ClassNotReady->new(
         "Missing or invalid foreign class");
 
-    my $fk_meta = $self->class->meta;
+    my $fk_meta = $self->class->meta or die
+      Rose::DB::Object::Exception::ClassNotReady->new(
+        "Missing meta object for " . $self->class);
 
     my $key_columns = $self->key_columns || {};
 
@@ -293,11 +295,16 @@ sub is_ready_to_make_methods
     }
   };
 
-  if($@ && ($Debug || $Rose::DB::Object::Metadata::Debug))
+  if(my $error = $@)
   {
-    my $err = $@;
-    $err =~ s/ at .*//;
-    warn $self->parent->class, ': Foreign key ', $self->name, " NOT READY - $err";
+    if($Debug || $Rose::DB::Object::Metadata::Debug)
+    {
+      my $err = $error;
+      $err =~ s/ at .*//;
+      warn $self->parent->class, ': Foreign key ', $self->name, " NOT READY - $err";
+    }
+
+    die $error  unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception::ClassNotReady'));
   }
 
   return $@ ? 0 : 1;

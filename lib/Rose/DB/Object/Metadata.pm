@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.765';
+our $VERSION = '0.766';
 
 our $Debug = 0;
 
@@ -80,7 +80,11 @@ use Rose::Object::MakeMethods::Generic
 
 use Rose::Class::MakeMethods::Generic
 (
-  inheritable_scalar => 'dbi_prepare_cached',
+  inheritable_scalar => 
+  [
+    'dbi_prepare_cached',
+    'default_column_undef_overrides_default',
+  ],
 
   inheritable_hash =>
   [
@@ -736,6 +740,8 @@ sub add_unique_keys
     {
       UNIVERSAL::isa($_, 'Rose::DB::Object::Metadata::UniqueKey') ?
       ($_->parent($self), $_) : 
+      ref $_ eq 'HASH' ?
+      Rose::DB::Object::Metadata::UniqueKey->new(parent => $self, %$_) :
       Rose::DB::Object::Metadata::UniqueKey->new(parent => $self, columns => $_)
     }
     @_;
@@ -744,6 +750,17 @@ sub add_unique_keys
   return;
 }
 
+sub unique_key_by_name
+{
+  my($self, $name) = @_;
+  
+  foreach my $uk ($self->unique_keys)
+  {
+    return $uk  if($uk->name eq $name);
+  }
+  
+  return undef;
+}
 
 sub add_unique_key { shift->add_unique_keys(@_)  }
 sub unique_key     { \shift->add_unique_keys(@_) }
@@ -1677,6 +1694,13 @@ sub make_column_methods
 
   foreach my $column ($self->columns_ordered)
   {
+    unless($column->validate_specification)
+    {
+      Carp::croak "Column specification for column '", $column->name, 
+                  "' in class ", $self->class, " is invalid: ",
+                  $column->error;
+    }
+
     my $name = $column->name;
     my $method;
 
@@ -1731,6 +1755,8 @@ sub make_column_methods
     #  }
     #}
   }
+
+  $self->_clear_column_generated_values;
 
   # Initialize method name hashes
   $self->column_accessor_method_names;
@@ -1799,7 +1825,7 @@ sub make_foreign_key_methods
         # XXX: Need to distinguish recoverable errors from unrecoverable errors
         if($@ !~ /\.pm in \@INC/ && !UNIVERSAL::isa($@, 'Rose::DB::Object::Exception::ClassNotReady'))
         {
-          Carp::confess "Could not load $fclass - $@";
+          Carp::confess "Could not load $fclass - $@"; 
         }
       }
     }
@@ -2113,7 +2139,8 @@ sub make_relationship_methods
         if($@)
         {
           # XXX: Need to distinguish recoverable errors from unrecoverable errors
-          if($@ =~ /syntax error at |requires explicit package name|not allowed while "strict|already has a relationship named|Can't modify constant item/)
+          if($@ !~ /\.pm in \@INC/ && !UNIVERSAL::isa($@, 'Rose::DB::Object::Exception::ClassNotReady'))
+          #if($@ =~ /syntax error at |requires explicit package name|not allowed while "strict|already has a relationship named|Can't modify constant item/)
           {
             Carp::confess "Could not load $fclass - $@";
           }
@@ -2811,7 +2838,7 @@ sub column_aliases
 sub column_accessor_method_name
 {
   $_[0]->{'column_accessor_method'}{$_[1]} ||= 
-    $_[0]->column($_[1])->accessor_method_name;
+    ($_[0]->column($_[1]) ? $_[0]->column($_[1])->accessor_method_name : undef);
 }
 
 sub column_accessor_method_names_hash { shift->{'column_accessor_method'} }
@@ -2819,7 +2846,7 @@ sub column_accessor_method_names_hash { shift->{'column_accessor_method'} }
 sub column_mutator_method_name
 {
   $_[0]->{'column_mutator_method'}{$_[1]} ||= 
-    $_[0]->column($_[1])->mutator_method_name;
+    ($_[0]->column($_[1]) ? $_[0]->column($_[1])->mutator_method_name : undef);
 }
 
 sub column_mutator_method_names_hash { shift->{'column_mutator_method'} }
@@ -3754,6 +3781,7 @@ sub _clear_column_generated_values
   $self->{'num_columns'}            = undef;
   $self->{'nonlazy_column_names'}   = undef;
   $self->{'lazy_column_names'}      = undef;
+  $self->{'column_names_sql'}       = undef;
   $self->{'get_column_sql_tmpl'}    = undef;
   $self->{'column_names_string_sql'} = undef;
   $self->{'nonlazy_column_names_string_sql'}      = undef;
@@ -4098,6 +4126,21 @@ sub map_record_method_key
   }
 
   return $self->{'map_record_method_key'}{$method};
+}
+
+sub column_undef_overrides_default
+{
+  my($self) = shift;
+  
+  if(@_)
+  {
+    return $self->{'column_undef_overrides_default'} = $_[0] ? 1 : 0;
+  }
+
+  return $self->{'column_undef_overrides_default'}
+    if(defined $self->{'column_undef_overrides_default'});
+
+  return $self->{'column_undef_overrides_default'} = ref($self)->default_column_undef_overrides_default;
 }
 
 1;
@@ -4489,6 +4532,10 @@ The default mapping of names to classes is:
 =item B<dbi_prepare_cached [BOOL]>
 
 Get or set a boolean value that indicates whether or not the L<Rose::DB::Object>-derived L<class|/class> will use L<DBI>'s L<prepare_cached|DBI/prepare_cached> method by default (instead of the L<prepare|DBI/prepare> method) when L<loading|Rose::DB::Object/load>, L<saving|Rose::DB::Object/save>, and L<deleting|Rose::DB::Object/delete> objects.  The default value is true.
+
+=item B<default_column_undef_overrides_default [BOOL]>
+
+Get or set the default value of the L<column_undef_overrides_default|/column_undef_overrides_default> attribute.  Defaults to undef.
 
 =item B<for_class CLASS>
 
@@ -4916,6 +4963,12 @@ Returns the name of the "get_set" method for the column named NAME.  This is jus
 =item B<column_rw_method_names>
 
 Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "get_set" methods for all the columns, in the order that the columns are returned by L<column_names|/column_names>.
+
+=item B<column_undef_overrides_default [BOOL]>
+
+Get or set a boolean value that influences the default value of the L<undef_overrides_default|Rose::DB::Object::Metadata::Column/undef_overrides_default> attribute for each L<column|/columns> in this L<class|/class>.  See the documentation for L<Rose::DB::Object::Metadata::Column>'s L<undef_overrides_default|Rose::DB::Object::Metadata::Column/undef_overrides_default> attribute for more information.
+
+Defaults to the value returned by the L<default_column_undef_overrides_default|/default_column_undef_overrides_default> class method.
 
 =item B<convention_manager [ OBJECT | CLASS | NAME ]>
 
@@ -5380,6 +5433,10 @@ This method is an alias for L<add_unique_keys|/add_unique_keys>.
 Get or set the list of unique keys for this table.  If KEYS is passed, any existing keys will be deleted and KEYS will be passed to the L<add_unique_keys|/add_unique_keys> method.
 
 Returns the list (in list context) or reference to an array (in scalar context) of L<Rose::DB::Object::Metadata::UniqueKey> objects.
+
+=item B<unique_key_by_name NAME>
+
+Return the unique key L<named|Rose::DB::Object::Metadata::UniqueKey/name> NAME, or undef if no such key exists.
 
 =item B<unique_keys_column_names>
 

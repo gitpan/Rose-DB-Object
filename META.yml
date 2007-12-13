@@ -1,9 +1,10 @@
 --- #YAML:1.0
 name:                Rose-DB-Object
-version:             0.765
+version:             0.766
 abstract:            ~
 license:             ~
-generated_by:        ExtUtils::MakeMaker version 6.36
+author:              ~
+generated_by:        ExtUtils::MakeMaker version 6.42
 distribution_type:   module
 requires:     
     Bit::Vector::Overload:         0
@@ -16,11 +17,11 @@ requires:
     List::MoreUtils:               0
     Math::BigInt:                  1.77
     Rose::DateTime::Util:          0.532
-    Rose::DB:                      0.735
+    Rose::DB:                      0.737
     Rose::Object:                  0.84
     Scalar::Util:                  0
     Test::More:                    0
     Time::Clock:                   0
 meta-spec:
-    url:     http://module-build.sourceforge.net/META-spec-v1.2.html
-    version: 1.2
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3

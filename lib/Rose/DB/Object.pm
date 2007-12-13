@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.765';
+our $VERSION = '0.766';
 
 our $Debug = 0;
 
@@ -337,7 +337,7 @@ sub load
   # Handle normal load
   #
 
-  my $rows = 0;
+  my $loaded_ok;
 
   $self->{'not_found'} = 0;
 
@@ -382,13 +382,13 @@ sub load
 
     $sth->bind_columns(undef, \@row{@$column_names});
 
-    $sth->fetch;
+    $loaded_ok = defined $sth->fetch;
 
-    $rows = $sth->rows;
-
+    # The load() query shouldn't find more than one row anyway, 
+    # but DBD::SQLite demands this :-/
     $sth->finish;
 
-    if($rows > 0)
+    if($loaded_ok)
     {
       my $methods = $meta->column_mutator_method_names_hash;
 
@@ -429,7 +429,7 @@ sub load
     return undef;
   }
 
-  unless($rows > 0)
+  unless($loaded_ok)
   {
     my $speculative = 
       exists $args{'speculative'} ? $args{'speculative'} :     
@@ -671,6 +671,8 @@ sub update
                  join(', ', @key_columns) . ') with ' .
                  (@key_columns > 1 ? 'non-null values in all columns' : 
                                      'a non-null value'));
+    $self->meta->handle_error($self);
+    return undef;
   }
 
   #my $ret = $db->begin_work;
@@ -2101,8 +2103,6 @@ If true, then all columns will be fetched from the database, even L<lazy|Rose::D
 =item B<prepare_cached BOOL>
 
 If true, then L<DBI>'s L<prepare_cached|DBI/prepare_cached> method will be used (instead of the L<prepare|DBI/prepare> method) when preparing the SQL query that will load the object.  If omitted, the default value is determined by the L<metadata object|/meta>'s L<dbi_prepare_cached|Rose::DB::Object::Metadata/dbi_prepare_cached> class method.
-
-all columns will be fetched from the database, even L<lazy|Rose::DB::Object::Metadata::Column/load_on_demand> columns.  If omitted, the default is false.
 
 =item B<speculative BOOL>
 

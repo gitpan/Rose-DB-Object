@@ -9,11 +9,11 @@ our @ISA = qw(Rose::Object::MakeMethods);
 
 use Rose::DB::Object::Constants
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
-     STATE_SAVING MODIFIED_COLUMNS);
+     STATE_SAVING MODIFIED_COLUMNS SET_COLUMNS);
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.73';
+our $VERSION = '0.766';
 
 sub date
 {
@@ -24,6 +24,8 @@ sub date
   my $tz = $args->{'time_zone'} || 0;
 
   my $column_name = $args->{'column'} ? $args->{'column'}->name : $name;
+
+  my $undef_overrides_default = $args->{'undef_overrides_default'} || 0;
 
   my $formatted_key = column_value_formatted_key($key);
   my $default = $args->{'default'};
@@ -118,7 +120,9 @@ sub date
 
       return  unless(defined wantarray);
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_date($default);
 
@@ -216,7 +220,9 @@ sub date
         }
       }
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_date($default);
 
@@ -324,7 +330,9 @@ sub date
 
       return  unless(defined wantarray);
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_date($default);
 
@@ -395,6 +403,8 @@ sub datetime
 
   my $column_name = $args->{'column'} ? $args->{'column'}->name : $name;
 
+  my $undef_overrides_default = $args->{'undef_overrides_default'} || 0;
+
   for($type)
   {
     # "datetime year to fraction(5)" -> datetime_year_to_fraction_5
@@ -449,6 +459,10 @@ sub datetime
             return $db->$format_method($dt)  unless(ref $dt);
             return $dt->clone->truncate(to => $_[1]);
           }
+          else
+          {
+            Carp::croak "Invalid argument(s) to $name: @_";
+          }
         }
 
         if(defined $_[0])
@@ -486,7 +500,9 @@ sub datetime
 
       return  unless(defined wantarray);
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->$parse_method($default);
 
@@ -550,7 +566,43 @@ sub datetime
       my $db = $self->db or die "Missing Rose::DB object attribute";
       my $driver = $db->driver || 'unknown';
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      if(@_ == 2)
+      {
+        my $dt = $self->{$key} || $self->{$formatted_key,$driver};
+
+        if(defined $dt && !ref $dt)
+        {
+          my $dt2 = $db->parse_timestamp($dt);
+
+          unless($dt2)
+          {
+            $dt2 = Rose::DateTime::Util::parse_date($dt, $tz || $db->server_time_zone, 1) or
+              Carp::croak "Could not parse datetime '$dt'";
+          }
+
+          $dt = $dt2;
+        }
+
+        if($_[0] eq 'format')
+        {
+          return $dt  unless(ref $dt);
+          return Rose::DateTime::Util::format_date($dt, (ref $_[1] ? @{$_[1]} : $_[1]), 1);
+        }
+        elsif($_[0] eq 'truncate')
+        {
+          return undef  unless($self->{$key});
+          return $db->format_timestamp($dt)  unless(ref $dt);
+          return $dt->clone->truncate(to => $_[1]);
+        }
+        else
+        {
+          Carp::croak "Invalid argument(s) to $name: @_";
+        }
+      }
+
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->$parse_method($default);
 
@@ -650,7 +702,9 @@ sub datetime
 
       return  unless(defined wantarray);
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->$parse_method($default);
 
@@ -733,6 +787,8 @@ sub timestamp
   my $tz = $args->{'time_zone'} || 0;
 
   my $column_name = $args->{'column'} ? $args->{'column'}->name : $name;
+
+  my $undef_overrides_default = $args->{'undef_overrides_default'} || 0;
 
   my $formatted_key = column_value_formatted_key($key);
   my $default = $args->{'default'};
@@ -819,7 +875,9 @@ sub timestamp
 
       return  unless(defined wantarray);
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_timestamp($default);
 
@@ -917,7 +975,11 @@ sub timestamp
         }
       }
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      return  unless(defined wantarray);
+
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_timestamp($default);
 
@@ -1003,19 +1065,23 @@ sub timestamp
           $dt->set_time_zone($tz || $db->server_time_zone)  if(ref $dt);
           $self->{$key} = $dt;
           $self->{$formatted_key,$driver} = undef;
+
+          $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
         }
       }
       else
       {
         $self->{$key} = undef;
         $self->{$formatted_key,$driver} = undef;
+        $self->{MODIFIED_COLUMNS()}{$column_name} = 1
+          unless($self->{STATE_LOADING()});
       }
-
-      $self->{MODIFIED_COLUMNS()}{$column_name} = 1;
 
       return  unless(defined wantarray);
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_timestamp($default);
 
@@ -1087,6 +1153,8 @@ sub epoch
   my $epoch_method = $args->{'hires'} ? 'hires_epoch' : 'epoch';
 
   my $column_name = $args->{'column'} ? $args->{'column'}->name : $name;
+
+  my $undef_overrides_default = $args->{'undef_overrides_default'} || 0;
 
   my $formatted_key = column_value_formatted_key($key);
   my $default = $args->{'default'};
@@ -1181,7 +1249,9 @@ sub epoch
 
       return  unless(defined wantarray);
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_date($default);
 
@@ -1281,7 +1351,11 @@ sub epoch
         }
       }
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      return  unless(defined wantarray);
+
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_date($default);
 
@@ -1389,7 +1463,9 @@ sub epoch
 
       return  unless(defined wantarray);
 
-      if(defined $default && !$self->{$key} && !defined $self->{$formatted_key,$driver})
+      unless(!defined $default || defined $self->{$key} || defined $self->{$formatted_key,$driver} ||
+             ($undef_overrides_default && ($self->{MODIFIED_COLUMNS()}{$column_name} || 
+              ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{MODIFIED_COLUMNS()}{$column_name})))))
       {
         my $dt = $db->parse_date($default);
 

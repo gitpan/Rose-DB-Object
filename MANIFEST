@@ -186,6 +186,7 @@ t/sandbox/convention/lib/My/Object.pm
 t/sandbox/convention/lib/My/Price.pm
 t/sandbox/convention/lib/My/Product.pm
 t/sandbox/convention/lib/My/ProductColors.pm
+t/sandbox/convention/lib/My/Region.pm
 t/sandbox/convention/lib/My/Vendor.pm
 t/sandbox/schema-clash/lib/Alpha.pm
 t/sandbox/schema-clash/lib/Beta.pm
@@ -211,5 +212,6 @@ t/spot-check-12.t
 t/spot-check-13.t
 t/spot-check-14.t
 t/test-lib.pl
+t/undef-overrides-default.t
 t/unique-key-prefs.t
 META.yml                                 Module meta-data (added by MakeMaker)

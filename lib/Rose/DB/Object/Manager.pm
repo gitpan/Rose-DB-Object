@@ -16,7 +16,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.765';
+our $VERSION = '0.766';
 
 our $Debug = 0;
 
@@ -223,6 +223,10 @@ sub make_manager_methods
           my $method = "${class}::get_$name";
           Carp::croak "A $method method already exists"
             if(defined &{$method});
+
+          Carp::croak "The $method method is inherited from Rose::DB::Object::Manager ",
+                      "and cannot be overriden in $target_class"
+            if(Rose::DB::Object::Manager->can($method));
         }
 
         *{$method_name} = sub
@@ -363,6 +367,8 @@ sub get_objects
   my $fetch            = delete $args{'fetch_only'};
   my $hints            = delete $args{'hints'} || {};
   my $select           = $args{'select'};
+
+  my $no_forced_sort = delete $args{'no_forced_sort'};
 
   my $table_aliases    = exists $args{'table_aliases'} ? 
     $args{'table_aliases'} : ($args{'table_aliases'} = 1);
@@ -952,6 +958,18 @@ sub get_objects
 
         my(@redundant, @redundant_null);
 
+        unless($ft_columns && %$ft_columns)
+        {
+          if($with_objects{$arg})
+          {
+            $joins[$i]{'type'} = 'LEFT OUTER JOIN';
+          }
+          elsif($use_explicit_joins)
+          {
+            $joins[$i]{'type'} = 'JOIN';
+          }
+        }
+
         # Add join condition(s)
         while(my($local_column, $foreign_column) = each(%$ft_columns))
         {
@@ -1053,6 +1071,8 @@ sub get_objects
           push(@$clauses, '((' . join(' AND ', @redundant) . ') OR (' .
                           join(' OR ', @redundant_null) . '))');
         }
+
+        $joins[$i]{'conditions'} ||= [ '1 = 1' ]  if($joins[$i]);
 
         # Add sub-object sort conditions
         if($rel->can('manager_args') && (my $mgr_args = $rel->manager_args))
@@ -1625,9 +1645,9 @@ sub get_objects
       # a sort by t1's primarky key unless sorting by some other column in
       # t1.  This is required to ensure that all result rows from each row
       # in t1 are grouped together.  But don't do it when we're selecting
-      # columns from just one table.  (Compare to 2 because the primary 
-      # table name and the "t1" alias are both always in the fetch list.)
-      if($num_to_many_rels > 0 && (!%fetch || (keys %fetch || 0) > 2))
+      # columns from just one table.  (Compare to 3 because the primary table
+      # name, fully-qualified name, and the "t1" alias are always in the list.)
+      if($num_to_many_rels > 0 && (!%fetch || (keys %fetch || 0) > 3) && !$no_forced_sort)
       {
         my $do_prefix = 1;
 
@@ -1660,13 +1680,13 @@ sub get_objects
     # TODO: remove duplicate/redundant sort conditions
     $args{'sort_by'} = $sort_by;
   }
-  elsif($num_to_many_rels > 0 && (!%fetch || (keys %fetch || 0) > 2))
+  elsif($num_to_many_rels > 0 && (!%fetch || (keys %fetch || 0) > 3) && !$no_forced_sort)
   {
     # When selecting sub-objects via a "... to many" relationship, force a
     # sort by t1's primarky key to ensure that all result rows from each
     # row in t1 are grouped together.  But don't do it when we're selecting
-    # columns from just one table. (Compare to 2 because the primary table
-    # name and the "t1" alias are both always in the fetch list.)
+    # columns from just one table. (Compare to 3 because the primary table
+    # name, fully-qualified name, and the "t1" alias are always in the list.)
     $args{'sort_by'} = [ join(', ', map { "t1.$_" } $meta->primary_key_column_names) ];
   }
 
@@ -2880,7 +2900,7 @@ sub delete_objects
     exists $args{'prepare_cached'} ? $args{'prepare_cached'} :
     $class->dbi_prepare_cached;
 
-  my $db  = delete $args{'db'} || $object_class->init_db;
+  my $db  = $args{'db'} ||= $object_class->init_db;
   my $dbh = $args{'dbh'};
   my $dbh_retained = 0;
 
@@ -2982,7 +3002,7 @@ sub update_objects
     exists $args{'prepare_cached'} ? $args{'prepare_cached'} :
     $class->dbi_prepare_cached;
 
-  my $db  = delete $args{'db'} || $object_class->init_db;
+  my $db  = $args{'db'} ||= $object_class->init_db;
   my $dbh = $args{'dbh'};
   my $dbh_retained = 0;
 
@@ -3434,6 +3454,8 @@ sub perl_class_definition
 
   return<<"EOF";
 package $class;
+
+use strict;
 
 $use_bases
 
