@@ -9,7 +9,7 @@ our @ISA = qw(Rose::DB::Object);
 
 use Rose::DB::Object::Constants qw(STATE_IN_DB);
 
-our $VERSION = '0.766';
+our $VERSION = '0.7661';
 
 our $Debug = 0;
 
@@ -21,7 +21,7 @@ use constant UK_SEP => "\0\0";
 # the stringified multi-column unique key value
 use constant UNDEF  => "\1\2undef\2\1";
 
-sub __xrdbopriv_save_object
+sub remember
 {
   my($self) = shift;
 
@@ -103,7 +103,7 @@ sub __xrdbopriv_get_object
         return undef; # cache expired
       }
 
-      __xrdbopriv_save_object(${"${class}::Objects_By_Key"}{$key_name}{$key_value});
+      ${"${class}::Objects_By_Key"}{$key_name}{$key_value}->remember();
       return ${"${class}::Objects_By_Key"}{$key_name}{$key_value};
     }
 
@@ -149,7 +149,7 @@ sub load
   }
 
   my $ret = $_[0]->SUPER::load(%args);
-  __xrdbopriv_save_object($_[0])  if($ret);
+  $_[0]->remember  if($ret);
 
   return $ret;
 }
@@ -165,7 +165,7 @@ sub save
 
   my $pk = join(PK_SEP, grep { defined } map { $self->$_() } $self->meta->primary_key_column_names);
 
-  __xrdbopriv_save_object($self);
+  $self->remember;
 
   return $ret;
 }
@@ -201,7 +201,7 @@ sub forget
   return 1;
 }
 
-sub remember
+sub remember_by_pk_only
 {
   my($self) = shift;
 
@@ -350,7 +350,7 @@ Save the current object to the memory cache I<without> saving it to the database
 
 =item B<remember_all [PARAMS]>
 
-Load and L<remember|/remember> all objects from this table, optionally filtered by PARAMS which can be any valid L<Rose::DB::Object::Manager->get_objects()|Rose::DB::Object::Manager/get_objects> parameters.  Remembered objects will replace any previously cached objects with the same keys.
+Load and L<remember|/remember> all objects from this table, optionally filtered by PARAMS which can be any valid L<Rose::DB::Object::Manager-E<gt>get_objects()|Rose::DB::Object::Manager/get_objects> parameters.  Remembered objects will replace any previously cached objects with the same keys.
 
 =item B<save [PARAMS]>
 
