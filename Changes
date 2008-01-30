@@ -1,3 +1,7 @@
+0.7662 (01.30.2008) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed copy-and-paste-o in Rose::DB::Object::Cached code.
+
 0.7661 (01.29.2008) - John Siracusa <siracusa@gmail.com>
 
     * Fixed method clash detection in Rose::DB::Object::Manager.
