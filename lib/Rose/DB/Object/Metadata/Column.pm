@@ -413,7 +413,7 @@ sub perl_column_definition_attributes
       else
       {
         $val = perl_arrayref(array => $val, inline => 1);
-        $attr = 'values';
+        $attr = 'check_in';
       }
     }
     elsif($attr eq 'smart_modification' && 
@@ -1976,6 +1976,6 @@ John C. Siracusa (siracusa@gmail.com)
 
 =head1 COPYRIGHT
 
-Copyright (c) 2007 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2008 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

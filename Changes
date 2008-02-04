@@ -1,3 +1,14 @@
+0.7663 (02.04.2008) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed a bug that caused delete_on_save method creation for foreign
+      keys to fail in some circumstances.  (Reported by Justin Ellison)
+    * Fixed a bug that prevented Perl code from being emitted for 
+      non-set columns with check_in attributes.  (Reported by Sam Tregar)
+    * Pushed cache control methods down into Rose::DB::Object::Cached
+      in preparation for more caching subclasses.
+    * The clear_object_cache() method now correctly clears load timestamps
+      as well.  (Patch by Justin Ellison)
+
 0.7662 (01.30.2008) - John Siracusa <siracusa@gmail.com>
 
     * Fixed copy-and-paste-o in Rose::DB::Object::Cached code.
