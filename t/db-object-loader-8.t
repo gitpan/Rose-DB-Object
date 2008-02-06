@@ -26,7 +26,7 @@ foreach my $db_type (qw(mysql))
 {
   SKIP:
   {
-    skip("$db_type tests", 17)  unless($Have{$db_type});
+    skip("$db_type tests", 1)  unless($Have{$db_type});
   }
 
   next  unless($Have{$db_type});
@@ -39,7 +39,7 @@ foreach my $db_type (qw(mysql))
   #$Rose::DB::Object::Metadata::Debug = 1;
 
   my $db = Rose::DB->new($db_type);
-       
+
   my $loader = 
     Rose::DB::Object::Loader->new(
       db           => $db,

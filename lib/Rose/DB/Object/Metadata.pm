@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.7663';
+our $VERSION = '0.7664';
 
 our $Debug = 0;
 
@@ -219,6 +219,17 @@ sub new
   my($this_class, %args) = @_;
   my $class = $args{'class'} or Carp::croak "Missing required 'class' parameter";
   return $Objects{$class} ||= shift->SUPER::new(@_);
+}
+
+sub init
+{
+  my($self) = shift;
+
+  # This attribute will be accessed many times, and a default 
+  # of 0 is usually a "faster false" than undef.
+  $self->sql_qualify_column_names_on_load(0);
+
+  $self->SUPER::init(@_);
 }
 
 sub init_original_class { ref shift }
@@ -620,6 +631,26 @@ sub select_schema
   return $self->{'schema'} || ($db ? $db->schema : undef);
 }
 
+sub sql_qualify_column_names_on_load
+{
+  my($self) = shift;
+
+  if(@_)
+  {
+    my $value = $_[0] ? 1 : 0;
+
+    no warnings 'uninitialized';
+    if($value != $self->{'sql_qualify_column_names_on_load'})
+    {
+      $self->{'sql_qualify_column_names_on_load'} = $value;
+      $self->_clear_column_generated_values;
+      $self->prime_caches  if($self->is_initialized);
+    }
+  }
+
+  return $self->{'sql_qualify_column_names_on_load'};
+}
+
 sub init_primary_key
 {
   Rose::DB::Object::Metadata::PrimaryKey->new(parent => shift);
@@ -693,12 +724,12 @@ sub add_unique_keys
 sub unique_key_by_name
 {
   my($self, $name) = @_;
-  
+
   foreach my $uk ($self->unique_keys)
   {
     return $uk  if($uk->name eq $name);
   }
-  
+
   return undef;
 }
 
@@ -1589,7 +1620,7 @@ sub class_for
   # wont' show up in a catalog, schema, or table name, so I'm guarding
   # against someone changing it to "-" elsewhere in the code or whatever.
   local $; = "\034";
-                        
+
   my $f_class =
     $reg->{'catalog-schema-table',$catalog,$schema,$table} ||
     $reg->{'catalog-schema-table',$catalog,$default_schema,$table} ||
@@ -2251,7 +2282,6 @@ sub make_methods
   my($self) = shift;
 
   $self->make_column_methods(@_);
-$DB::single = 1;
   $self->make_foreign_key_methods(@_);
   $self->make_relationship_methods(@_);
 }
@@ -2606,7 +2636,7 @@ sub select_nonlazy_columns_string_sql
   my($self, $db) = @_;
 
   return $self->{'select_nonlazy_columns_string_sql'}{$db->{'id'}} ||= 
-    join(', ', map { $_->select_sql($db) } $self->nonlazy_columns);
+    join(', ', @{ scalar $self->select_nonlazy_columns_sql($db) });
 }
 
 sub select_columns_string_sql
@@ -2614,15 +2644,55 @@ sub select_columns_string_sql
   my($self, $db) = @_;
 
   return $self->{'select_columns_string_sql'}{$db->{'id'}} ||= 
-    join(', ', map { $_->select_sql($db) } $self->columns_ordered);
+    join(', ', @{ scalar $self->select_columns_sql($db) });
 }
 
 sub select_columns_sql
 {
   my($self, $db) = @_;
 
-  my $list = $self->{'select_columns_sql'}{$db->{'id'}} ||= 
-    [ map { $_->select_sql($db) } $self->columns_ordered ];
+  my $list = $self->{'select_columns_sql'}{$db->{'id'}};
+
+  unless($list)
+  {
+    my $table = $self->table;
+
+    if($self->sql_qualify_column_names_on_load)
+    {
+      $list = [ map { $_->select_sql($db, $table) } $self->columns_ordered ];
+    }
+    else
+    {
+      $list = [ map { $_->select_sql($db) } $self->columns_ordered ];
+    }
+
+    $self->{'select_columns_sql'}{$db->{'id'}} = $list;
+  }
+
+  return wantarray ? @$list : $list;
+}
+
+sub select_nonlazy_columns_sql
+{
+  my($self, $db) = @_;
+
+  my $list = $self->{'select_nonlazy_columns_sql'}{$db->{'id'}};
+
+  unless($list)
+  {
+    my $table = $self->table;
+
+    if($self->sql_qualify_column_names_on_load)
+    {
+      $list = [ map { $_->select_sql($db, $table) } $self->nonlazy_columns ];
+    }
+    else
+    {
+      $list = [ map { $_->select_sql($db) } $self->nonlazy_columns ];
+    }
+
+    $self->{'select_nonlazy_columns_sql'}{$db->{'id'}} = $list;
+  }
 
   return wantarray ? @$list : $list;
 }
@@ -2840,7 +2910,10 @@ sub load_all_sql
     join(' AND ',  map 
     {
       my $c = $self->column($_);
-      $c->name_sql . ' = ' . $c->query_placeholder_sql($db)
+
+      ($self->sql_qualify_column_names_on_load ? 
+        $db->auto_quote_column_with_table($c->name_sql, $self->table) : $c->name_sql) .
+      ' = ' . $c->query_placeholder_sql($db)
     }
     @$key_columns);
 }
@@ -2858,7 +2931,9 @@ sub load_sql
     join(' AND ', map
     {
       my $c = $self->column($_);
-      $c->name_sql . ' = ' . $c->query_placeholder_sql($db)
+      ($self->sql_qualify_column_names_on_load ? 
+        $db->auto_quote_column_with_table($c->name_sql, $self->table) : $c->name_sql) .
+      ' = ' . $c->query_placeholder_sql($db)
     }
     @$key_columns);
 }
@@ -2869,6 +2944,9 @@ sub load_all_sql_with_null_key
 
   my $i = 0;
 
+  my $fq    = $self->sql_qualify_column_names_on_load;
+  my $table = $self->table;
+
   no warnings;
   return 
     'SELECT ' . $self->select_columns_string_sql($db) . ' FROM ' .
@@ -2876,7 +2954,7 @@ sub load_all_sql_with_null_key
     join(' AND ', map 
     {
       my $c = $self->column($_);
-      $c->name_sql . 
+      ($fq ? $db->auto_quote_column_with_table($c->name_sql, $table) : $c->name_sql) . 
       (defined $key_values->[$i++] ? ' = ' . $c->query_placeholder_sql : ' IS NULL')
     }
     @$key_columns);
@@ -2888,6 +2966,9 @@ sub load_sql_with_null_key
 
   my $i = 0;
 
+  my $fq    = $self->sql_qualify_column_names_on_load;
+  my $table = $self->table;
+
   no warnings;
   return 
     'SELECT ' . $self->select_nonlazy_columns_string_sql($db) . ' FROM ' .
@@ -2895,7 +2976,7 @@ sub load_sql_with_null_key
     join(' AND ', map 
     {
       my $c = $self->column($_);
-      $c->name_sql . 
+      ($fq ? $db->auto_quote_column_with_table($c->name_sql, $table) : $c->name_sql) .
       (defined $key_values->[$i++] ? ' = ' . $c->query_placeholder_sql : ' IS NULL')
     }
     @$key_columns);
@@ -2952,7 +3033,7 @@ sub update_sql
   unless($self->dbi_requires_bind_param($db))
   {
     my $method_name = $self->column_accessor_method_names_hash;
-  
+
     foreach my $column (@columns)
     {
       my $method = $method_name->{$column->{'name'}};
@@ -3674,7 +3755,7 @@ sub prime_caches
        init_insert_changes_only_sql_prefix init_update_sql_prefix
        init_update_sql_with_inlining_start column_names_string_sql
        nonlazy_column_names_string_sql select_nonlazy_columns_string_sql
-       select_columns_string_sql select_columns_sql);
+       select_columns_string_sql select_columns_sql select_nonlazy_columns_sql);
 
   foreach my $method (@methods)
   {
@@ -3687,7 +3768,7 @@ sub prime_caches
   {
     foreach my $method (qw(update_all_sql load_sql load_all_sql))
     {
-      $self->update_all_sql(scalar $key->columns, $db);
+      $self->$method(scalar $key->columns, $db);
     }
   }
 }
@@ -3737,6 +3818,7 @@ sub _clear_column_generated_values
   $self->{'select_nonlazy_columns_string_sql'}    = undef;
   $self->{'select_columns_string_sql'}            = undef;
   $self->{'select_columns_sql'}                   = undef;
+  $self->{'select_nonlazy_columns_sql'}           = undef;
   $self->{'method_columns'}         = undef;
   $self->{'column_accessor_method'} = undef;
   $self->{'column_mutator_method'}  = undef;
@@ -4072,7 +4154,7 @@ sub map_record_method_key
 sub column_undef_overrides_default
 {
   my($self) = shift;
-  
+
   if(@_)
   {
     return $self->{'column_undef_overrides_default'} = $_[0] ? 1 : 0;
@@ -5343,6 +5425,18 @@ The L<setup()|/setup> method call above is equivalent to the following code:
 
       $meta->initialize;
     }
+
+=item B<sql_qualify_column_names_on_load [BOOL]>
+
+Get or set a boolean value that indicates whether or not to prefix the columns with the table name in the SQL used to L<load()|Rose::DB::Object/load> an object.  The default value is false.
+
+For example, here is some SQL that might be used to L<load|Rose::DB::Object/load> an object, as generated with L<sql_qualify_column_names_on_load|/sql_qualify_column_names_on_load> set to false:
+
+    SELECT id, name FROM dogs WHERE id = 5;
+
+Now here's how it would look with L<sql_qualify_column_names_on_load|/sql_qualify_column_names_on_load> set to true:
+
+    SELECT dogs.id, dogs.name FROM dogs WHERE dogs.id = 5;
 
 =item B<table [TABLE]>
 

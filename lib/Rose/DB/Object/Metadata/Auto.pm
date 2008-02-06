@@ -452,7 +452,7 @@ sub auto_generate_foreign_keys
 
       my $local_column   = $fk_info->{'FK_COLUMN_NAME'};
       my $foreign_column = $fk_info->{'UK_COLUMN_NAME'};
-      
+
       $fk{$fk_id}{'class'} = $foreign_class;
       $fk{$fk_id}{'key_columns'}{$local_column} = $foreign_column;
 
@@ -1560,7 +1560,7 @@ sub auto_initialize
   $self->auto_init_unique_keys(@_);
   $self->auto_init_foreign_keys(@_);
   $self->auto_init_relationships(@_);
-$DB::single = 1;
+
   $self->initialize(@_);
 
   # Don't seem to need this anymore...
