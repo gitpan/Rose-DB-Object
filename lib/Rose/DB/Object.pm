@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.7664';
+our $VERSION = '0.7665';
 
 our $Debug = 0;
 
@@ -2164,6 +2164,8 @@ Actions associated with sub-objects that were added or deleted using one of the 
 
     $product = Product->new(name => 'Sled');
     $vendor  = Vendor->new(name => 'Acme');  
+
+    $product->vendor($vendor);
 
     # Product and vendor records created and linked together,
     # all within a single transaction.

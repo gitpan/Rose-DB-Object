@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Rose-DB-Object
-version:             0.7664
+version:             0.7665
 abstract:            ~
 license:             ~
 author:              ~
@@ -17,7 +17,7 @@ requires:
     List::MoreUtils:               0
     Math::BigInt:                  1.77
     Rose::DateTime::Util:          0.532
-    Rose::DB:                      0.737
+    Rose::DB:                      0.739
     Rose::Object:                  0.84
     Scalar::Util:                  0
     Test::More:                    0
