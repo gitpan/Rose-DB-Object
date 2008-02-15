@@ -279,6 +279,7 @@ foreach my $db_type (qw(mysql pg informix sqlite))
   unset_state_loading($c);
 
   # has_loaded_related() tested in db-object-relationship.t
+  # forget_related() tested in db-object-relationship.t
 
   eval { require Storable };
 
@@ -287,10 +288,9 @@ foreach my $db_type (qw(mysql pg informix sqlite))
     $o = $class->new(id => 1)->load_or_save;
 
     my $frozen = Storable::freeze($o->strip);
-
     my $thawed = Storable::thaw($frozen);
 
-    is_deeply($thawed, $o, "strip 1 - $db_type")
+    is_deeply($thawed, $o, "strip 1 - $db_type");
   }
   else { SKIP: { skip("tests that require Storable - $db_type", 1) } }
 }

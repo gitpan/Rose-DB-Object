@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.7665';
+our $VERSION = '0.767';
 
 our $Debug = 0;
 
@@ -1519,7 +1519,7 @@ __END__
 
 =head1 NAME
 
-Rose::DB::Object - Extensible, high performance RDBMS-OO mapper.
+Rose::DB::Object - Extensible, high performance object-relational mapper (ORM).
 
 =head1 SYNOPSIS
 

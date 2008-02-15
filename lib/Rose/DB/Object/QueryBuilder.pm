@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.766';
+our $VERSION = '0.767';
 
 our $Debug = 0;
 
@@ -708,13 +708,15 @@ sub build_select
     }
     else
     {
-      if($limit_prefix !~ /^SELECT /)
+      my $select_start = ($db && %$hints) ? $db->format_select_start_sql($hints->{'t1'} || $hints) : 'SELECT';
+
+      if(index($limit_prefix, 'SELECT ') != 0)
       {
-        $qs = "SELECT $limit_prefix$distinct\n$select\nFROM\n$from_tables_sql\n";
+        $qs = "$select_start $limit_prefix$distinct\n$select\nFROM\n$from_tables_sql\n";
       }
       else
       {
-        $qs = "${limit_prefix}SELECT$distinct\n$select\nFROM\n$from_tables_sql\n";
+        $qs = "${limit_prefix}$select_start$distinct\n$select\nFROM\n$from_tables_sql\n";
       }
     }
   }
