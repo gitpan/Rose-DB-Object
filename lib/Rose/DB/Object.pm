@@ -15,7 +15,7 @@ use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.767';
+our $VERSION = '0.768';
 
 our $Debug = 0;
 
@@ -2278,11 +2278,15 @@ For an informal overview of L<Rose::DB::Object>, consult the L<Rose::DB::Object:
 
 Any L<Rose::DB::Object> questions or problems can be posted to the L<Rose::DB::Object> mailing list.  To subscribe to the list or view the archives, go here:
 
-L<http://lists.sourceforge.net/lists/listinfo/rose-db-object>
+L<http://groups.google.com/group/rose-db-object>
 
 Although the mailing list is the preferred support mechanism, you can also email the author (see below) or file bugs using the CPAN bug tracking system:
 
 L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object>
+
+There's also a wiki and other resources linked from the Rose project home page:
+
+L<http://rose.googlecode.com>
 
 =head1 CONTRIBUTORS
 
