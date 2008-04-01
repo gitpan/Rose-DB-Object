@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.767';
+our $VERSION = '0.769';
 
 our $Debug = 0;
 
@@ -315,7 +315,7 @@ sub build_select
       my $rel_column    =  $table_map->{$table_tn} ?
         "$table_map->{$table_tn}.$column" : '';
 
-      my $fq_column_trimmed;
+      my(@method_columns, $fq_column_trimmed);
 
       TRIM:
       {
@@ -326,7 +326,19 @@ sub build_select
       # Avoid duplicate clauses if the table name matches the relationship name
       $rel_column = ''  if($rel_column eq $fq_column);
 
-      my $method = $obj_meta ? $obj_meta->column_rw_method_name($column) : undef;
+      if($obj_meta)
+      {
+        my $method = $obj_meta->column_rw_method_name($column);
+
+        unless($method eq $column)
+        {
+          push(@method_columns,
+            $method,
+            "$table.$method",
+            "$table_alias.$method",
+            $table_map->{$table_tn} ? "$table_map->{$table_tn}.$method" : ());
+        }
+      }
 
       unless($query_only_columns || !$select_columns{$column})
       {
@@ -355,8 +367,7 @@ sub build_select
 
       foreach my $column_arg (grep { exists $query{$_} } map { ($_, "!$_") } 
                               ($column, $fq_column, $fq_column_trimmed, $short_column,
-                               $rel_column, $unique_column, 
-                              (defined $method && $method ne $column ? $method : ())))
+                               $rel_column, $unique_column, @method_columns))
       {
         $not = (index($column_arg, '!') == 0) ? 'NOT' : '';
 
@@ -369,23 +380,26 @@ sub build_select
           my $scalar_ref = $val_ref eq 'SCALAR';
 
           unless($query_is_sql || $scalar_ref)
-          {      
-            my $obj;
+          {
+            my($obj, $get_method, $set_method);
 
             $col_meta = $obj_meta->column($column) || $obj_meta->method_column($column)
               or Carp::confess "Could not get column metadata object for '$column'";
 
-            unless($obj = $proto{$obj_class})
+            if($get_method || $set_method) # $col_meta->manager_uses_method
             {
-              $obj = $proto{$obj_class} = $obj_class->new(db => $db);
-              $obj->{STATE_SAVING()} = 1;
+              unless($obj = $proto{$obj_class})
+              {
+                $obj = $proto{$obj_class} = $obj_class->new(db => $db);
+                $obj->{STATE_SAVING()} = 1;
+              }
+
+              $get_method = $obj_meta->column_accessor_method_name($column)
+                or Carp::confess "Missing accessor method for column '$column'";
+
+              $set_method = $obj_meta->column_mutator_method_name($column)
+                or Carp::confess "Missing mutator method for column '$column'";
             }
-
-            my $get_method = $obj_meta->column_accessor_method_name($column)
-              or Carp::confess "Missing accessor method for column '$column'";
-
-            my $set_method = $obj_meta->column_mutator_method_name($column)
-              or Carp::confess "Missing mutator method for column '$column'";
 
             my %tmp = ($column_arg => $val);
 
@@ -1536,7 +1550,7 @@ If C<query_is_sql> is false or omitted, then NAME can also take on these additio
 
 =item C<method>
 
-A L<Rose::DB::Object> method name for an object fronting one of the tables being queried.  There may also be ambiguity here if the same method name is defined on more than one of the the objects that front the tables.  In such a case, the method will be mapped to the first L<Rose::DB::Object>-derived object that contains a method by that name, considered in the order that the tables are provided in the C<tables> parameter.
+A L<get_set|Rose::DB::Object::Metadata::Column/MAKING_METHODS> column method name from a L<Rose::DB::Object>-derived class fronting one of the tables being queried.  There may be ambiguity here if the same method name is defined on more than one of the the classes involved in the query.  In such a case, the method will be mapped to the first L<Rose::DB::Object>-derived class that contains a method by that name, considered in the order that the tables are provided in the C<tables> parameter.
 
 =item C<!method>
 

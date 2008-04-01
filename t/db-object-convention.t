@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 161;
+use Test::More tests => 183;
 
 BEGIN 
 {
@@ -24,13 +24,33 @@ is($cm->related_table_to_class('big_hats', 'A::B::FooBar'), 'A::B::BigHat', 'rel
 is($cm->related_table_to_class('a1_steaks', 'Meat'), 'A1Steak', 'related_table_to_class 3');
 
 #
-# related_table_to_class
+# table_to_class
 #
 
 is($cm->table_to_class('products', 'My::'), 'My::Product', 'table_to_class 1');
 is($cm->table_to_class('products'), 'Product', 'table_to_class 2');
 is($cm->table_to_class('big_hats', 'My::'), 'My::BigHat', 'table_to_class 3');
 is($cm->table_to_class('my5_hat_pig'), 'My5HatPig', 'table_to_class 4');
+
+#
+# singular_to_plural
+#
+
+is($cm->singular_to_plural('box'), 'boxes', 'singular_to_plural 1');
+is($cm->singular_to_plural('dress'), 'dresses', 'singular_to_plural 2');
+is($cm->singular_to_plural('ceres'), 'cereses', 'singular_to_plural 3');
+is($cm->singular_to_plural('daisy'), 'daisies', 'singular_to_plural 4');
+is($cm->singular_to_plural('dogs'), 'dogs', 'singular_to_plural 5');
+is($cm->singular_to_plural('product'), 'products', 'singular_to_plural 6');
+
+#
+# plural_to_singular
+#
+
+is($cm->plural_to_singular('daisies'), 'daisy', 'plural_to_singular 1');
+is($cm->plural_to_singular('dresses'), 'dress', 'plural_to_singular 2');
+is($cm->plural_to_singular('dress'), 'dress', 'plural_to_singular 3');
+is($cm->plural_to_singular('products'), 'product', 'plural_to_singular 4');
 
 #
 # is_singleton
@@ -40,6 +60,29 @@ my $cm1 = Rose::DB::Object::ConventionManager::Null->new;
 my $cm2 = Rose::DB::Object::ConventionManager::Null->new;
 
 is($cm1, $cm2, 'null singleton');
+
+#
+# auto_manager_*
+#
+
+is($cm->auto_manager_base_class, 'Rose::DB::Object::Manager', 'auto_manager_base_class');
+is($cm->auto_manager_class_name('My::Object'), 'My::Object::Manager', 'auto_manager_class_name');
+
+AUTO_MANAGER_CLASS_TEST:
+{
+  package My::Dog;
+  @My::Dog::ISA = 'Rose::DB::Object';
+
+  my $dog_cm = My::Dog->meta->convention_manager;
+
+  package main;
+  is($dog_cm->auto_manager_class_name, 'My::Dog::Manager', 'auto_manager_base_class no args');
+  is($dog_cm->auto_manager_base_name, 'dogs', 'auto_manager_base_name with no args');
+  is($dog_cm->auto_manager_base_name('products'), 'products', 'auto_manager_base_name with table');
+  is($dog_cm->auto_manager_base_name('dogs', 'My::Dog'), 'dogs', 'auto_manager_base_name with table and class');
+}
+
+is($cm->auto_manager_method_name('doesntmatter'), undef, 'auto_manager_method_name');
 
 #
 # auto_table
@@ -189,6 +232,38 @@ PK_SERIAL_ID:
 
   my @columns = __PACKAGE__->meta->primary_key_column_names;
   Test::More::ok(@columns == 1 && $columns[0] eq 'pk', 'auto_primary_key_column_names pk');
+}
+
+#
+# auto_column_method_name
+#
+
+COLUMN_METHOD:
+{
+  package MyColumnCM;
+
+  our @ISA = qw(Rose::DB::Object::ConventionManager);
+
+  sub auto_column_method_name
+  {
+    my($self, $type, $column, $name, $object_class) = @_;
+    return $column->is_primary_key_member ? $name : "x_${type}_$name";
+  }
+
+  package MyColumnObject;
+  our @ISA = qw(Rose::DB::Object);
+  sub init_db { Rose::DB->new('pg') }
+  MyColumnObject->meta->convention_manager('MyColumnCM');
+  __PACKAGE__->meta->columns(qw(id a b));  
+  __PACKAGE__->meta->initialize;
+
+  package main;
+  my $o = MyColumnObject->new;
+  ok($o->can('id'), 'auto_column_method_name 1');
+  ok($o->can('x_get_set_a'), 'auto_column_method_name 2');
+  ok($o->can('x_get_set_b'), 'auto_column_method_name 3');
+  ok(!$o->can('a'), 'auto_column_method_name 4');
+  ok(!$o->can('b'), 'auto_column_method_name 5');
 }
 
 #

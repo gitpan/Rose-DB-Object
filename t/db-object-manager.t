@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 3884;
+use Test::More tests => 3900;
 
 BEGIN 
 {
@@ -10,6 +10,68 @@ BEGIN
   use_ok('DateTime');
   use_ok('Rose::DB::Object');
   use_ok('Rose::DB::Object::Manager');
+}
+
+CONVENTION_AND_DEFAULTS_TESTS:
+{
+  package My::RDBO::CM;
+  our @ISA = qw(Rose::DB::Object::ConventionManager);
+
+  sub auto_manager_method_name
+  {
+    my($self, $type, $base_name, $object_class) = @_;
+
+    if($type eq 'iterator')
+    {
+      return "get_${base_name}z_iter";
+    }
+    elsif($type eq 'delete')
+    {
+      return "del_${base_name}zz";
+    }
+
+    return undef; # rely on hard-coded defaults in Manager
+  }
+
+  sub auto_manager_class_name
+  {
+    my($self, $object_class) = @_;
+
+    $object_class ||= $self->meta->class;
+
+    return "${object_class}::Mgr";
+  }
+
+  package My::RDBO::Meta;
+  our @ISA = qw(Rose::DB::Object::Metadata);
+
+  sub init_convention_manager { My::RDBO::CM->new }
+
+  package My::RDBO::Manager;
+  our @ISA = qw(Rose::DB::Object::Manager);
+
+  __PACKAGE__->default_manager_method_types(qw(iterator count delete));
+
+  package My::RDBO::Test1;
+  our @ISA = qw(Rose::DB::Object);
+  __PACKAGE__->meta->table('test1s');
+  sub meta_class { 'My::RDBO::Meta' }
+
+  __PACKAGE__->meta->default_manager_base_class('My::RDBO::Managerxx');
+
+  eval { local $SIG{'__DIE__'}; __PACKAGE__->meta->make_manager_class };
+
+  main::ok($@, 'make_manager_class exception 1');
+
+  __PACKAGE__->meta->default_manager_base_class('My::RDBO::Manager');
+
+  #local $Rose::DB::Object::Manager::Debug = 1;
+  __PACKAGE__->meta->make_manager_class;
+
+  package main;
+  ok(My::RDBO::Test1::Mgr->can('get_test1sz_iter'), 'make_manager_class conventions 1');
+  ok(My::RDBO::Test1::Mgr->can('get_test1s_count'), 'make_manager_class conventions 2');
+  ok(My::RDBO::Test1::Mgr->can('del_test1szz'), 'make_manager_class conventions 3');
 }
 
 our($HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX, $HAVE_SQLITE, $HAVE_ORACLE);
@@ -5782,9 +5844,42 @@ EOF
 
 SKIP: foreach my $db_type (qw(informix))
 {
-  skip("Informix tests", 746)  unless($HAVE_INFORMIX);
+  skip("Informix tests", 752)  unless($HAVE_INFORMIX);
 
   Rose::DB->default_type($db_type);
+
+  my($sql, $bind) = 
+    Rose::DB::Object::Manager->get_objects_sql(
+      object_class => 'MyInformixObject',
+      query => [ name => { like => \q('%foo%') } ]);
+
+  ok($sql =~ /name LIKE '%foo%'/, "scalar ref bind 1 - $db_type");
+  is(@$bind, 0, "scalar ref bind 2 - $db_type");
+
+  ($sql, $bind) = 
+    Rose::DB::Object::Manager->get_objects_sql(
+      object_class => 'MyInformixObject',
+      require_objects => [ 'bb1' ],
+      query => [ 'bb1.name' => { like => \q('%foo%') } ]);
+
+  ok($sql =~ /name LIKE '%foo%'/, "scalar ref bind 3 - $db_type");
+  is(@$bind, 0, "scalar ref bind 4 - $db_type");
+
+  ($sql, $bind) = 
+    Rose::DB::Object::Manager->get_objects_sql(
+      object_class => 'MySQLiteObject',
+      require_objects => [ 'bb1' ],
+      query => 
+      [
+        or =>
+        [
+          name => 'bar',
+          'bb1.name' => { like => \q('%foo%') },
+        ],
+      ]);
+
+  ok($sql =~ /t2\.name LIKE '%foo%'/, "scalar ref bind 5 - $db_type");
+  is(@$bind, 1, "scalar ref bind 6 - $db_type");
 
   my $o = MyInformixObject->new(id         => 1,
                                 name       => 'John',  
@@ -8588,9 +8683,54 @@ EOF
 
 SKIP: foreach my $db_type (qw(sqlite))
 {
-  skip("SQLite tests", 782)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 788)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
+
+  my($sql, $bind) = 
+    Rose::DB::Object::Manager->get_objects_sql(
+      object_class => 'MySQLiteObject',
+      query => [ name => { like => \q('%foo%') } ]);
+
+  ok($sql =~ /name LIKE '%foo%'/, "scalar ref bind 1 - $db_type");
+  is(@$bind, 0, "scalar ref bind 2 - $db_type");
+
+  ($sql, $bind) = 
+    Rose::DB::Object::Manager->get_objects_sql(
+      object_class => 'MySQLiteObject',
+      require_objects => [ 'bb1' ],
+      query => [ 'bb1.name' => { like => \q('%foo%') } ]);
+
+  ok($sql =~ /name LIKE '%foo%'/, "scalar ref bind 3 - $db_type");
+  is(@$bind, 0, "scalar ref bind 4 - $db_type");
+
+  ($sql, $bind) = 
+    Rose::DB::Object::Manager->get_objects_sql(
+      object_class => 'MySQLiteObject',
+      require_objects => [ 'bb1' ],
+      query => 
+      [
+        or =>
+        [
+          name => 'bar',
+          'bb1.name' => { like => \q('%foo%') },
+        ],
+      ]);
+
+  ok($sql =~ /t2\.name LIKE '%foo%'/, "scalar ref bind 5 - $db_type");
+  is(@$bind, 1, "scalar ref bind 6 - $db_type");
+
+  # Return ignored, just chaging arg validity
+  my $xcount =
+    MySQLiteObjectManager->object_count(
+      share_db     => 1,
+      #debug => 1,
+      require_objects => [ 'bb1' ],
+      query        =>
+      [
+         foo   => { ne => 'xxx' },
+        't2.x' => { like => 'o%' },
+      ]);
 
   my $o = MySQLiteObject->new(id         => 1,
                           name       => 'John',  
@@ -8780,7 +8920,7 @@ SKIP: foreach my $db_type (qw(sqlite))
   $count =
     MySQLiteObjectManager->object_count(
       share_db     => 1,
-      query_is_sql => 1,
+      #query_is_sql => 1,
       require_objects => [ 'bb1' ],
       query        =>
       [
@@ -15807,7 +15947,8 @@ EOF
 CREATE TABLE rose_db_object_bb
 (
   id    INT NOT NULL PRIMARY KEY,
-  name  VARCHAR(32)
+  name  VARCHAR(32),
+  z varchar(32)
 )
 EOF
 
@@ -15840,7 +15981,8 @@ EOF
     MySQLiteBB->meta->columns
     (
       id   => { type => 'int', primary_key => 1 },
-      name => { type => 'varchar'},
+      name => { type => 'varchar' },
+      z => { type => 'varchar', alias => 'x' },
     );
 
     MySQLiteBB->meta->initialize;
@@ -15849,6 +15991,7 @@ EOF
 CREATE TABLE rose_db_object_test
 (
   id             INT NOT NULL PRIMARY KEY,
+  f              VARCHAR(10),
   name           VARCHAR(32) NOT NULL,
   flag           BOOLEAN NOT NULL,
   flag2          BOOLEAN,
@@ -16172,6 +16315,7 @@ EOF
     MySQLiteObject->meta->columns
     (
       'name',
+      'f'      => { type => 'varchar', length => 10, alias => 'foo' },
       id       => { primary_key => 1 },
       flag     => { type => 'boolean', default => 1 },
       flag2    => { type => 'boolean' },

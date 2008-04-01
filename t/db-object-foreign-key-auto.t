@@ -733,9 +733,12 @@ __PACKAGE__->meta->foreign_keys
 );
 EOF
 
-  my $mysql_41 = ($o->db->database_version >= 4_100_000) ? 1 : 0;
+  my $mysql_41   = ($o->db->database_version >= 4_100_000) ? 1 : 0;
+  my $mysql_5    = ($o->db->database_version >= 5_000_000) ? 1 : 0;
+  my $mylsq_5_51 = ($o->db->database_version >= 5_000_051) ? 1 : 0; 
 
-  my $mysql_5  = ($o->db->database_version >= 5_000_000) ? 1 : 0;
+  # XXX: Lame
+  my $no_empty_def = (MyMySQLObject->meta->perl_class_definition(use_setup => 0) !~ /default => '', / ? 1 : 0);
 
   my $set_col = $mysql_5 ? 
     q(items         => { type => 'set', default => 'a,c', not_null => 1, values => [ 'a', 'b', 'c' ] },) :
@@ -768,7 +771,7 @@ __PACKAGE__->meta->columns(
     id            => { type => 'serial', not_null => 1 },
     $set_col
     last_modified => { type => 'datetime' },
-    name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
+    name          => { type => 'varchar', @{[ $no_empty_def ? '' : "default => '', " ]}length => 32, not_null => 1 },
     save          => { type => 'integer', alias => 'save_col' },
     start         => { type => 'date', default => '1980-12-24' },
     status        => { type => 'varchar', default => 'active', length => 32 },
@@ -834,7 +837,7 @@ __PACKAGE__->meta->columns
   id            => { type => 'serial', not_null => 1 },
   $set_col
   last_modified => { type => 'datetime' },
-  name          => { type => 'varchar', default => '', length => 32, not_null => 1 },
+  name          => { type => 'varchar', @{[ $no_empty_def ? '' : "default => '', " ]}length => 32, not_null => 1 },
   save          => { type => 'integer', alias => 'save_col' },
   start         => { type => 'date', default => '1980-12-24' },
   status        => { type => 'varchar', default => 'active', length => 32 },

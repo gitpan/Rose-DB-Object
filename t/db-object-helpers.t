@@ -121,8 +121,10 @@ foreach my $db_type (qw(mysql pg informix sqlite))
   ok(!defined $o2->id, "clone_and_reset() 1 - $db_type");
 
   # Crazy MySQL prvides an empty string as a default value
+  # (or no default for 5.0.51, apparently)
   if($db_type eq 'mysql') 
   {
+    no warnings 'uninitialized';
     ok(!length $o2->name, "clone_and_reset() 2 - $db_type");
   }
   else

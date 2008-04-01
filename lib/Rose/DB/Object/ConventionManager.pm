@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Object;
 our @ISA = qw(Rose::DB::Object::Metadata::Object);
 
-our $VERSION = '0.753';
+our $VERSION = '0.769';
 
 our $Debug = 0;
 
@@ -73,13 +73,27 @@ sub table_to_class
 sub auto_manager_base_name
 {
   my($self, $table, $object_class) = @_;
+
+  $table ||= $self->class_to_table_plural;
+
   return $self->tables_are_singular ? $self->singular_to_plural($table) : $table;
 }
+
+sub auto_manager_base_class { 'Rose::DB::Object::Manager' }
 
 sub auto_manager_class_name
 {
   my($self, $object_class) = @_;
+
+  $object_class ||= $self->meta->class;
+
   return "${object_class}::Manager";
+}
+
+sub auto_manager_method_name
+{
+  my($self, $type, $base_name, $object_class) = @_;
+  return undef; # rely on hard-coded defaults in Manager
 }
 
 sub class_prefix
@@ -126,7 +140,7 @@ sub table_plural
 sub auto_table_name 
 {
   my($self) = shift;
-  
+
   if($self->tables_are_singular)
   {
     return $self->class_to_table_singular;
@@ -165,6 +179,12 @@ sub auto_primary_key_column_names
   return;
 }
 
+sub auto_column_method_name
+{
+  my($self, $type, $column, $name, $object_class) = @_;
+  return undef; # rely on hard-coded defaults in Manager
+}
+
 sub init_singular_to_plural_function { }
 sub init_plural_to_singular_function { }
 
@@ -177,12 +197,16 @@ sub singular_to_plural
     return $code->($word);
   }
 
-  if($word =~ /(?:x|[se]s)$/)
+  if($word =~ /(?:x|[se]s)$/i)
   {
     return $word . 'es';
   }
+  else
+  {
+    $word =~ s/y$/ies/i;
+  }
 
-  return $word =~ /s$/ ? $word : ($word . 's');
+  return $word =~ /s$/i ? $word : ($word . 's');
 }
 
 sub plural_to_singular
@@ -194,9 +218,13 @@ sub plural_to_singular
     return $code->($word);
   }
 
+  $word =~ s/ies$/y/i;
+
+  return $word  if($word =~ s/ses$/s/);
   return $word  if($word =~ /[aeiouy]ss$/i);
 
-  $word =~ s/s$//;
+  $word =~ s/s$//i;
+
   return $word;
 }
 
@@ -897,6 +925,10 @@ name/value pairs.  Any object attribute is a valid parameter name.
 
 =over 4
 
+=item B<auto_column_method_name TYPE, COLUMN, NAME, OBJECT_CLASS>
+
+Given a L<Rose::DB::Object::Metadata::Column> column L<type|Rose::DB::Object::Metadata::Column/type>, a L<Rose::DB::Object::Metadata::Column> object or column name, a default method name, and a L<Rose::DB::Object>-derived class name, return an appropriate method name.  The default implementation simply returns undef, relying on the hard-coded default method-type-to-name mapping implemented in L<Rose::DB::Object::Metadata>'s  L<method_name_from_column|Rose::DB::Object::Metadata/method_name_from_column> method.
+
 =item B<auto_foreign_key NAME [, SPEC]>
 
 Given a L<foreign key|Rose::DB::Object::Metadata/foreign_key> name and an optional reference to a hash SPEC of the type passed to L<Rose::DB::Object::Metadata>'s L<add_foreign_keys|Rose::DB::Object::Metadata/add_foreign_keys> method, return an appropriately constructed L<Rose::DB::Object::Metadata::ForeignKey> object.  
@@ -950,11 +982,24 @@ If the name selected using the above techniques is in the USED_NAMES hash, or is
 
 Given a table name and the name of the L<Rose::DB::Object>-derived class that fronts it, return a base name suitable for use as the value of the C<base_name> parameter to L<Rose::DB::Object::Manager>'s L<make_manager_methods|Rose::DB::Object::Manager/make_manager_methods> method.  
 
+If no table is specified then the table name is derived from the current class
+name by calling L<class_to_table_plural|/class_to_table_plural>.
+
 If L<tables_are_singular|/tables_are_singular> is true, then TABLE is passed to the L<singular_to_plural|/singular_to_plural> method and the result is returned.  Otherwise, TABLE is returned as-is.
+
+=item B<auto_manager_base_class>
+
+Return the class that all manager classes will default to inheriting from.  By
+default this will be L<Rose::DB::Object::Manager>.
 
 =item B<auto_manager_class_name CLASS>
 
 Given the name of a L<Rose::DB::Object>-derived class, returns a class name for a L<Rose::DB::Object::Manager>-derived class to manage such objects.  The default implementation simply appends "::Manager" to the L<Rose::DB::Object>-derived class name.
+
+=item B<auto_manager_method_name TYPE, BASE_NAME, OBJECT_CLASS>
+
+Given the specified L<Rose::DB::Object::Manager> L<method type|Rose::DB::Object::Manager/make_manager_methods>,
+L<base name|Rose::DB::Object::Manager/make_manager_methods>, and L<object class|Rose::DB::Object::Manager/object_class> return an appropriate L<manager|Rose::DB::Object::Manager> method name.  The default implementation simply returns undef, relying on the hard-coded default method-type-to-name mapping implemented in L<Rose::DB::Object::Manager>'s  L<make_manager_methods|Rose::DB::Object::Manager/make_manager_methods> method.
 
 =item B<auto_relationship_name_many_to_many FK, MAPCLASS>
 
@@ -1170,7 +1215,15 @@ Get or set the L<Rose::DB::Object::Metadata> object associated with the class th
 
 Returns the singular version of STRING.  If a L<plural_to_singular_function|/plural_to_singular_function> is defined, then this method simply passes STRING to that function.
 
-Otherwise, the following rules are applied.  If STRING matches C</[aeiouy]ss$/i>, it is returned unmodified.  For all other cases, the letter "s" is removed from the end of STRING and the result is returned.
+Otherwise, the following rules are applied, case-insensitively.  
+
+* If STRING ends in "ies", then the "ies" is replaced with "y".
+
+* If STRING ends in "ses" then the "ses" is replaced with "s".
+
+* If STRING matches C</[aeiouy]ss$/i>, it is returned unmodified.
+
+For all other cases, the letter "s" is removed from the end of STRING and the result is returned.
 
 =item B<plural_to_singular_function [CODEREF]>
 
@@ -1192,9 +1245,11 @@ Examples:
 
 =item B<singular_to_plural STRING>
 
-Returns the plural version of STRING.  If a L<singular_to_plural_function|/singular_to_plural_function> is defined, then this method simply passes STRING to that function.  Otherwise, the following rules are used to form the plural.
+Returns the plural version of STRING.  If a L<singular_to_plural_function|/singular_to_plural_function> is defined, then this method simply passes STRING to that function.  Otherwise, the following rules are applied, case-insensitively, to form the plural.
 
 * If STRING ends in "x", "ss", or "es", then "es" is appended.
+
+* If STRING ends in "y" then the "y" is replaced with "ies".
 
 * If STRING ends in "s" then it is returned as-is.
 

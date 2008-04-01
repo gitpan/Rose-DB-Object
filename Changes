@@ -1,3 +1,19 @@
+0.769 (04.01.2008) - John Siracusa <siracusa@gmail.com>
+
+    * Improved the default singular/plural conversion rules in the
+      Convention Manager.  (Suggested by David Brownlee)
+    * Added new join type override syntax for the Manager's with_objects
+      and require_objects parameters.
+    * Added column method naming conventions to the Convention Manager.
+    * Added Manager naming conventions to the Convention Manager and
+      exposed more Manager-related defaults in the Metadata and Manager
+      class.  (Patch by Bradley C Bailey, modified by John Siracusa)
+    * Column method names are now allowed at the end of compound Manager
+      query parameters (e.g., "a.b.method")
+    * Clarified column/method query parameter documentation.
+    * Postgres tests are not skipped when DBD::Pg version 2.1.x or 2.2.0
+      is installed.  (Bus error for me in t/deep-joins.t)
+
 0.768 (02.25.2008) - John Siracusa <siracusa@gmail.com>
 
     * Changed mailing list and wiki URLs.

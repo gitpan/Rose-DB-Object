@@ -16,7 +16,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.7671';
+our $VERSION = '0.769';
 
 our $Debug = 0;
 
@@ -33,6 +33,7 @@ use Rose::Class::MakeMethods::Generic
     'error_mode',
     '_object_class',
     '_base_name',
+    '_default_manager_method_types',
     'default_objects_per_page',
     'default_limit_with_subselect',
     'default_nested_joins',
@@ -45,6 +46,7 @@ __PACKAGE__->default_objects_per_page(20);
 __PACKAGE__->default_limit_with_subselect(1);
 __PACKAGE__->default_nested_joins(1);
 __PACKAGE__->dbi_prepare_cached(0);
+__PACKAGE__->default_manager_method_types(qw(objects iterator count delete update));
 
 sub handle_error
 {
@@ -115,7 +117,25 @@ use constant DEFAULT_REL_KEY   => PRIVATE_PREFIX . '_default_rel_key';
 
 sub object_class { }
 
-sub default_manager_method_types { qw(objects iterator count delete update) }
+sub default_manager_method_types
+{
+  my($class) = shift;
+
+  if(@_)
+  {
+    if(@_ == 1 && ref $_[0] eq 'ARRAY')
+    {
+      $class->_default_manager_method_types(@_);
+    }
+    else
+    {
+      $class->_default_manager_method_types([ @_ ]);
+    }
+  }
+
+  return wantarray ? 
+    @{$class->_default_manager_method_types} : $class->_default_manager_method_types;
+}
 
 sub make_manager_methods
 {
@@ -132,6 +152,8 @@ sub make_manager_methods
   }
 
   my %args = @_;
+
+  local $Debug = $args{'debug'}  if(exists $args{'debug'});
 
   my $calling_class  = ($class eq __PACKAGE__) ? (caller)[0] : $class;
   my $target_class   = $args{'target_class'} || $calling_class;
@@ -170,12 +192,18 @@ sub make_manager_methods
     }
   }
 
+  my $meta = $object_class->meta;
+  my $cm   = $meta->convention_manager;
+
+  my $base_name = $args{'base_name'} || $cm->auto_manager_base_name($meta->table, $object_class);
+
   if(!$args{'methods'})
   {
-    unless($args{'base_name'})
+    unless($base_name)
     {
-      Carp::croak "Missing methods parameter and base_name parameter. ",
-                  "You must supply one or the other";
+      Carp::croak "Missing methods parameter and base_name parameter, and the ",
+                  "convention manager's auto_manager_base_name() method did not ",
+                  "return a true value"
     }
 
     $args{'methods'} = 
@@ -191,12 +219,12 @@ sub make_manager_methods
   Carp::croak "Invalid 'methods' parameter - should be a hash ref"
     unless(ref $args{'methods'} eq 'HASH');
 
-  $class->_base_name($args{'base_name'});
+  $class->_base_name($base_name);
   $class->_object_class($object_class);
 
   while(my($name, $types) = each %{$args{'methods'}})
   {
-    $class->_base_name($name)  unless($args{'base_name'});
+    $class->_base_name($name)  unless($base_name);
 
     my $have_full_name = ($name =~ s/\(\)$//) ? 1 : 0;
 
@@ -216,12 +244,13 @@ sub make_manager_methods
       if($type eq 'objects')
       {
         my $method_name = 
-          $have_full_name ? "${target_class}::$name" : "${target_class}::get_$name";
+          $have_full_name ? $name : 
+            ($cm->auto_manager_method_name($type, $base_name, $object_class) || "get_$name");
 
         foreach my $class ($target_class, $class_invocant)
         {
-          my $method = "${class}::get_$name";
-          my $short_method = "get_$name";
+          my $method = "${class}::$method_name";
+          my $short_method = $method_name;
           Carp::croak "A $method method already exists"
             if(defined &{$method});
 
@@ -230,7 +259,8 @@ sub make_manager_methods
             if(Rose::DB::Object::Manager->can($short_method));
         }
 
-        *{$method_name} = sub
+        $Debug && warn "Making method: $target_class->$method_name()\n";
+        *{"${target_class}::$method_name"} = sub
         {
           shift;
           $class_invocant->get_objects(@_, object_class => $object_class);
@@ -238,17 +268,19 @@ sub make_manager_methods
       }
       elsif($type eq 'count')
       {
-        my $method_name =
-          $have_full_name ? "${target_class}::$name" : "${target_class}::get_${name}_count";
+        my $method_name = 
+          $have_full_name ? $name : 
+            ($cm->auto_manager_method_name($type, $base_name, $object_class) || "get_${name}_count");
 
         foreach my $class ($target_class, $class_invocant)
         {
-          my $method = "${class}::get_${name}_count";
+          my $method = "${class}::$method_name";
           Carp::croak "A $method method already exists"
             if(defined &{$method});
         }
 
-        *{$method_name} = sub
+        $Debug && warn "Making method: $target_class->$method_name()\n";
+        *{"${target_class}::$method_name"} = sub
         {
           shift;
           $class_invocant->get_objects(
@@ -257,17 +289,19 @@ sub make_manager_methods
       }
       elsif($type eq 'iterator')
       {
-        my $method_name =
-          $have_full_name ? "${target_class}::$name" : "${target_class}::get_${name}_iterator";
+        my $method_name = 
+          $have_full_name ? $name : 
+            ($cm->auto_manager_method_name($type, $base_name, $object_class) || "get_${name}_iterator");
 
         foreach my $class ($target_class, $class_invocant)
         {
-          my $method = "${class}::get_${name}_iterator";
+          my $method = "${class}::$method_name";
           Carp::croak "A $method method already exists"
             if(defined &{$method});
         }
 
-        *{$method_name} = sub
+        $Debug && warn "Making method: $target_class->$method_name()\n";
+        *{"${target_class}::$method_name"} = sub
         {
           shift;
           $class_invocant->get_objects(
@@ -277,16 +311,18 @@ sub make_manager_methods
       elsif($type eq 'delete')
       {
         my $method_name = 
-          $have_full_name ? "${target_class}::$name" : "${target_class}::delete_$name";
+          $have_full_name ? $name : 
+            ($cm->auto_manager_method_name($type, $base_name, $object_class) || "delete_$name");
 
         foreach my $class ($target_class, $class_invocant)
         {
-          my $method = "${class}::delete_$name";
+          my $method = "${class}::$method_name";
           Carp::croak "A $method method already exists"
             if(defined &{$method});
         }
 
-        *{$method_name} = sub
+        $Debug && warn "Making method: $target_class->$method_name()\n";
+        *{"${target_class}::$method_name"} = sub
         {
           shift;
           $class_invocant->delete_objects(@_, object_class => $object_class);
@@ -295,16 +331,18 @@ sub make_manager_methods
       elsif($type eq 'update')
       {
         my $method_name = 
-          $have_full_name ? "${target_class}::$name" : "${target_class}::update_$name";
+          $have_full_name ? $name : 
+            ($cm->auto_manager_method_name($type, $base_name, $object_class) || "update_$name");
 
         foreach my $class ($target_class, $class_invocant)
         {
-          my $method = "${class}::update_$name";
+          my $method = "${class}::$method_name";
           Carp::croak "A $method method already exists"
             if(defined &{$method});
         }
 
-        *{$method_name} = sub
+        $Debug && warn "Making method: $target_class->$method_name()\n";
+        *{"${target_class}::$method_name"} = sub
         {
           shift;
           $class_invocant->update_objects(@_, object_class => $object_class);
@@ -326,6 +364,8 @@ sub get_objects_count
 
 sub get_objects_iterator { shift->get_objects(@_, return_iterator => 1) }
 sub get_objects_sql      { shift->get_objects(@_, return_sql => 1) }
+
+use constant WITH => 555; # arbitrary
 
 sub get_objects
 {
@@ -444,32 +484,107 @@ sub get_objects
     }
   }
 
-  my $outer_joins_only = ($with_objects && !$require_objects) ? 1 : 0;
+  my $outer_joins = ($with_objects && !$require_objects) ? 1 : 0;
 
-  my($num_required_objects, %required_object, 
-     $num_with_objects, %with_objects,
-     @belongs_to, %seen_rel, %rel_tn);
+  my($num_required_objects, %required_object, $num_with_objects,
+     %with_objects, @belongs_to, %seen_rel, %rel_tn, %join_type);
 
-  # Putting join conditions inthe WHERE clause can change the meaning of
+  $with_objects    = [ $with_objects ]     if($with_objects && !ref $with_objects);
+  $require_objects = [ $require_objects ]  if($require_objects && !ref $require_objects);
+
+  #print STDERR 'WITH: ', Dumper($with_objects);
+  #print STDERR 'REQUIRE: ', Dumper($require_objects);
+
+  # XXX: Currently, the most robust join-type conflict checking only
+  # XXX: happens if a least one join-type override is present.  In
+  # XXX: other cases, the "with" wins.  This is "safe" but not 
+  # XXX: necessarily efficient.
+
+  # If there are any join-type overrides
+  if(first { index($_, '!') > 0 || index($_, '?') > 0 }
+     (($with_objects ? @$with_objects : ()),
+      ($require_objects ? @$require_objects : ())))
+  {
+    my $i = 0;
+    my $requires_start = $with_objects ? @$with_objects : 0;
+    my $in_require = 0;
+    my $join_type;
+
+    # Pull out the join modifiers
+    foreach my $arg (($with_objects ? @$with_objects : ()),
+                     ($require_objects ? @$require_objects : ()))
+    {
+      $in_require = 1  if(!$in_require && $i++ == $requires_start);
+
+      my $save_arg = $arg;
+      $arg =~ tr/!?//d;
+
+      if(index($arg, '.') < 0)
+      {
+        $save_arg =~ s/([!?])$//;
+
+        no warnings 'uninitialized';
+        $join_type = ($1 eq '!' || (!$1 && $in_require)) ? 'JOIN' : 'LEFT OUTER JOIN';
+
+        Carp::croak "Conflicting suffix for '$arg' - please choose either ! or ?"
+          if($join_type{$arg} && $join_type{$arg} ne $join_type);
+
+        $join_type{$arg} = $join_type;
+      }
+      else
+      {
+        $save_arg =~ s/([!?])$//;
+
+        no warnings 'uninitialized';
+        $join_type = ($1 eq '!' || (!$1 && $in_require)) ? 'JOIN' : 'LEFT OUTER JOIN';
+
+        Carp::croak "Conflicting suffix for '$arg' - please choose either ! or ?"
+          if($join_type{$arg} && $join_type{$arg} ne $join_type);
+
+        $join_type{$arg} = $join_type;
+
+        while($save_arg =~ s/\.[^.]+$//)
+        {
+          $save_arg =~ s/([!?])$//;
+
+          $join_type = ($1 eq '!' || (!$1 && $in_require)) ? 'JOIN' : 'LEFT OUTER JOIN';
+
+          (my $clean_arg = $save_arg) =~ tr/!?//d;
+
+          Carp::croak "Conflicting suffix for '$clean_arg' - please choose either ! or ?"
+            if($join_type{$clean_arg} && $join_type{$clean_arg} ne $join_type);
+
+          $join_type{$clean_arg} = $join_type;
+        }
+      }
+    }
+
+    if(grep { $_ eq 'LEFT OUTER JOIN' } values %join_type)
+    {
+      $outer_joins = 1;
+    }
+  }
+
+  # Putting join conditions in the WHERE clause can change the meaning of
   # the query when outer joins are used, so disable them in that case.
-  my $use_redundant_join_conditions = 
-    $outer_joins_only ? 0 : delete $args{'redundant_join_conditions'};
+  my $use_redundant_join_conditions =
+    $outer_joins ? 0 : delete $args{'redundant_join_conditions'};
+
+  #use Data::Dumper;
+  #print STDERR 'JOIN TYPES: ', Dumper(\%join_type);
+  #print STDERR 'POST WITH: ', Dumper($with_objects);
+  #print STDERR 'POST REQUIRE: ', Dumper($require_objects);
 
   if($with_objects)
   {
-    unless(defined $use_redundant_join_conditions)
-    {
-      $use_redundant_join_conditions = $db->likes_redundant_join_conditions;
-    }
+    # Doing this implicitly is never a good idea
+    #unless(defined $use_redundant_join_conditions)
+    #{
+    #  $use_redundant_join_conditions = $db->likes_redundant_join_conditions;
+    #}
 
-    if(ref $with_objects) # copy argument (shallow copy)
-    {
-      $with_objects = [ @$with_objects ]; #[ uniq @$with_objects ];
-    }
-    else
-    {
-      $with_objects = [ $with_objects ];
-    }
+    # Copy argument (shallow copy)
+    $with_objects = [ @$with_objects ]; #[ uniq @$with_objects ];
 
     # Expand multi-level arguments
     if(first { index($_, '.') >= 0 } @$with_objects)
@@ -482,13 +597,13 @@ sub get_objects
 
         if(index($arg, '.') < 0)
         {
-          $seen_rel{$arg} = 'with';
+          $seen_rel{$arg} = WITH;
           push(@with_objects, $arg);
         }
         else
         {
           my @expanded = ($arg);
-          $seen_rel{$arg} = 'with';
+          $seen_rel{$arg} = WITH;
 
           while($arg =~ s/\.([^.]+)$//)
           {
@@ -502,6 +617,10 @@ sub get_objects
 
       $with_objects = \@with_objects;
     }
+    else
+    {
+      $seen_rel{$_} = WITH  for(@$with_objects);
+    }
 
     $num_with_objects = @$with_objects;
     %with_objects = map { $_ => 1 } @$with_objects;
@@ -509,14 +628,8 @@ sub get_objects
 
   if($require_objects)
   {
-    if(ref $require_objects) # copy argument (shallow copy)
-    {
-      $require_objects = [ @$require_objects ]; #[ uniq @$require_objects ];
-    }
-    else
-    {
-      $require_objects = [ $require_objects ];
-    }
+    # Copy argument (shallow copy)
+    $require_objects = [ @$require_objects ]; #[ uniq @$require_objects ];
 
     # Expand multi-level arguments
     if(first { index($_, '.') >= 0 } @$require_objects)
@@ -529,7 +642,7 @@ sub get_objects
         {
           if(my $seen = $seen_rel{$arg})
           {
-            if($seen eq 'with')
+            if($seen == WITH)
             {
               Carp::croak "require_objects argument '$arg' conflicts with ",
                           "with_objects argument of the same name";
@@ -546,7 +659,7 @@ sub get_objects
 
           if(my $seen = $seen_rel{$arg})
           {
-            if($seen eq 'with')
+            if($seen == WITH)
             {
               Carp::croak "require_objects argument '$arg' conflicts with ",
                           "with_objects argument of the same name";
@@ -967,11 +1080,11 @@ sub get_objects
         {
           if($with_objects{$arg})
           {
-            $joins[$i]{'type'} = 'LEFT OUTER JOIN';
+            $joins[$i]{'type'} = $join_type{$arg} || 'LEFT OUTER JOIN';
           }
           elsif($use_explicit_joins)
           {
-            $joins[$i]{'type'} = 'JOIN';
+            $joins[$i]{'type'} = $join_type{$arg} || 'JOIN';
           }
         }
 
@@ -983,7 +1096,7 @@ sub get_objects
           # joined when nested joins are enabled, however.
           if(!($rel_type eq 'foreign key' && $rel->is_required &&
                $rel->referential_integrity && $nested_joins) &&
-             ($outer_joins_only || $with_objects{$arg}))
+             ($outer_joins || $with_objects{$arg}))
           {
             # Aliased table names
             push(@{$joins[$i]{'conditions'}}, "t${parent_tn}.$local_column = t$i.$foreign_column");
@@ -991,13 +1104,14 @@ sub get_objects
             # Fully-qualified table names
             #push(@{$joins[$i]{'conditions'}}, "$tables[0].$local_column = $tables[-1].$foreign_column");
 
-            $joins[$i]{'type'} = 'LEFT OUTER JOIN';
+            $joins[$i]{'type'} = $join_type{$arg} || 'LEFT OUTER JOIN';
             $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
 
             # MySQL is stupid about using its indexes when "JOIN ... ON (...)"
             # conditions are the only ones given, so the code below adds some
-            # redundant WHERE conditions.  They should not change the meaning
-            # of the query, but should nudge MySQL into using its indexes. 
+            # redundant WHERE conditions.  They should only be added when they
+            # do not change the meaning of the query, in which case they
+            # should nudge MySQL into using its indexes.  
             # The clauses: "((<ON conditions>) OR (<any columns are null>))"
             # We build the two clauses separately in the loop below, then
             # combine it all after the loop is done.
@@ -1026,7 +1140,7 @@ sub get_objects
               # Fully-qualified table names
               #push(@{$joins[$i]{'conditions'}}, "$tables[$parent_tn - 1].$local_column = $tables[-1].$foreign_column");
 
-              $joins[$i]{'type'} = 'JOIN';  
+              $joins[$i]{'type'} = $join_type{$arg} || 'JOIN';  
               $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
             }
             else # implicit join with no ON clause
@@ -1205,7 +1319,7 @@ sub get_objects
         while(my($local_column, $foreign_column) = each(%$column_map))
         {
           # Use outer joins to handle duplicate or optional information.
-          if($outer_joins_only || $with_objects{$arg})
+          if($outer_joins || $with_objects{$arg})
           {
             # Aliased table names
             push(@{$joins[$i]{'conditions'}}, "t$i.$local_column = t${parent_tn}.$foreign_column");
@@ -1213,7 +1327,7 @@ sub get_objects
             # Fully-qualified table names
             #push(@{$joins[$i]{'conditions'}}, "$tables[-1].$local_column = $tables[$parent_tn - 1].$foreign_column");
 
-            $joins[$i]{'type'} = 'LEFT OUTER JOIN';
+            $joins[$i]{'type'} = $join_type{$arg} || 'LEFT OUTER JOIN';
             $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
           }
           else
@@ -1226,7 +1340,7 @@ sub get_objects
               # Fully-qualified table names
               #push(@{$joins[$i]{'conditions'}}, "$tables[-1].$local_column = $tables[$parent_tn - 1].$foreign_column");
 
-              $joins[$i]{'type'} = 'JOIN';
+              $joins[$i]{'type'} = $join_type{$arg} || 'JOIN';
               $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
             }
             else # implicit join with no ON clause
@@ -1312,7 +1426,7 @@ sub get_objects
         while(my($local_column, $foreign_column) = each(%$ft_columns))
         {
           # Use left joins if the map table used an outer join above
-          if($outer_joins_only || $with_objects{$arg})
+          if($outer_joins || $with_objects{$arg})
           {
             # Aliased table names
             push(@{$joins[$i]{'conditions'}}, 't' . ($i - 1) . ".$local_column = t$i.$foreign_column");
@@ -1320,7 +1434,7 @@ sub get_objects
             # Fully-qualified table names
             #push(@{$joins[$i]{'conditions'}}, "$tables[-2].$local_column = $tables[-1].$foreign_column");
 
-            $joins[$i]{'type'} = 'LEFT OUTER JOIN';
+            $joins[$i]{'type'} = $join_type{$arg} || 'LEFT OUTER JOIN';
             $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
           }
           else
@@ -1333,7 +1447,7 @@ sub get_objects
               # Fully-qualified table names
               #push(@{$joins[$i]{'conditions'}}, "$tables[-2].$local_column = $tables[-1].$foreign_column");
 
-              $joins[$i]{'type'} = 'JOIN';
+              $joins[$i]{'type'} = $join_type{$arg} || 'JOIN';
               $joins[$i]{'hints'} = $hints->{"t$i"} || $hints->{$name};
             }
             else # implicit join with no ON clause
@@ -3808,6 +3922,10 @@ Get or set a boolean value that indicates whether or not this class will use L<D
 
 Get or set a boolean value that determines whether or not this class will consider using a sub-query to express C<limit>/C<offset> constraints when fetching sub-objects related through one of the "...-to-many" relationship types.  Not all databases support this syntax, and not all queries can use it even in supported databases.  If this parameter is true, the feature will be used when possible, by default.  The default value is true.
 
+=item B<default_manager_method_types [ LIST | ARRAYREF ]>
+
+Get or set the default list of method types used by the L<make_manager_methods|/make_manager_methods> method.  The default list is C<objects>, C<iterator>, C<count>, C<delete>, and C<update>.
+
 =item B<default_nested_joins [BOOL]>
 
 Get or set a boolean value that determines whether or not this class will consider using nested JOIN syntax when fetching related objects.  Not all databases support this syntax, and not all queries can use it even in supported databases.  If this parameter is true, the feature will be used when possible, by default.  The default value is true.
@@ -3832,7 +3950,7 @@ If set to a true value, this parameter indicates an explicit request to delete a
 
 =item B<db DB>
 
-A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the C<object_class>. 
+A L<Rose::DB>-derived object used to access the database.  If omitted, one will be created by calling the L<init_db|Rose::DB::Object/init_db> method of the L<object_class|/object_class>. 
 
 =item B<prepare_cached BOOL>
 
@@ -4130,7 +4248,7 @@ The query parameters, passed as a reference to an array of name/value pairs.  Th
 
 For the complete list of valid parameter names and values, see the documentation for the C<query> parameter of the L<build_select|Rose::DB::Object::QueryBuilder/build_select> function in the L<Rose::DB::Object::QueryBuilder> module.
 
-This class also supports an extension to the query syntax supported by L<Rose::DB::Object::QueryBuilder>.  In addition to table names and aliases, column names may be prefixed with foreign key or relationship names.  These names may be chained, with dots (".") separating the components.
+This class also supports an extension to the query syntax supported by L<Rose::DB::Object::QueryBuilder>.  In addition to table names and aliases, column (or column method) names may be prefixed with foreign key or relationship names.  These names may be chained, with dots (".") separating the components.
 
 For example, imagine three tables, C<products>, C<vendors>, and C<regions>, fronted by three L<Rose::DB::Object>-derived classes, C<Product>, C<Vendor>, and C<Region>, respectively.  Each C<Product> has a C<Vendor>, and each C<Vendor> has a C<Region>.
 
@@ -4155,6 +4273,31 @@ To fetch C<Product>s along with their C<Vendor>s, and their vendors' C<Region>s,
 This assumes that the C<Product> class has a relationship or foreign key named "vendor" that points to the product's C<Vendor>, and that the C<Vendor> class has a foreign key or relationship named "region" that points to the vendor's C<Region>.
 
 This chaining syntax can be used to traverse relationships of any kind, including "one to many" and "many to many" relationships, to an arbitrary depth.
+
+The following optional suffixes may be added after any name in the chain in order to override the join type used:
+
+    Suffix    Join Type
+    ------    ----------
+    !         Inner join
+    ?         Left outer join
+
+Each link in a C<require_objects> chain uses an inner join by default.  In other words, the following C<require_objects> parameters are all equivalent:
+
+    # These all mean the same thing
+    require_objects => [ 'vendor.region'   ]
+    require_objects => [ 'vendor!.region!' ]
+    require_objects => [ 'vendor.region!'  ]
+    require_objects => [ 'vendor!.region'  ]
+
+Thus, it is only really useful to use the C<?> suffix in C<require_objects> parameters (though the C<!> suffixes don't do any harm).  Here's a useful example of a call with hybrid join chain:
+
+    $products =
+      Product::Manager->get_products(
+        require_objects => [ 'vendor.region?' ]);
+
+All product objects returned would have associated vendor objects, but those vendor objects may or may not have associated region objects.
+
+Note that inner joins may be implicit and L<nested_joins|/nested_joins> may or may not be used.  When in doubt, use the L<debug|/debug> parameter to see the generated SQL.
 
 B<Warning:> there may be a geometric explosion of redundant data returned by the database if you include more than one "... to many" relationship in ARRAYREF.  Sometimes this may still be more efficient than making additional queries to fetch these sub-objects, but that all depends on the actual data.  A warning will be emitted (via L<Carp::cluck|Carp/cluck>) if you you include more than one "... to many" relationship in ARRAYREF.  If you're sure you know what you're doing, you can silence this warning by passing the C<multi_many_ok> parameter with a true value.
 
@@ -4241,7 +4384,32 @@ To fetch C<Product>s along with their C<Vendor>s, and their vendors' C<Region>s,
 
 This assumes that the C<Product> class has a relationship or foreign key named "vendor" that points to the product's C<Vendor>, and that the C<Vendor> class has a foreign key or relationship named "region" that points to the vendor's C<Region>.
 
-This chaining syntax can be used to traverse relationships of any kind, including "one to many" and "many to many" relationships, to an arbitrary depth.
+This chaining syntax can be used to traverse relationships of any kind, including "one to many" and "many to many" relationships, to an arbitrary depth.  
+
+The following optional suffixes may be added after any name in the chain in order to override the join type used:
+
+    Suffix    Join Type
+    ------    ----------
+    !         Inner join
+    ?         Left outer join
+
+Each link in a C<with_objects> chain uses a left outer join by default.  In other words, the following C<with_objects> parameters are all equivalent:
+
+    # These all mean the same thing
+    with_objects => [ 'vendor.region'   ]
+    with_objects => [ 'vendor?.region?' ]
+    with_objects => [ 'vendor.region?'  ]
+    with_objects => [ 'vendor?.region'  ]
+
+Thus, it is only really useful to use the C<!> suffix in C<with_objects> parameters (though the C<?> suffixes don't do any harm).  Here's a useful example of a call with hybrid join chain:
+
+    $products =
+      Product::Manager->get_products(
+        with_objects => [ 'vendor!.region' ]);
+
+All product objects returned would have associated vendor objects, but those vendor object may or may not have associated region objects.
+
+Note that inner joins may be implicit and L<nested_joins|/nested_joins> may or may not be used.  When in doubt, use the L<debug|/debug> parameter to see the generated SQL.
 
 B<Warning:> there may be a geometric explosion of redundant data returned by the database if you include more than one "... to many" relationship in ARRAYREF.  Sometimes this may still be more efficient than making additional queries to fetch these sub-objects, but that all depends on the actual data.  A warning will be emitted (via L<Carp::cluck|Carp/cluck>) if you you include more than one "... to many" relationship in ARRAYREF.  If you're sure you know what you're doing, you can silence this warning by passing the C<multi_many_ok> parameter with a true value.
 
@@ -4332,13 +4500,13 @@ The class of the L<Rose::DB::Object>-derived objects to be fetched or counted.
 
 =item * B<base name> or B<method name>
 
-The base name is a string used as the basis of the method names.  For example, the base name "products" would be used to create methods named "get_B<products>", "get_B<products>_count", "get_B<products>_iterator", "delete_B<products>", and "update_B<products>".
+The base name is a string used as the basis of the method names.  For example, the base name "products" might be used to create methods named "get_B<products>", "get_B<products>_count", "get_B<products>_iterator", "delete_B<products>", and "update_B<products>".
 
 In the absence of a base name, an explicit method name may be provided instead.  The method name will be used as is.
 
 =item * B<method types>
 
-The types of methods that should be generated.  Each method type is a wrapper for a L<Rose::DB::Object::Manager> class method.  The mapping of method type names to actual L<Rose::DB::Object::Manager> class methods is as follows:
+The types of methods that should be generated.  Each method type is a wrapper for a L<Rose::DB::Object::Manager> class method.  The mapping of method type names to actual L<Rose::DB::Object::Manager> class methods defaults to the following:
 
     Type        Method
     --------    ----------------------
@@ -4347,6 +4515,8 @@ The types of methods that should be generated.  Each method type is a wrapper fo
     count       get_objects_count()
     delete      delete_objects()
     update      update_objects()
+
+You may override the L<auto_manager_method_name|Rose::DB::Object::ConventionManager/auto_manager_method_name> method in the L<object_class|/object_class>'s L<convention manager|Rose::DB::Object::Metadata/convention_manager> class to customize one or more of these names.
 
 =item * B<target class>
 
@@ -4398,16 +4568,20 @@ If a C<methods> parameter is passed with a hash ref value, then each key of the 
 
 If a key of the C<methods> hash ends in "()", then it is taken as the method name and is used as is.  For example, the key "foo" will be used as a base name, but the key "foo()" will be used as a method name.
 
-If the base name cannot be determined in one of the ways described above, then a fatal error will occur.
+If the base name cannot be determined in one of the ways described above, then the L<auto_manager_base_name|Rose::DB::Object::ConventionManager/auto_manager_base_name> method in the L<object_class|/object_class>'s L<convention manager|Rose::DB::Object::Metadata/convention_manager> is called on to supply a base name.
 
 =item * B<method types>
 
-If a B<base name> is passed to the method, either as the value of the C<base_name> parameter or as the sole argument to the method call, then all of the method types are created: C<objects>, C<iterator>, and C<count>.  Example:
+If an explicit list of mehod types is not passed to the method, then all of the L<default_manager_method_types|/default_manager_method_types> are created.  Example:
 
-    # Base name is "products", all method types created
+    # Base name is determined by convention manager auto_manager_base_name()
+    # method, all default method types created
+    $class->make_manager_methods();
+
+    # Base name is "products", all default method types created
     $class->make_manager_methods('products');
 
-    # Base name is "products", all method types created
+    # Base name is "products", all default method types created
     $class->make_manager_methods(base_name => products', ...);
 
 (Again, note that the B<object class> must be derived somehow.)
@@ -4438,7 +4612,7 @@ Example:
         'product_count()' => 'count'
       });
 
-If the value of the C<methods> parameter is not a reference to a hash, or if both (or neither of) the C<methods> and C<base_name> parameters are passed, then a fatal error will occur.
+If the value of the C<methods> parameter is not a reference to a hash, or if both the C<methods> and C<base_name> parameters are passed, then a fatal error will occur.
 
 =item * B<target class>
 
