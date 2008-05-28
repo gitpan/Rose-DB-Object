@@ -14,11 +14,12 @@ use Rose::DB::Object::Manager;
 use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Constants 
   qw(PRIVATE_PREFIX FLAG_DB_IS_PRIVATE STATE_IN_DB STATE_LOADING
-     STATE_SAVING ON_SAVE_ATTR_NAME MODIFIED_COLUMNS SET_COLUMNS);
+     STATE_SAVING ON_SAVE_ATTR_NAME MODIFIED_COLUMNS SET_COLUMNS
+     EXCEPTION_CODE_NO_KEY);
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.7671';
+our $VERSION = '0.770';
 
 our $Debug = 0;
 
@@ -2195,8 +2196,19 @@ sub object_by_key
             my $ret;
 
             # Ignore any errors due to missing primary keys
+            # XXX: TODO: only eat the missing pk error?
             local $dbh->{'PrintError'} = 0;
             eval { $ret = $object->load(speculative => 1) };
+
+            if(my $error = $@)
+            {
+              # ...but re-throw all other errors
+              unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                     $error->code == EXCEPTION_CODE_NO_KEY)
+              {
+                die $error;
+              }
+            }
 
             unless($ret)
             {
@@ -2396,6 +2408,16 @@ sub object_by_key
               # Ignore any errors due to missing primary keys
               local $dbh->{'PrintError'} = 0;
               eval { $ret = $object->load(speculative => 1) };
+
+              if(my $error = $@)
+              {
+                # ...but re-throw all other errors
+                unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                       $error->code == EXCEPTION_CODE_NO_KEY)
+                {
+                  die $error;
+                }
+              }
 
               unless($ret)
               {
@@ -2940,9 +2962,16 @@ sub objects_by_key
       return $count;
     };
   }
-  elsif($interface eq 'find')
+  elsif($interface eq 'find' || $interface eq 'iterator')
   {
-    my $cache_key = PRIVATE_PREFIX . '_' . $name;
+    my $cache_key = PRIVATE_PREFIX . ":$interface:$name";
+
+    my $is_iterator = $interface eq 'iterator' ? 1 : 0;
+
+    if($is_iterator && $ft_method eq 'get_objects')
+    {
+      $ft_method = 'get_objects_iterator';
+    }
 
     $methods{$name} = sub
     {
@@ -3052,10 +3081,13 @@ sub objects_by_key
 
       if($@ || !$objs)
       {
-        $self->error("Could not find $ft_class objects - " . $ft_manager->error);
+        $self->error("Could not ", ($is_iterator ? 'get iterator for' : 'find'),
+                     " $ft_class objects - " . $ft_manager->error);
         $self->meta->handle_error($self);
         return wantarray ? () : $objs;
       }
+
+      return $objs  if($is_iterator);
 
       $self->{$cache_key} = $objs  if($cache);
 
@@ -3290,7 +3322,7 @@ sub objects_by_key
             {
               my $dbh = $object->dbh;
 
-              # It's okay if this fails (e.g., if the primary key is undefined)
+              # It's okay if this fails because the key(s) is/are undefined
               local $dbh->{'PrintError'} = 0;
               eval
               {
@@ -3300,6 +3332,16 @@ sub objects_by_key
                   $object->init(%map);
                 }
               };
+
+              if(my $error = $@)
+              {
+                # ...but re-throw all other errors
+                unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                       $error->code == EXCEPTION_CODE_NO_KEY)
+                {
+                  die $error;
+                }
+              }
             }
 
             # Save the object
@@ -3562,7 +3604,7 @@ sub objects_by_key
             {
               my $dbh = $object->dbh;
 
-              # It's okay if this fails (e.g., if the primary key is undefined)
+              # It's okay if this fails because the key(s) is/are undefined
               local $dbh->{'PrintError'} = 0;
               eval
               {
@@ -3572,6 +3614,16 @@ sub objects_by_key
                   $object->init(%map);
                 }
               };
+
+              if(my $error = $@)
+              {
+                # ...but re-throw all other errors
+                unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                       $error->code == EXCEPTION_CODE_NO_KEY)
+                {
+                  die $error;
+                }
+              }
             }
 
             # Save the object
@@ -3943,6 +3995,16 @@ sub objects_by_key
           local $dbh->{'PrintError'} = 0;
           eval { $ret = $object->load(speculative => 1) };
 
+          if(my $error = $@)
+          {
+            # ...but re-throw all other errors
+            unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                   $error->code == EXCEPTION_CODE_NO_KEY)
+            {
+              die $error;
+            }
+          }
+
           unless($ret)
           {
             $object->save or die $object->error;
@@ -4062,6 +4124,16 @@ sub objects_by_key
           # Ignore any errors due to missing primary keys
           local $dbh->{'PrintError'} = 0;
           eval { $ret = $object->load(speculative => 1) };
+
+          if(my $error = $@)
+          {
+            # ...but re-throw all other errors
+            unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                   $error->code == EXCEPTION_CODE_NO_KEY)
+            {
+              die $error;
+            }
+          }
 
           unless($ret)
           {
@@ -4375,9 +4447,16 @@ sub objects_by_map
     }
   }
 
-  if($interface eq 'find')
+  if($interface eq 'find' || $interface eq 'iterator')
   {
-    my $cache_key = PRIVATE_PREFIX . '_' . $name;
+    my $cache_key = PRIVATE_PREFIX . ":$interface:$name";
+
+    my $is_iterator = $interface eq 'iterator' ? 1 : 0;
+
+    if($is_iterator && $map_method eq 'get_objects')
+    {
+      $map_method = 'get_objects_iterator';
+    }
 
     $methods{$name} = sub
     {
@@ -4510,6 +4589,29 @@ sub objects_by_map
           }
           @$objs
         ];
+      }
+      elsif($is_iterator)
+      {
+        my $next_code = $objs->_next_code;
+
+        my $post_proc = sub
+        {
+          my($self, $map_object) = @_;
+          return $map_object->$map_to();
+        };
+
+        $objs->_next_code
+        (
+          sub
+          {
+            my $self = shift;
+            my $object = $next_code->($self, @_);
+            return $object  unless($object);
+            return $post_proc->($self, $object);
+          }
+        );
+
+        return $objs;      
       }
       else
       {
@@ -4876,9 +4978,19 @@ sub objects_by_map
             {
               my $dbh = $object->dbh;
 
-              # It's okay if this fails (e.g., if the primary key is undefined)
+              # It's okay if this fails because the key(s) is/are undefined
               local $dbh->{'PrintError'} = 0;
               eval { $in_db = $object->load(speculative => 1) };
+
+              if(my $error = $@)
+              {
+                # ...but re-throw all other errors
+                unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                       $error->code == EXCEPTION_CODE_NO_KEY)
+                {
+                  die $error;
+                }
+              }
             }
 
             # Save the object, if necessary
@@ -4916,9 +5028,19 @@ sub objects_by_map
             {
               my $dbh = $map_record->dbh;
 
-              # It's okay if this fails (e.g., if the primary key is undefined)
+              # It's okay if this fails because the key(s) is/are undefined
               local $dbh->{'PrintError'} = 0;
               eval { $in_db = $map_record->load(speculative => 1) };
+
+              if(my $error = $@)
+              {
+                # ...but re-throw all other errors
+                unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                       $error->code == EXCEPTION_CODE_NO_KEY)
+                {
+                  die $error;
+                }
+              }
             }
 
             # Save the map record, if necessary
@@ -5136,9 +5258,19 @@ sub objects_by_map
             {
               my $dbh = $object->dbh;
 
-              # It's okay if this fails (e.g., if the primary key is undefined)
+              # It's okay if this fails because the key(s) is/are undefined
               local $dbh->{'PrintError'} = 0;
               eval { $in_db = $object->load(speculative => 1) };
+
+              if(my $error = $@)
+              {
+                # ...but re-throw all other errors
+                unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                       $error->code == EXCEPTION_CODE_NO_KEY)
+                {
+                  die $error;
+                }
+              }
             }
 
             # Save the object, if necessary
@@ -5184,9 +5316,19 @@ sub objects_by_map
             {
               my $dbh = $map_record->dbh;
 
-              # It's okay if this fails (e.g., if the primary key is undefined)
+              # It's okay if this fails because the key(s) is/are undefined
               local $dbh->{'PrintError'} = 0;
               eval { $in_db = $map_record->load(speculative => 1) };
+
+              if(my $error = $@)
+              {
+                # ...but re-throw all other errors
+                unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                       $error->code == EXCEPTION_CODE_NO_KEY)
+                {
+                  die $error;
+                }
+              }
             }
 
             # Save the map record, if necessary
@@ -5396,9 +5538,19 @@ sub objects_by_map
           {
             my $dbh = $object->dbh;
 
-            # It's okay if this fails (e.g., if the primary key is undefined)
+            # It's okay if this fails because the key(s) is/are undefined
             local $dbh->{'PrintError'} = 0;
             eval { $in_db = $object->load(speculative => 1) };
+
+            if(my $error = $@)
+            {
+              # ...but re-throw all other errors
+              unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                     $error->code == EXCEPTION_CODE_NO_KEY)
+              {
+                die $error;
+              }
+            }
           }
 
           # Save the object, if necessary
@@ -5426,9 +5578,19 @@ sub objects_by_map
           {
             my $dbh = $map_record->dbh;
 
-            # It's okay if this fails (e.g., if the primary key is undefined)
+            # It's okay if this fails because the key(s) is/are undefined
             local $dbh->{'PrintError'} = 0;
             eval { $in_db = $map_record->load(speculative => 1) };
+
+            if(my $error = $@)
+            {
+              # ...but re-throw all other errors
+              unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                     $error->code == EXCEPTION_CODE_NO_KEY)
+              {
+                die $error;
+              }
+            }
           }
 
           # Save the map record, if necessary
@@ -5526,9 +5688,19 @@ sub objects_by_map
           {
             my $dbh = $object->dbh;
 
-            # It's okay if this fails (e.g., if the primary key is undefined)
+            # It's okay if this fails because the key(s) is/are undefined
             local $dbh->{'PrintError'} = 0;
             eval { $in_db = $object->load(speculative => 1) };
+
+            if(my $error = $@)
+            {
+              # ...but re-throw all other errors
+              unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                     $error->code == EXCEPTION_CODE_NO_KEY)
+              {
+                die $error;
+              }
+            }
           }
 
           # Save the object, if necessary
@@ -5556,9 +5728,19 @@ sub objects_by_map
           {
             my $dbh = $map_record->dbh;
 
-            # It's okay if this fails (e.g., if the primary key is undefined)
+            # It's okay if this fails because the key(s) is/are undefined
             local $dbh->{'PrintError'} = 0;
             eval { $in_db = $map_record->load(speculative => 1) };
+
+            if(my $error = $@)
+            {
+              # ...but re-throw all other errors
+              unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                     $error->code == EXCEPTION_CODE_NO_KEY)
+              {
+                die $error;
+              }
+            }
           }
 
           # Save the map record, if necessary
@@ -6501,6 +6683,10 @@ The fetch may fail for several reasons.  The fetch will not even be attempted if
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
 
+=item B<iterator>
+
+Behaves just like B<find> but returns an L<iterator|Rose::DB::Object::Iterator> rather than an array or arrayref.
+
 =item B<get_set>
 
 Creates a method that will attempt to fetch L<Rose::DB::Object>-derived objects based on a key formed from attributes of the current object.
@@ -6995,6 +7181,10 @@ If the first argument is a reference to a hash or array, it is converted to a re
 The fetch may fail for several reasons.  The fetch will not even be attempted if any of the key attributes in the current object are undefined.  Instead, undef (in scalar context) or an empty list (in list context) will be returned.  If the call to C<manager_class>'s C<manager_method> method returns false, the behavior is determined by the L<metadata object|Rose::DB::Object/meta>'s L<error_mode|Rose::DB::Object::Metadata/error_mode>.  If the mode is C<return>, that false value (in scalar context) or an empty list (in list context) is returned.
 
 If the fetch succeeds, a list (in list context) or a reference to the array of objects (in scalar context) is returned.  (If the fetch finds zero objects, the list or array reference will simply be empty.  This is still considered success.)
+
+=item B<iterator>
+
+Behaves just like B<find> but returns an L<iterator|Rose::DB::Object::Iterator> rather than an array or arrayref.
 
 =item B<get_set>
 

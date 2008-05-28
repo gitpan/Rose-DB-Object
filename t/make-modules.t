@@ -27,7 +27,7 @@ use_ok('Rose::DB::Object::Loader');
 my $Include_Tables = '^(?:' . join('|', 
   qw(product_colors prices products colors vendors)) . ')$';
 $Include_Tables = qr($Include_Tables);
-  
+
 my %Column_Defs =
 (
   pg => 
@@ -79,6 +79,12 @@ foreach my $db_type (qw(pg mysql informix sqlite))
   Rose::DB::Object::Metadata->unregister_all_classes;
 
   Rose::DB->default_type($db_type);
+
+  if($db_type eq 'mysql')
+  {
+    my $serial = Rose::DB->new->dbh->{'Driver'}{'Version'} >= 4.002 ? 'serial' : 'integer';
+    $Column_Defs{'mysql'}{'id'} = qq(id        => { type => '$serial', not_null => 1 },);
+  }
 
   my $class_prefix = 'My' . ucfirst($db_type);
 

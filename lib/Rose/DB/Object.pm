@@ -13,9 +13,10 @@ our @ISA = qw(Rose::Object);
 use Rose::DB::Object::Manager;
 use Rose::DB::Object::Constants qw(:all);
 use Rose::DB::Constants qw(IN_TRANSACTION);
+use Rose::DB::Object::Exception;
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.769';
+our $VERSION = '0.770';
 
 our $Debug = 0;
 
@@ -223,11 +224,16 @@ sub load
       {
         @key_columns = $meta->primary_key_column_names;
 
-        $self->error("Cannot load " . ref($self) . " without a primary key (" .
-                     join(', ', @key_columns) . ') with ' .
-                     (@key_columns > 1 ? 'non-null values in all columns' : 
-                                         'a non-null value') .
-                     ' or another unique key with at least one non-null value.');
+        my $e = 
+          Rose::DB::Object::Exception->new(
+            message => "Cannot load " . ref($self) . " without a primary key (" .
+                       join(', ', @key_columns) . ') with ' .
+                       (@key_columns > 1 ? 'non-null values in all columns' : 
+                                           'a non-null value') .
+                       ' or another unique key with at least one non-null value.',
+            code => EXCEPTION_CODE_NO_KEY);
+
+        $self->error($e);
 
         $meta->handle_error($self);
         return 0;
@@ -2290,7 +2296,7 @@ L<http://rose.googlecode.com>
 
 =head1 CONTRIBUTORS
 
-Bradley C Bailey, Graham Barr, David Christensen, Lucian Dragus, Justin Ellison, Perrin Harkins, Cees Hek, Michael Reece, Teodor Zlatanov
+Bradley C Bailey, Graham Barr, David Christensen, Lucian Dragus, Justin Ellison, Perrin Harkins, Cees Hek, Peter Karman, Michael Reece, Teodor Zlatanov
 
 =head1 AUTHOR
 
