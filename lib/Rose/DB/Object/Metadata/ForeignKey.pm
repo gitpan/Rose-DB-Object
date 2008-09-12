@@ -12,7 +12,7 @@ our @ISA = qw(Rose::DB::Object::Metadata::Column);
 
 use Rose::DB::Object::Exception;
 
-our $VERSION = '0.764';
+our $VERSION = '0.771';
 
 our $Debug = 0;
 
@@ -49,6 +49,10 @@ use Rose::Object::MakeMethods::Generic
     _key_columns => { interface => 'get_set_all' },
   ],
 );
+
+sub is_singular { 1 }
+
+sub foreign_class { shift->class(@_) }
 
 sub key_column
 {
@@ -194,12 +198,14 @@ sub make_methods
 
       foreach my $column_name (keys %$key_columns)
       {
-        Scalar::Util::weaken(my $column = $meta->column($column_name));
+        my $column       = $meta->column($column_name);
         my $accessor     = $column->accessor_method_name;
         my $trigger_name = 'clear_fk' . $self->name;
 
         unless(defined $column->builtin_trigger_index('on_set', $trigger_name))
         {
+          my $wolumn = Scalar::Util::weaken($column);
+
           $column->add_builtin_trigger(
             event => 'on_set',
             name  => $trigger_name,
@@ -207,7 +213,7 @@ sub make_methods
             {
               my($obj) = shift;
               return  if($self->{'disable_column_triggers'});
-              local $column->{'triggers_disabled'} = 1;
+              local $wolumn->{'triggers_disabled'} = 1;
               $obj->$method(undef)  unless(defined $obj->$accessor());
             });
         }

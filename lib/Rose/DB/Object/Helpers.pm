@@ -9,7 +9,7 @@ our @ISA = qw(Rose::Object::MixIn);
 
 use Carp;
 
-our $VERSION = '0.7671';
+our $VERSION = '0.771';
 
 __PACKAGE__->export_tags
 (
@@ -20,7 +20,11 @@ __PACKAGE__->export_tags
        column_value_pairs column_accessor_value_pairs 
        column_mutator_value_pairs 
        column_values_as_yaml column_values_as_json
-       init_with_yaml init_with_json init_with_column_value_pairs
+       traverse_depth_first as_tree init_with_tree new_from_tree
+       init_with_deflated_tree new_from_deflated_tree
+       as_yaml new_from_yaml init_with_yaml
+       as_json new_from_json init_with_json
+       init_with_column_value_pairs
        has_loaded_related strip forget_related) 
   ],
 
@@ -30,10 +34,55 @@ __PACKAGE__->export_tags
     qw(clone clone_and_reset load_or_insert load_or_save insert_or_update 
        insert_or_update_on_duplicate_key load_speculative
        column_value_pairs column_accessor_value_pairs 
-       column_mutator_value_pairs init_with_column_value_pairs
+       column_mutator_value_pairs 
+       traverse_depth_first as_tree init_with_tree new_from_tree
+       init_with_deflated_tree new_from_deflated_tree
+       init_with_column_value_pairs
        has_loaded_related strip forget_related)
   ],
 );
+
+#
+# Class data
+#
+
+use Rose::Class::MakeMethods::Generic
+(
+  inheritable_scalar =>
+  [
+    '_json_object'
+  ],
+);
+
+#
+# Class methods
+#
+
+sub json_encoder
+{
+  my($class) = shift;
+
+  my $json = $class->_json_object;
+
+  unless(defined $json)
+  {
+    $json = $class->init_json_encoder;
+  }
+
+  return $json;
+}
+
+sub init_json_encoder
+{
+  require JSON;
+  return JSON->new->utf8->space_after;
+}
+
+*json_decoder = \&json_encoder;
+
+#
+# Object methods
+#
 
 sub load_speculative { shift->load(@_, speculative => 1) }
 
@@ -135,54 +184,12 @@ sub column_values_as_yaml
   YAML::Syck::Dump(scalar Rose::DB::Object::Helpers::column_value_pairs(shift))
 }
 
-__PACKAGE__->pre_import_hook(column_values_as_json => sub { require JSON::Syck });
+__PACKAGE__->pre_import_hook(column_values_as_json => sub { require JSON });
 
 sub column_values_as_json
 {
   local $_[0]->{STATE_SAVING()} = 1;
-  JSON::Syck::Dump(scalar Rose::DB::Object::Helpers::column_value_pairs(shift))
-}
-
-__PACKAGE__->pre_import_hook(init_with_json => sub { require YAML::Syck });
-
-sub init_with_yaml
-{
-  my($self, $yaml) = @_;
-
-  my $hash = YAML::Syck::Load($yaml);
-  my $meta = $self->meta;
-
-  local $self->{STATE_LOADING()} = 1;
-
-  while(my($column, $value) = each(%$hash))
-  {
-    next  unless(length $column);
-    my $method = $meta->column($column)->mutator_method_name;
-    $self->$method($value);
-  }
-
-  return $self;
-}
-
-__PACKAGE__->pre_import_hook(init_with_json => sub { require JSON::Syck });
-
-sub init_with_json
-{
-  my($self, $json) = @_;
-
-  my $hash = JSON::Syck::Load($json);
-  my $meta = $self->meta;
-
-  local $self->{STATE_LOADING()} = 1;
-
-  while(my($column, $value) = each(%$hash))
-  {
-    next  unless(length $column);
-    my $method = $meta->column($column)->mutator_method_name;
-    $self->$method($value);
-  }
-
-  return $self;
+  __PACKAGE__->json_encoder->encode(scalar Rose::DB::Object::Helpers::column_value_pairs(shift))
 }
 
 sub init_with_column_value_pairs
@@ -194,10 +201,10 @@ sub init_with_column_value_pairs
 
   local $self->{STATE_LOADING()} = 1;
 
-  while(my($column, $value) = each(%$hash))
+  while(my($name, $value) = each(%$hash))
   {
-    next  unless(length $column);
-    my $method = $meta->column($column)->mutator_method_name;
+    next  unless(length $name);
+    my $method = $meta->column($name)->mutator_method_name;
     $self->$method($value);
   }
 
@@ -474,6 +481,380 @@ sub strip
   return $self;
 }
 
+# XXX: A value that is unlikely to exist in a primary key column value
+use constant PK_JOIN => "\0\2,\3\0";
+
+sub primary_key_as_string
+{
+  my($self, $joiner) = @_;
+  return join($joiner || PK_JOIN, grep { defined } map { $self->$_() } $self->meta->primary_key_column_accessor_names);
+}
+
+use constant DEFAULT_MAX_DEPTH => 100;
+
+sub traverse_depth_first
+{
+  my($self) = shift;
+
+  my($context, $handlers, $exclude, $prune, $max_depth);
+
+  my $visited    = {};
+  my $force_load = 0;
+
+  if(@_ == 1)
+  {
+    $handlers->{'object'} = shift;
+  }
+  else
+  {
+    my %args = @_;
+    $handlers   = $args{'handlers'} || {};
+    $force_load = $args{'force_load'} || 0;
+    $context    = $args{'context'};
+    $exclude    = $args{'exclude'} || 0;
+    $prune      = $args{'prune'};
+    $max_depth  = exists $args{'max_depth'} ? $args{'max_depth'} : DEFAULT_MAX_DEPTH;
+    $visited = undef  if($args{'allow_loops'});
+  }
+
+  _traverse_depth_first($self, $context ||= {}, $handlers, $exclude, $prune, 0, $max_depth, undef, undef, $visited, $force_load);
+
+  return $context;
+}
+
+require Rose::DB::Object::Util;
+
+use constant OK            => 1;
+use constant LOOP_AVOIDED  => -1;
+use constant HIT_MAX_DEPTH => -2;
+use constant FILTERED_OUT  => -3;
+
+sub _traverse_depth_first
+{
+  my($self, $context, $handlers, $exclude, $prune, $depth, $max_depth, $parent, $rel_meta, $visited, $force_load) = @_;
+
+  if($visited && $visited->{ref($self),Rose::DB::Object::Helpers::primary_key_as_string($self)}++)
+  {
+    return LOOP_AVOIDED;
+  }
+
+  if($handlers->{'object'})
+  {
+    if($exclude && $exclude->($self, $parent, $rel_meta))
+    {
+      return FILTERED_OUT;
+    }
+
+    if($force_load && !Rose::DB::Object::Util::is_in_db($self))
+    {
+      $self->load(speculative => 1);
+    }
+
+    $context = $handlers->{'object'}->($self, $context, $parent, $rel_meta, $depth);
+  }
+
+  if(defined $max_depth && $depth == $max_depth)
+  {
+    return HIT_MAX_DEPTH;
+  }
+
+  REL: foreach my $rel ($self->meta->relationships)
+  {
+    next  if($prune && $prune->($rel, $self, $depth));
+
+    my $objs = $rel->object_has_related_objects($self);
+    # XXX: Call above returns 0 if the collection is an empty array ref
+    # XXX: and undef if it's not even a reference (e.g., undef).  This
+    # XXX: distinguishes between a collection that has been loaded and
+    # XXX: found to have zero items, and one that has never been loaded.
+    # XXX: To "un-hack" this, we'd need true tracking of load/store
+    # XXX: actions to related collections.  Or we could just omit the
+    # XXX: empty collections from the traversal.
+    $objs = []  if(defined $objs && !ref $objs);
+
+    if($force_load || $objs)
+    {
+      unless($objs)
+      {
+        my $method = $rel->method_name('get_set_on_save') || 
+                     $rel->method_name('get_set_now') ||
+                     $rel->method_name('get_set') ||
+                     next REL;
+
+        $objs = $self->$method() || next REL;
+        $objs = [ $objs ]  unless(ref $objs eq 'ARRAY');
+      }
+
+      my $c = $handlers->{'relationship'}->($self, $context, $rel)  if($handlers->{'relationship'});
+
+      OBJ: foreach my $obj (@$objs)
+      {
+        next OBJ  if($exclude && $exclude->($obj, $self, $rel));
+
+        my $ret = _traverse_depth_first($obj, $c, $handlers, $exclude, $prune, $depth + 1, $max_depth, $self, $rel, $visited, $force_load);
+
+        if($ret == LOOP_AVOIDED && $handlers->{'loop_avoided'})
+        {
+          $handlers->{'loop_avoided'}->($obj, $c, $self, $context, $rel) && last OBJ;
+        }
+      }
+    }
+  }
+
+  return OK;
+}
+
+sub as_tree
+{
+  my($self) = shift;
+
+  my %args = @_;
+
+  my $deflate    = exists $args{'deflate'} ? $args{'deflate'} : 1;
+  my $persistent_columns_only = exists $args{'persistent_columns_only'} ? $args{'persistent_columns_only'} : 0;
+
+  my %tree;
+
+  Rose::DB::Object::Helpers::traverse_depth_first($self, 
+    context  => \%tree,
+    handlers => 
+    {
+      object => sub
+      {
+        my($self, $context, $parent, $relationship, $depth) = @_;
+
+        local $self->{STATE_SAVING()} = 1  if($deflate);
+
+        my $cols = Rose::DB::Object::Helpers::column_value_pairs($self);
+
+        unless($persistent_columns_only)
+        {
+          # XXX: Inlined version of what would be nonpersistent_column_value_pairs()
+          my $methods = $self->meta->nonpersistent_column_accessor_method_names_hash;
+
+          while(my($column, $method) = each(%$methods))
+          {
+            $cols->{$column} = $self->$method();
+          }
+        }
+
+        if(ref $context eq 'ARRAY')
+        {
+          push(@$context, $cols);
+          return $cols;
+        }
+        else
+        {
+          @$context{keys %$cols} = values %$cols;
+          return $context;
+        }
+      },
+
+      relationship => sub
+      {
+        my($self, $context, $relationship) = @_;
+
+        my $name = $relationship->name;
+
+        # Croak on name conflicts with columns
+        if($self->meta->column($name))
+        {
+          croak "$self: relationship '", $relationship->name, 
+                "' conflicts with column of the same name";
+        }
+
+        if($relationship->is_singular)
+        {
+          return $context->{$name} = {};
+        }
+
+        return $context->{$name} = [];
+      },
+
+      loop_avoided => sub
+      {
+        my($object, $context, $parent_object, $parent_context, $relationship) = @_;
+        # If any item can't be included due to loops, wipe entire collection and bail
+        delete $parent_context->{$relationship->name};
+        return 1; # true return means stop processing items in this collection
+      },
+    },
+    @_);
+
+  return \%tree;
+}
+
+# XXX: This version requires all relationship and column mutators to have 
+# XXX: the same names as the relationships and columnsthemselves.
+# sub init_with_tree { shift->init(@_) }
+
+# XXX: This version requires all relationship mutators to have the same 
+# XXX: names as the relationships themselves.
+# sub init_with_tree
+# {
+#   my($self) = shift;
+# 
+#   my $meta = $self->meta;
+# 
+#   while(my($name, $value) = each(%{@_ == 1 ? $_[0] : {@_}}))
+#   {
+#     next  unless(length $name);
+#     my $method;
+# 
+#     if(my $column = $meta->column($name))
+#     {
+#       $method = $column->mutator_method_name;
+#       $self->$method($value);
+#     }
+#     elsif($meta->relationship($name))
+#     {
+#       $self->$name($value);
+#     }
+#   }
+# 
+#   return $self;
+# }
+
+our $Deflated = 0;
+
+sub init_with_deflated_tree
+{
+  local $Deflated = 1;
+  Rose::DB::Object::Helpers::init_with_tree(@_);
+}
+
+sub init_with_tree
+{
+  my($self) = shift;
+
+  my $meta = $self->meta;
+
+  while(my($name, $value) = each(%{@_ == 1 ? $_[0] : {@_}}))
+  {
+    next  unless(length $name);
+    my $method;
+
+    if(my $column = $meta->column($name))
+    {
+      local $self->{STATE_LOADING()} = 1  if($Deflated);
+      $method = $column->mutator_method_name;
+      $self->$method($value);
+    }
+    else
+    {
+      if(my $rel = $meta->relationship($name))
+      {
+        $method = $rel->method_name('get_set_on_save') || 
+                  $rel->method_name('get_set') ||
+                  next;
+
+        my $ref = ref $value;
+
+        if($ref eq 'HASH')
+        {
+          # Split hash into relationship values and everything else
+          my %rel_vals;
+
+          my %is_rel = map { $_->name => 1 } $rel->can('foreign_class') ? 
+            $rel->foreign_class->meta->relationships : $rel->class->meta->relationships;
+
+          foreach my $k (keys %$value)  
+          {
+            $rel_vals{$k} = delete $value->{$k}  if($is_rel{$k});
+          }
+
+          # %$value now has non-relationship keys only
+          my $object = $self->$method(%$value);
+
+          # Recurse on relationship key
+          Rose::DB::Object::Helpers::init_with_tree($object, \%rel_vals)  if(%rel_vals);
+
+          # Repair original hash
+          @$value{keys %rel_vals} = values %rel_vals;
+        }
+        elsif($ref eq 'ARRAY')
+        {
+          my(@objects, @sub_objects);
+
+          foreach my $item (@$value)
+          {
+            # Split hash into relationship values and everything else
+            my %rel_vals;
+
+            my %is_rel = map { $_->name => 1 } $rel->can('foreign_class') ? 
+              $rel->foreign_class->meta->relationships : $rel->class->meta->relationships;
+
+            foreach my $k (keys %$item)
+            {
+              $rel_vals{$k} = delete $item->{$k}  if($is_rel{$k});
+            }
+
+            # %$item now has non-relationship keys only
+            push(@objects, { %$item }); # shallow copy is sufficient
+
+            push(@sub_objects, \%rel_vals);
+
+            # Repair original hash
+            @$item{keys %rel_vals} = values %rel_vals;
+          }
+
+          # Add the related objects
+          $self->$method(\@objects);
+
+          # Recurse on the sub-objects
+          foreach my $object (@{ $self->$method() })
+          {
+            my $sub_objects = shift(@sub_objects);
+            Rose::DB::Object::Helpers::init_with_tree($object, $sub_objects)  if(%$sub_objects);
+          }
+        }
+        else
+        {
+          Carp::cluck "Unknown reference encountered in $self tree: $name => $value";
+        }
+      }
+      elsif($self->can($name))
+      {
+        $self->$name($value);
+      }
+
+      # XXX: Silently ignore all other values
+    }
+  }
+
+  return $self;
+}
+
+sub new_from_tree
+{
+  my $self = shift->new;
+  $self->Rose::DB::Object::Helpers::init_with_tree(@_);
+}
+
+sub new_from_deflated_tree
+{
+  my $self = shift->new;
+  $self->Rose::DB::Object::Helpers::init_with_deflated_tree(@_);
+}
+
+__PACKAGE__->pre_import_hook(new_from_json => sub { require JSON });
+__PACKAGE__->pre_import_hook(new_from_yaml => sub { require YAML::Syck });
+
+sub new_from_json { new_from_tree(shift, __PACKAGE__->json_decoder->decode(@_)) }
+sub new_from_yaml { new_from_tree(shift, YAML::Syck::Load(@_)) }
+
+__PACKAGE__->pre_import_hook(init_with_json => sub { require JSON });
+__PACKAGE__->pre_import_hook(init_with_yaml => sub { require YAML::Syck });
+
+sub init_with_json { init_with_tree(shift, __PACKAGE__->json_decoder->decode(@_)) }
+sub init_with_yaml { init_with_tree(shift, YAML::Syck::Load(@_)) }
+
+__PACKAGE__->pre_import_hook(as_json => sub { require JSON });
+__PACKAGE__->pre_import_hook(as_yaml => sub { require YAML::Syck });
+
+sub as_json { __PACKAGE__->json_encoder->encode(scalar as_tree(@_, deflate => 1)) }
+sub as_yaml { YAML::Syck::Dump(scalar as_tree(@_, deflate => 1)) }  
+
 1;
 
 __END__
@@ -504,7 +885,93 @@ L<Rose::DB::Object::Helpers> provides convenience methods from use with L<Rose::
 
 This class inherits from L<Rose::Object::MixIn>.  See the L<Rose::Object::MixIn> documentation for a full explanation of how to import methods from this class.  The helper methods themselves are described below.
 
+=head1 FUNCTIONS VS. METHODS
+
+Due to the "wonders" of Perl 5's object system, any helper method described here can also be used as a L<Rose::DB::Object::Util>-style utility I<function> that takes a L<Rose::DB::Object>-derived object as its first argument.  Example:
+
+  # Import two helpers
+  use Rose::DB::Object::Helpers qw(clone_and_reset traverse_depth_first);
+
+  $o = My::DB::Object->new(...);
+
+  clone_and_reset($o); # Imported helper "method" called as function
+
+  # Imported helper "method" with arguments called as function
+  traverse_depth_first($o, handlers => { ... }, max_depth => 2);
+
+Why, then, the distinction between L<Rose::DB::Object::Helpers> methods and L<Rose::DB::Object::Util> functions?  It's simply a matter of context.  The functions in L<Rose::DB::Object::Util> are most useful in the context of the internals (e.g., writing your own L<column method-maker|Rose::DB::Object::Metadata::Column/"MAKING METHODS">) whereas L<Rose::DB::Object::Helpers> methods are most often added to a common L<Rose::DB::Object>-derived base class and then called as object methods by all classes that inherit from it.
+
+The point is, these are just conventions.  Use any of these subroutines as functions or as methods as you see fit.  Just don't forget to pass a L<Rose::DB::Object>-derived object as the first argument when calling as a function.
+
 =head1 OBJECT METHODS
+
+=head2 as_json [PARAMS]
+
+Returns a JSON-formatted string created from the object tree as created by the L<as_tree|/as_tree> method.  PARAMS are the same as for the L<as_tree|/as_tree> method, except that the C<deflate> parameter is ignored (it is always set to true).
+
+You must have the L<JSON> module installed in order to use this helper method.  If you have the L<JSON::XS> module installed, this method will work a lot faster.
+
+=head2 as_tree [PARAMS]
+
+Returns a reference to a hash of name/value pairs representing the column values of this object as well as any nested sub-objects.  The PARAMS name/value pairs dictate the details of the sub-object traversal.  Valid parameters are:
+
+=over 4
+
+=item B<allow_loops BOOL>
+
+If true, allow loops during the traversal (e.g., A -E<gt> B -E<gt> C -E<gt> A).  The default value is false.
+
+=item B<deflate BOOL>
+
+If true, the values in the tree will be simple scalars suitable for storage in the database (e.g., a date string like "2005-12-31" instead of a L<DateTime> object).  The default is true.
+
+=item B<exclude CODEREF>
+
+A reference to a subroutine that is called on each L<Rose::DB::Object>-derived object encountered during the traversal.  It is passed the object, the parent object (undef, if none), and the  L<Rose::DB::Object::Metadata::Relationship>-derived object (undef, if none) that led to this object.  If the subroutine returns true, then this object is not processed.  Example:
+
+    exclude => sub
+    {
+      my($object, $parent, $rel_meta) = @_;
+      ...
+      return 1  if($should_exclude);
+      return 0;
+    },
+
+=item B<force_load BOOL>
+
+If true, related sub-objects will be loaded from the database.  If false, then only the sub-objects that have already been loaded from the database will be traversed.  The default is false.
+
+=item B<max_depth DEPTH>
+
+Do not descend past DEPTH levels.  Depth is an integer starting from 0 for the object that the L<as_tree|/as_tree> method was called on and increasing with each level of related objects.  The default value is 100.
+
+=item B<persistent_columns_only BOOL>
+
+If true, L<non-persistent columns|Rose::DB::Object::Metadata/nonpersistent_columns> will not be included in the tree.  The default is false.
+
+=item B<prune CODEREF>
+
+A reference to a subroutine that is called on each L<Rose::DB::Object::Metadata::Relationship>-derived object encountered during traversal.  It is passed the relationship object, the parent object, and the depth.  If the subroutine returns true, then the entire sub-tree below this relationship will not be traversed.  Example:
+
+    prune => sub
+    {
+      my($rel_meta, $object, $depth) = @_;
+      ...
+      return 1  if($should_prune);
+      return 0;
+    },
+
+=back
+
+B<Caveats>: Currently, you cannot have a relationship and a column with the same name in the same class.  This should not happen without explicit action on the part of the class creator, but it is technically possible.  The result of serializing such an object using L<as_tree|/as_tree> is undefined.  This limitation may be removed in the future.
+
+The exact format of the "tree" data structure returned by this method is not public and may change in the future (e.g., to overcome the limitation described above).
+
+=head2 as_yaml [PARAMS]>
+
+Returns a YAML-formatted string created from the object tree as created by the L<as_tree|/as_tree> method.  PARAMS are the same as for the L<as_tree|/as_tree> method, except that the C<deflate> parameter is ignored (it is always set to true).
+
+You must have the L<YAML::Syck> module installed in order to use this helper method.
 
 =head2 clone
 
@@ -541,7 +1008,7 @@ is equivalent to this:
 
 =head2 column_values_as_json
 
-Returns a string containing a JSON representation of the object's column values.  You must have the L<JSON::Syck> module installed in order to use this helper method.
+Returns a string containing a JSON representation of the object's column values.  You must have the L<JSON> module installed in order to use this helper method.  If you have the L<JSON::XS> module installed, this method will work a lot faster.
 
 =head2 column_values_as_yaml
 
@@ -602,10 +1069,10 @@ Initialize an object with a hash or reference to a hash of column/value pairs.  
 
 =head2 init_with_json JSON
 
-Initialize the object with a JSON-formatted string.  The JSON string must be in the format returned by the L<column_values_as_json|/column_values_as_json> method.  Example:
+Initialize the object with a JSON-formatted string.  The JSON string must be in the format returned by the L<as_json|/as_json> (or L<column_values_as_json|/column_values_as_json>) method.  Example:
 
     $p1 = Person->new(name => 'John', age => 30);
-    $json = $p1->column_values_as_json;
+    $json = $p1->as_json;
 
     $p2 = Person->new;
     $p2->init_with_json($json);
@@ -613,12 +1080,29 @@ Initialize the object with a JSON-formatted string.  The JSON string must be in 
     print $p2->name; # John
     print $p2->age;  # 30
 
-=head2 init_with_yaml YAML
+=head2 init_with_deflated_tree TREE
 
-Initialize the object with a YAML-formatted string.  The YAML string must be in the format returned by the L<column_values_as_yaml|/column_values_as_yaml> method.  Example:
+This is the same as the L<init_with_tree|/init_with_tree> method, except that it expects all the values to be simple scalars suitable for storage in the database (e.g., a date string like "2005-12-31" instead of a L<DateTime> object).  In other words, the TREE should be in the format generated by the L<as_tree|/as_tree> method called with the C<deflate> parameter set to true.  Initializing objects in this way is slightly more efficient.
+
+=head2 init_with_tree TREE
+
+Initialize the object with a Perl data structure in the format returned from the L<as_tree|/as_tree> method.  Example:
 
     $p1 = Person->new(name => 'John', age => 30);
-    $yaml = $p1->column_values_as_yaml;
+    $tree = $p1->as_tree;
+
+    $p2 = Person->new;
+    $p2->init_with_tree($tree);
+
+    print $p2->name; # John
+    print $p2->age;  # 30
+
+=head2 init_with_yaml YAML
+
+Initialize the object with a YAML-formatted string.  The YAML string must be in the format returned by the L<as_yaml|/as_yaml> (or L<column_values_as_yaml|/column_values_as_yaml>) method.  Example:
+
+    $p1 = Person->new(name => 'John', age => 30);
+    $yaml = $p1->as_yaml;
 
     $p2 = Person->new;
     $p2->init_with_yaml($yaml);
@@ -728,6 +1212,22 @@ Example:
       print "Object id 123 not found\n";
     }
 
+=head2 new_from_json JSON
+
+The method is the equivalent of creating a new object and then calling the L<init_with_json|/init_with_json> method on it, passing JSON as an argument.  See the L<init_with_json|/init_with_json> method for more information.
+
+=head2 new_from_deflated_tree TREE
+
+The method is the equivalent of creating a new object and then calling the L<init_with_deflated_tree|/init_with_deflated_tree> method on it, passing TREE as an argument.  See the L<init_with_deflated_tree|/init_with_deflated_tree> method for more information.
+
+=head2 new_from_tree TREE
+
+The method is the equivalent of creating a new object and then calling the L<init_with_tree|/init_with_tree> method on it, passing TREE as an argument.  See the L<init_with_tree|/init_with_tree> method for more information.
+
+=head2 new_from_yaml YAML
+
+The method is the equivalent of creating a new object and then calling the L<init_with_yaml|/init_with_yaml> method on it, passing YAML as an argument.  See the L<init_with_yaml|/init_with_yaml> method for more information.
+
 =head2 strip [PARAMS]
 
 This method prepares an object for serialization by stripping out internal structures known to contain code references or other values that do not survive serialization.  The object itself is returned, now stripped.
@@ -742,23 +1242,125 @@ This parameter specifies which items to leave un-stripped.  The value may be an 
 
 =over 4
 
-=item C<db>
+=item B<db>
 
 Do not remove the L<db|Rose::DB::Object/db> object.  The L<db|Rose::DB::Object/db> object will have its DBI database handle (L<dbh|Rose::DB/dbh>) removed, however.
 
-=item C<foreign_keys>
+=item B<foreign_keys>
 
 Do not removed sub-objects that have L<already been loaded|/has_loaded_related> by this object through L<foreign keys|Rose::DB::Object::Metadata/foreign_keys>.
 
-=item C<relationships>
+=item B<relationships>
 
 Do not removed sub-objects that have L<already been loaded|/has_loaded_related> by this object through L<relationships|Rose::DB::Object::Metadata/relationships>.
 
-=item C<related_objects>
+=item B<related_objects>
 
 Do not remove any sub-objects (L<foreign keys|Rose::DB::Object::Metadata/foreign_keys> or L<relationships|Rose::DB::Object::Metadata/relationships>) that have L<already been loaded|/has_loaded_related> by this object.  This option is the same as specifying both the C<foreign_keys> and C<relationships> names.
 
 =back
+
+=back
+
+=head2 B<traverse_depth_first CODEREF | PARAMS>
+
+Do a depth-first traversal of the L<Rose::DB::Object>-derived object that this method is called on, descending into related objects. If a reference to a subroutine is passed as the sole argument, it is taken as the value of the C<object> key to the C<handlers> parameter hash (see below).  Otherwise, PARAMS name/value pairs are expected.  Valid parameters are:
+
+=over 4
+
+=item B<allow_loops BOOL>
+
+If true, allow loops during the traversal (e.g., A -E<gt> B -E<gt> C -E<gt> A).  The default value is false.
+
+=item B<context SCALAR>
+
+An arbitrary context variable to be passed along to (and possibly modified by) each handler routine (see C<handlers> parameter below).  The context may be any scalar value (e.g., an object, a reference to a hash, etc.)
+
+=item B<exclude CODEREF>
+
+A reference to a subroutine that is called on each L<Rose::DB::Object>-derived object encountered during the traversal.  It is passed the object, the parent object (undef, if none), and the  L<Rose::DB::Object::Metadata::Relationship>-derived object (undef, if none) that led to this object.  If the subroutine returns true, then this object is not processed.  Example:
+
+    exclude => sub
+    {
+      my($object, $parent, $rel_meta) = @_;
+      ...
+      return 1  if($should_exclude);
+      return 0;
+    },
+
+=item B<force_load BOOL>
+
+If true, related sub-objects will be loaded from the database.  If false, then only the sub-objects that have already been loaded from the database will be traversed.  The default is false.
+
+=item B<handlers HASHREF>
+
+A reference to a hash of handler subroutines.  Valid keys, calling context, and the arguments passed to the referenced subroutines are as follows.
+
+=over 4
+
+=item B<object>
+
+This handler is called whenever a L<Rose::DB::Object>-derived object is encountered.  This includes the object that L<traverse_depth_first|/traverse_depth_first> was called on as well as any sub-objects.  The handler is passed the object, the C<context>, the parent object (undef, if none), the L<Rose::DB::Object::Metadata::Relationship>-derived object through which this object was arrived at (undef if none), and the depth.  Example:
+
+    handlers =>
+    {
+      object => sub
+      {
+        my($object, $context, $parent, $rel_meta, $depth) = @_;
+        ...
+      }
+      ...
+    }
+
+=item B<relationship>
+
+This handler is called just before a L<Rose::DB::Object::Metadata::Relationship>-derived object is descended into  (i.e., just before the sub-objectes related through this relationship are processed). The handler is passed the object that contains the relationship, the C<context>, the C<context>, and the L<relationship|Rose::DB::Object::Metadata::Relationship> object itself.
+
+The handler I<must> return the value to be used as the C<context> during the traversal of the objects related through this relationship.  The context returned may be different than the context passed in.  Example:
+
+    handlers =>
+    {
+      relationship => sub
+      {
+        my($object, $context, $rel_meta) = @_;
+        ...
+
+        return $context; # Important!
+      }
+      ...
+    }
+
+=item B<loop_avoided>
+
+This handler is called after the traversal refuses to process a sub-object in order to avoid a loop.  (This only happens if the C<allow_loops> is parameter is false, obviously.)  The handler is passed the object that was not processed, the C<context>, the parent object, the I<previous> C<context>, and the L<Rose::DB::Object::Metadata::Relationship>-derived object through which the sub-object was related.  Example:
+
+    handlers =>
+    {
+      loop_avoided => sub
+      {
+        my($object, $context, $parent, $prev_context, $rel_meta) = @_;
+        ...
+      }
+      ...
+    }
+
+=back
+
+=item B<max_depth DEPTH>
+
+Do not descend past DEPTH levels.  Depth is an integer starting from 0 for the object that the L<traverse_depth_first|/traverse_depth_first> method was called on and increasing with each level of related objects.  The default value is 100.
+
+=item B<prune CODEREF>
+
+A reference to a subroutine that is called on each L<Rose::DB::Object::Metadata::Relationship>-derived object encountered during traversal.  It is passed the relationship object, the parent object, and the depth.  If the subroutine returns true, then the entire sub-tree below this relationship will not be traversed.  Example:
+
+    prune => sub
+    {
+      my($rel_meta, $object, $depth) = @_;
+      ...
+      return 1  if($should_prune);
+      return 0;
+    },
 
 =back
 

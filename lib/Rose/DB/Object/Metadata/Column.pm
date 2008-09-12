@@ -3,6 +3,7 @@ package Rose::DB::Object::Metadata::Column;
 use strict;
 
 use Carp();
+use Scalar::Util();
 
 use Rose::DB::Object::Metadata::Util qw(:all);
 
@@ -69,6 +70,7 @@ Rose::Object::MakeMethods::Generic->make_methods
     'not_null',
     'triggers_disabled',
     'smart_modification',
+    'nonpersistent',
   ],
 
   scalar => 
@@ -1423,7 +1425,7 @@ sub method_code
 
   if(@_)
   {
-    return $self->{'method_code'}{$type} = shift;
+    Scalar::Util::weaken($self->{'method_code'}{$type} = shift);
   }
 
   return $self->{'method_code'}{$type};
@@ -1831,6 +1833,11 @@ Returns the name of the method used to set the column value.  This is a convenie
 =item B<name [NAME]>
 
 Get or set the name of the column, not including the table name, username, schema, or any other qualifier.
+
+=item B<nonpersistent [BOOL]>
+
+Get or set a boolean flag that indicates whether or not the column 
+is L<non-persistent|Rose::DB::Object::Metadata/nonpersistent_columns>.
 
 =item B<not_null [BOOL]>
 

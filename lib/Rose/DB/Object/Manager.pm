@@ -16,7 +16,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.769';
+our $VERSION = '0.771';
 
 our $Debug = 0;
 
@@ -408,6 +408,10 @@ sub get_objects
   my $fetch            = delete $args{'fetch_only'};
   my $hints            = delete $args{'hints'} || {};
   my $select           = $args{'select'};
+
+  # Alias by popular demand...
+  $args{'query'} = delete $args{'where'}
+    if($args{'where'} && !exists $args{'query'});
 
   my $no_forced_sort = delete $args{'no_forced_sort'};
 
@@ -1205,6 +1209,7 @@ sub get_objects
 
             foreach my $sort (@$sort_by)
             {
+              no warnings 'uninitialized';
               $sort =~ s/^(['"`]?)(\w+)\1(\s+(?:ASC|DESC))?$/t$i.$1$2$1$3/i
                 unless(ref $sort);
             }
@@ -1476,6 +1481,7 @@ sub get_objects
             # translate un-prefixed simple columns
             foreach my $sort (@$sort_by)
             {
+              no warnings 'uninitialized';
               $sort =~ s/^(['"`]?)(\w+)\1(\s+(?:ASC|DESC))?$/t$i.$1$2$1$3/i
                 unless(ref $sort);
             }
@@ -4258,6 +4264,8 @@ To select only products whose vendors are in the United States, use a query argu
 
 This assumes that the C<Product> class has a relationship or foreign key named "vendor" that points to the product's C<Vendor>, and that the C<Vendor> class has a foreign key or relationship named "region" that points to the vendor's C<Region>, and that 'vendor.region' (or any foreign key or relationship name chain that begins with 'vendor.region.') is an argument to the C<with_objects> or C<require_objects> parameters.
 
+Please note that the "L<tN|Rose::DB::Object::QueryBuilder/tables>" table aliases are not allowed in front of these kinds of chained relationship parameters.  (The chain of relationship names specifies the target table, so any "tN" alias would be redundant at best, or present a conflict at worst.)
+
 =item B<require_objects ARRAYREF>
 
 Only fetch rows from the primary table that have all of the associated sub-objects listed in ARRAYREF, a reference to an array of L<foreign key|Rose::DB::Object::Metadata/foreign_keys> or L<relationship|Rose::DB::Object::Metadata/relationships> names defined for C<object_class>.  The supported relationship types are "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>," "L<one to many|Rose::DB::Object::Metadata::Relationship::OneToMany>," and  "L<many to many|Rose::DB::Object::Metadata::Relationship::ManyToMany>".
@@ -4319,6 +4327,8 @@ If selecting sub-objects via the C<with_objects> or C<require_objects> parameter
 
 Be warned that you should provide some way to determine which column or method and which class an item belongs to: a tN prefix, a column name, or at the very least an "... AS ..." alias clause.
 
+If any C<with_objects> or C<require_objects> arguments are included in this call, the C<select> list must include at least the primary key column(s) from each table that contributes to the named relationships.
+
 This parameter conflicts with the C<fetch_only> parameter.  A fatal error will occur if both are used in the same call.
 
 If this parameter is omitted, then all columns from all participating tables are selected (optionally modified by the C<nonlazy> parameter).
@@ -4357,6 +4367,10 @@ If true, and if there is no explicit value for the C<select> parameter and more 
       ...
 
 These unique aliases provide a technique of last resort for unambiguously addressing a column in a query clause.
+
+=item B<where ARRAYREF>
+
+This is an alias for the C<query> parameter (see above).
 
 =item B<with_map_records [ BOOL | METHOD | HASHREF ]>
 

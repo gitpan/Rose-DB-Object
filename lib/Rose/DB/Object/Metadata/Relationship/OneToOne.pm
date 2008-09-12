@@ -5,9 +5,11 @@ use strict;
 use Rose::DB::Object::Metadata::Relationship::ManyToOne;
 our @ISA = qw(Rose::DB::Object::Metadata::Relationship::ManyToOne);
 
-our $VERSION = '0.761';
+our $VERSION = '0.771';
 
 sub type { 'one to one' }
+
+sub is_singular { 1 }
 
 sub requires_preexisting_parent_object
 {
@@ -108,6 +110,10 @@ For the method types "get_set", "get_set_now", and "get_set_on_save", the relati
 For the method types "delete_now" and "delete_on_save", the relationship's  L<name|Rose::DB::Object::Metadata::Relationship/name> prefixed with "delete_" is returned.
 
 Otherwise, undef is returned.
+
+=item B<is_singular>
+
+Returns true.
 
 =item B<foreign_key [FK]>
 

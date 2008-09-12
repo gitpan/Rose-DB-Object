@@ -14,7 +14,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 
 use Rose::DB::Object::Constants qw(PRIVATE_PREFIX);
 
-our $VERSION = '0.770';
+our $VERSION = '0.771';
 
 our $Debug = 0;
 
@@ -116,6 +116,8 @@ __PACKAGE__->method_maker_info
 );
 
 sub type { 'many to many' }
+
+sub is_singular { 0 }
 
 use constant MAP_RECORD_ATTR   => PRIVATE_PREFIX . '_map_record';
 use constant MAP_RECORD_METHOD => 'map_record';
@@ -646,15 +648,15 @@ Now the code:
 
 =item C<count>
 
-L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_key|Rose::DB::Object::MakeMethods::Generic/objects_by_map>, C<interface =E<gt> 'count'> ...
+L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_map|Rose::DB::Object::MakeMethods::Generic/objects_by_map>, C<interface =E<gt> 'count'> ...
 
 =item C<find>
 
-L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_key|Rose::DB::Object::MakeMethods::Generic/objects_by_map>, C<interface =E<gt> 'find'> ...
+L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_map|Rose::DB::Object::MakeMethods::Generic/objects_by_map>, C<interface =E<gt> 'find'> ...
 
 =item C<iterator>
 
-L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_key|Rose::DB::Object::MakeMethods::Generic/objects_by_map>, C<interface =E<gt> 'iterator'> ...
+L<Rose::DB::Object::MakeMethods::Generic>, L<objects_by_map|Rose::DB::Object::MakeMethods::Generic/objects_by_map>, C<interface =E<gt> 'iterator'> ...
 
 =item C<get_set>
 
@@ -706,6 +708,10 @@ For the method types "add_now" and "add_on_save", the relationship's  L<name|Ros
 For the method type "count", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> suffixed with "_count" is returned.
 
 Otherwise, undef is returned.
+
+=item B<is_singular>
+
+Returns false.
 
 =item B<manager_class [CLASS]>
 

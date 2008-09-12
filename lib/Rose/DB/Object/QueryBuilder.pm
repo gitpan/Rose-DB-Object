@@ -11,7 +11,7 @@ our @ISA = qw(Exporter);
 
 our @EXPORT_OK = qw(build_select build_where_clause);
 
-our $VERSION = '0.769';
+our $VERSION = '0.771';
 
 our $Debug = 0;
 
@@ -67,7 +67,7 @@ sub build_select
   my $logic        = delete $args{'logic'} || 'AND';
   my $columns      = $args{'columns'};  
   my $all_columns  = $args{'all_columns'} || {};
-  my $query_arg    = delete $args{'query'};
+  my $query_arg    = delete $args{'query'} || delete $args{'where'};
   my $sort_by      = delete $args{'sort_by'};
   my $group_by     = delete $args{'group_by'};
   my $limit_suffix = delete $args{'limit_suffix'};
@@ -900,13 +900,13 @@ sub _build_clause
           my $should_inline = 
             ($db && $col_meta && $col_meta->should_inline_value($db, $val));
 
-          if($should_inline || $force_inline)
-          {
-            push(@new_vals, $val);
-          }
-          elsif(ref $val eq 'SCALAR')
+          if(ref $val eq 'SCALAR')
           {
             push(@new_vals, $$val);
+          }
+          elsif($should_inline || $force_inline)
+          {
+            push(@new_vals, $val);
           }
           else
           {
@@ -1536,7 +1536,7 @@ A column name and a table name joined by a dot.  This is the "fully qualified" c
 
 =item C<tN.column>
 
-A column name and a table alias joined by a dot.  The table alias is in the form "tN", where "N" is a number starting from 1.  See the documentation for C<tables> parameter above to learn how table aliases are assigned to tables.
+A column name and a table alias joined by a dot.  The table alias is in the form "tN", where "N" is a number starting from 1.  See the documentation for C<tables> parameter below to learn how table aliases are assigned to tables.
 
 =item Any of the above prefixed with "!"
 

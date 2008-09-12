@@ -396,4 +396,44 @@ sub test_memory_cycle_ok
     Test::More::ok(1, "$msg (skipped)");
 }
 
+my %Column_Args =
+(
+  enum => [ values => [ 'a' .. 'z' ] ],
+);
+
+sub nonpersistent_column_definitions
+{
+  my @columns;
+  my $i = 1;
+
+  foreach my $type (Rose::DB::Object::Metadata->column_type_names)
+  {
+    next  if($type =~ /(?:chkpass| to |serial|array|\bset\b)/);
+    push(@columns, 'np' . $i++ => { type => $type, smart_modification => 0,
+         temp => 1, @{ $Column_Args{$type} || [] } });
+  }
+
+  return @columns;
+}
+
+sub modify_nonpersistent_column_values
+{
+  my($object) = shift;
+  
+  foreach my $column ($object->meta->nonpersistent_columns)
+  {
+    my $method = $column->mutator_method_name;
+    $object->$method(undef); # with smart modification off, this should be sufficient
+  }
+}
+
+sub add_nonpersistent_columns_and_methods
+{
+  my($class) = shift;
+  my $meta = $class->meta;
+  
+  $meta->add_columns(nonpersistent_column_definitions());
+  $meta->make_nonpersistent_column_methods();
+}
+
 1;

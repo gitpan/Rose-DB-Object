@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Rose-DB-Object
-version:             0.770
+version:             0.771
 abstract:            ~
 license:             ~
 author:              ~
@@ -10,6 +10,7 @@ requires:
     Bit::Vector:                   0
     Clone:                         0.20
     Cwd:                           0
+    Data::Dumper:                  2.121
     DateTime:                      0
     DBI:                           1.40
     File::Path:                    0
@@ -17,8 +18,8 @@ requires:
     List::MoreUtils:               0
     Math::BigInt:                  1.77
     Rose::DateTime::Util:          0.532
-    Rose::DB:                      0.742
-    Rose::Object:                  0.84
+    Rose::DB:                      0.745
+    Rose::Object:                  0.852
     Scalar::Util:                  0
     Test::More:                    0
     Time::Clock:                   0

@@ -12,7 +12,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 
 our $Debug = 0;
 
-our $VERSION = '0.770';
+our $VERSION = '0.771';
 
 __PACKAGE__->default_auto_method_types(qw(find get_set_on_save add_on_save));
 
@@ -104,6 +104,10 @@ __PACKAGE__->method_maker_info
 );
 
 sub type { 'one to many' }
+
+sub is_singular { 0 }
+
+sub foreign_class { shift->class(@_) }
 
 *map_column = \&key_column;
 *column_map = \&key_columns;
@@ -261,6 +265,10 @@ For the method type "find", the relationship's L<name|Rose::DB::Object::Metadata
 For the method type "count", the relationship's L<name|Rose::DB::Object::Metadata::Relationship/name> suffixed with "_count" is returned.
 
 Otherwise, undef is returned.
+
+=item B<is_singular>
+
+Returns false.
 
 =item B<manager_class [CLASS]>
 

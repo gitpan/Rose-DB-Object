@@ -3,6 +3,7 @@ package Rose::DB::Object::Metadata::Relationship::ManyToOne;
 use strict;
 
 use Carp();
+use Scalar::Util();
 
 use Rose::DB::Object::Metadata::Relationship;
 our @ISA = qw(Rose::DB::Object::Metadata::Relationship);
@@ -10,7 +11,7 @@ our @ISA = qw(Rose::DB::Object::Metadata::Relationship);
 use Rose::Object::MakeMethods::Generic;
 use Rose::DB::Object::MakeMethods::Generic;
 
-our $VERSION = '0.764';
+our $VERSION = '0.771';
 
 __PACKAGE__->default_auto_method_types(qw(get_set_on_save delete_on_save));
 
@@ -85,6 +86,10 @@ __PACKAGE__->method_maker_info
 );
 
 sub type { 'many to one' }
+
+sub is_singular { 1 }
+
+sub foreign_class { shift->class(@_) }
 
 sub share_db    { shift->_fk_or_self(share_db => @_)     }
 sub key_column  { shift->_fk_or_self(key_column => @_)   }
@@ -161,13 +166,15 @@ sub make_methods
 
       foreach my $column_name (keys %$column_map)
       {
-        Scalar::Util::weaken(my $column = $meta->column($column_name));
+        my $column   = $meta->column($column_name);
         my $accessor = $column->accessor_method_name;
 
         my $trigger_name = 'clear_rel_' . $self->name;
 
         unless(defined $column->builtin_trigger_index('on_set', $trigger_name))
         {
+          my $wolumn = Scalar::Util::weaken($column);
+
           $column->add_builtin_trigger(
             event => 'on_set',
             name  => $trigger_name,
@@ -175,7 +182,7 @@ sub make_methods
             {
               my($obj) = shift;
               return  if($self->{'disable_column_triggers'});
-              local $column->{'triggers_disabled'} = 1;
+              local $wolumn->{'triggers_disabled'} = 1;
               $obj->$method(undef)  unless(defined $obj->$accessor());
             });
         }
@@ -356,6 +363,10 @@ Otherwise, undef is returned.
 Get or set the L<Rose::DB::Object::Metadata::ForeignKey> object to which this object delegates all responsibility.
 
 Many to one relationships encapsulate essentially the same information as foreign keys.  If a foreign key object is stored in this relationship object, then I<all compatible operations are passed through to the foreign key object.>  This includes making object method(s) and adding or modifying the local-to-foreign column map.  In other words, if a L<foreign_key|/foreign_key> is set, the relationship object simply acts as a proxy for the foreign key object.
+
+=item B<is_singular>
+
+Returns true.
 
 =item B<manager_class [CLASS]>
 

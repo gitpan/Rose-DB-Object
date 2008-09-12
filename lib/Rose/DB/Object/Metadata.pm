@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.769';
+our $VERSION = '0.771';
 
 our $Debug = 0;
 
@@ -58,6 +58,7 @@ use Rose::Object::MakeMethods::Generic
   [
     allow_inline_column_values  => { default => 0 },
     is_initialized              => { default => 0 },
+    is_auto_initializating      => { default => 0 },
     allow_auto_initialization   => { default => 0 },
     was_auto_initialized        => { default => 0 },
     initialized_foreign_keys    => { default => 0 },
@@ -72,6 +73,7 @@ use Rose::Object::MakeMethods::Generic
   'array --get_set_inited' =>
   [
     'columns_ordered',
+    'nonpersistent_columns_ordered',
   ]
 );
 
@@ -91,7 +93,8 @@ use Rose::Class::MakeMethods::Generic
   inheritable_hash =>
   [
     column_type_classes => { interface => 'get_set_all' },
-    _column_type_class   => { interface => 'get_set', hash_key => 'column_type_classes' },
+    column_type_names   => { interface => 'keys', hash_key => 'column_type_classes' },
+    _column_type_class  => { interface => 'get_set', hash_key => 'column_type_classes' },
     _delete_column_type_class => { interface => 'delete', hash_key => 'column_type_classes' },
 
     auto_helper_classes      => { interface => 'get_set_all' },
@@ -380,7 +383,7 @@ sub handle_error
   }
   elsif($mode eq 'cluck')
   {
-    Carp::croak $object->error;
+    Carp::cluck $object->error;
   }
   elsif($mode eq 'confess')
   {
@@ -801,6 +804,34 @@ sub delete_columns
   return;
 }
 
+sub delete_nonpersistent_columns
+{
+  my($self, $name) = @_;
+  $self->{'nonpersistent_columns'} = {};
+  $self->{'nonpersistent_columns_ordered'} = [];
+  return;
+}
+
+sub delete_nonpersistent_column
+{
+  my($self, $name) = @_;
+  delete $self->{'nonpersistent_columns'}{$name};
+
+  # Remove from ordered list too  
+  my $columns = $self->nonpersistent_columns_ordered;
+
+  for(my $i = 0; $i < @$columns; $i++)
+  {
+    if($columns->[$i]->name eq $name)
+    {
+      splice(@$columns, $i, 1);
+      last;
+    }
+  }
+
+  return;
+}
+
 sub first_column { shift->columns_ordered->[0] }
 
 sub sync_keys_to_columns
@@ -871,6 +902,21 @@ sub column
   return undef;
 }
 
+sub nonpersistent_column
+{
+  my($self, $name) = (shift, shift);
+
+  if(@_)
+  {
+    $self->delete_nonpersistent_column($name);
+    $self->add_nonpersistent_column($name => @_);
+  }
+
+  return $self->{'nonpersistent_columns'}{$name}  if($self->{'nonpersistent_columns'}{$name});
+  return undef;
+}
+
+
 sub columns
 {
   my($self) = shift;
@@ -882,6 +928,19 @@ sub columns
   }
 
   return $self->columns_ordered;
+}
+
+sub nonpersistent_columns
+{
+  my($self) = shift;
+
+  if(@_)
+  {
+    $self->delete_nonpersistent_columns;
+    $self->add_nonpersistent_columns(@_);
+  }
+
+  return $self->nonpersistent_columns_ordered;
 }
 
 sub num_columns
@@ -908,15 +967,32 @@ sub lazy_columns
     [ grep { $_->lazy } $self->columns_ordered ];
 }
 
+# XXX: Super-lame code sharing via dynamically-scoped flag var
+our $Nonpersistent;
+
+sub add_nonpersistent_columns
+{
+  local $Nonpersistent = 1;
+  shift->_add_columns(@_);
+}
+
+sub add_nonpersistent_column { shift->add_nonpersistent_columns(@_) }
+
 sub add_columns
+{
+  local $Nonpersistent = 0;
+  shift->_add_columns(@_);
+}
+
+sub add_column { shift->add_columns(@_) }
+
+sub _add_columns
 {
   my($self) = shift;
 
   my $class = ref $self;
 
-  $self->_clear_column_generated_values;
-
-  my @columns;
+  my(@columns, @nonpersistent_columns);
 
   ARG: while(@_)
   {
@@ -930,12 +1006,23 @@ sub add_columns
         unless($column->name =~ /\S/);
 
       $column->parent($self);
-      $self->{'columns'}{$column->name} = $column;
-      push(@columns, $column);
+      $column->nonpersistent(1)  if($Nonpersistent);
+
+      if($column->nonpersistent)
+      {
+        $self->{'nonpersistent_columns'}{$column->name} = $column;
+        push(@nonpersistent_columns, $column);      
+      }
+      else
+      {
+        $self->{'columns'}{$column->name} = $column;
+        push(@columns, $column);      
+      }
+
       next;
     }
 
-    unless(ref $_[0])
+    unless(ref $_[0]) # bare column name, persistent only
     {
       my $column_class = $self->original_class->column_type_class('scalar')
         or Carp::croak "No column class set for column type 'scalar'";
@@ -951,8 +1038,19 @@ sub add_columns
       my $column = $_[0];
       $column->name($name);
       $column->parent($self);
-      $self->{'columns'}{$name} = $column;
-      push(@columns, $column);
+
+      $column->nonpersistent(1)  if($Nonpersistent);
+
+      if($column->nonpersistent)
+      {
+        $self->{'nonpersistent_columns'}{$column->name} = $column;
+        push(@nonpersistent_columns, $column);      
+      }
+      else
+      {
+        $self->{'columns'}{$column->name} = $column;
+        push(@columns, $column);      
+      }
     }
     elsif(ref $_[0] eq 'HASH')
     {
@@ -992,13 +1090,29 @@ sub add_columns
         $triggers{$event} = delete $info->{$event}  if(exists $info->{$event});
       }
 
+      if(delete $info->{'temp'}) # coerce temp to nonpersistent
+      {
+        $info->{'nonpersistent'} = 1;
+      }
+
       #$Debug && warn $self->class, " - adding $name $column_class\n";
       # XXX: Order of args is important here!  Parent must be set first
       # because some params rely on it being present when they're set.
-      my $column = $self->{'columns'}{$name} = 
+      my $column = 
         $column_class->new(parent => $self, %$info, name => $name);
 
-      push(@columns, $column);
+      $column->nonpersistent(1)  if($Nonpersistent);
+
+      if($column->nonpersistent)
+      {
+        $self->{'nonpersistent_columns'}{$column->name} = $column;
+        push(@nonpersistent_columns, $column);      
+      }
+      else
+      {
+        $self->{'columns'}{$column->name} = $column;
+        push(@columns, $column);      
+      }
 
       # Set or add auto-created method names
       if($methods || $add_methods)
@@ -1053,7 +1167,8 @@ sub add_columns
     }
   }
 
-  # Handle as-yet undocumented smart modification defaults
+  # Handle as-yet undocumented smart modification defaults.
+  # Smart modification is only relevant
   foreach my $column (@columns)
   {
     if($column->can('smart_modification') && !defined $column->{'smart_modification'})
@@ -1062,12 +1177,20 @@ sub add_columns
     }
   }
 
-  push(@{$self->{'columns_ordered'}}, @columns);
+  if(@columns)
+  {
+    push(@{$self->{'columns_ordered'}}, @columns);
+    $self->_clear_column_generated_values;
+  }
+  
+  if(@nonpersistent_columns)
+  {
+    push(@{$self->{'nonpersistent_columns_ordered'}}, @nonpersistent_columns);
+    $self->_clear_nonpersistent_column_generated_values;
+  }
 
-  return wantarray ? @columns : \@columns;
+  return wantarray ? (@columns, @nonpersistent_columns) :  [ @columns, @nonpersistent_columns ];
 }
-
-sub add_column { shift->add_columns(@_) }
 
 sub relationship
 {
@@ -1766,6 +1889,55 @@ sub make_column_methods
   return;
 }
 
+sub make_nonpersistent_column_methods
+{
+  my($self) = shift;
+  my(%args) = @_;
+
+  my $class = $self->class;
+
+  $args{'target_class'} = $class;
+
+  foreach my $column ($self->nonpersistent_columns_ordered)
+  {
+    unless($column->validate_specification)
+    {
+      Carp::croak "Column specification for column '", $column->name, 
+                  "' in class ", $self->class, " is invalid: ",
+                  $column->error;
+    }
+
+    my $name = $column->name;
+    my $method;
+
+    foreach my $type ($column->auto_method_types)
+    {
+      $method = $self->method_name_from_column_name($name, $type)
+        or Carp::croak "No method name defined for column '$name' ",
+                       "method type '$type'";
+
+      if(my $reason = $self->method_name_is_reserved($method, $class))
+      {
+        Carp::croak "Cannot create method '$method' - $reason  ",
+                    "Use alias_column() to map it to another name."
+      }
+
+      $column->method_name($type => $method);
+    }
+
+    #$Debug && warn $self->class, " - make methods for column $name\n";
+
+    $column->make_methods(%args);
+  }
+
+  $self->_clear_nonpersistent_column_generated_values;
+
+  # Initialize method name hashes
+  $self->nonpersistent_column_accessor_method_names;
+
+  return;
+}
+
 sub make_foreign_key_methods
 {
   my($self) = shift;
@@ -2087,7 +2259,11 @@ sub make_relationship_methods
       $relationship->method_name($type => $method);
 
       # Initialize/reset preserve_existing flag
-      $args{'preserve_existing'} = $preserve_existing_arg || $self->allow_auto_initialization;
+      if($self->is_auto_initializating)
+      {
+        $args{'preserve_existing'} = $preserve_existing_arg || $self->allow_auto_initialization;
+      }
+
       delete $args{'replace_existing'}  if($args{'preserve_existing'});
 
       # If a corresponding foreign key exists, the preserve any existing
@@ -2298,6 +2474,7 @@ sub make_methods
   my($self) = shift;
 
   $self->make_column_methods(@_);
+  $self->make_nonpersistent_column_methods(@_);
   $self->make_foreign_key_methods(@_);
   $self->make_relationship_methods(@_);
 }
@@ -2607,6 +2784,13 @@ sub column_names
   return wantarray ? @{$self->{'column_names'}} : $self->{'column_names'};
 }
 
+sub nonpersistent_column_names
+{
+  my($self) = shift;
+  $self->{'nonpersistent_column_names'} ||= [ map { $_->name } $self->nonpersistent_columns_ordered ];
+  return wantarray ? @{$self->{'nonpersistent_column_names'}} : $self->{'nonpersistent_column_names'};
+}
+
 sub nonlazy_column_names
 {
   my($self) = shift;
@@ -2756,6 +2940,17 @@ sub column_accessor_method_names
                      $self->{'column_accessor_method_names'};
 }
 
+sub nonpersistent_column_accessor_method_names
+{
+  my($self) = shift;
+
+  $self->{'nonpersistent_column_accessor_method_names'} ||= 
+    [ map { $self->nonpersistent_column_accessor_method_name($_) } $self->nonpersistent_column_names ];
+
+  return wantarray ? @{$self->{'nonpersistent_column_accessor_method_names'}} :
+                     $self->{'nonpersistent_column_accessor_method_names'};
+}
+
 sub nonlazy_column_accessor_method_names
 {
   my($self) = shift;
@@ -2776,6 +2971,17 @@ sub column_mutator_method_names
 
   return wantarray ? @{$self->{'column_mutator_method_names'}} :
                      $self->{'column_mutator_method_names'};
+}
+
+sub nonpersistent_column_mutator_method_names
+{
+  my($self) = shift;
+
+  $self->{'nonpersistent_column_mutator_method_names'} ||= 
+    [ map { $self->nonpersistent_column_mutator_method_name($_) } $self->nonpersistent_column_names ];
+
+  return wantarray ? @{$self->{'nonpersistent_column_mutator_method_names'}} :
+                     $self->{'nonpersistent_column_mutator_method_names'};
 }
 
 sub nonlazy_column_mutator_method_names
@@ -2868,12 +3074,26 @@ sub column_accessor_method_name
     ($_[0]->column($_[1]) ? $_[0]->column($_[1])->accessor_method_name : undef);
 }
 
+sub nonpersistent_column_accessor_method_name
+{
+  $_[0]->{'nonpersistent_column_accessor_method'}{$_[1]} ||= 
+    ($_[0]->nonpersistent_column($_[1]) ? $_[0]->nonpersistent_column($_[1])->accessor_method_name : undef);
+}
+
 sub column_accessor_method_names_hash { shift->{'column_accessor_method'} }
+
+sub nonpersistent_column_accessor_method_names_hash { shift->{'nonpersistent_column_accessor_method'} }
 
 sub column_mutator_method_name
 {
   $_[0]->{'column_mutator_method'}{$_[1]} ||= 
     ($_[0]->column($_[1]) ? $_[0]->column($_[1])->mutator_method_name : undef);
+}
+
+sub nonpersistent_column_mutator_method_name
+{
+  $_[0]->{'nonpersistent_column_mutator_method'}{$_[1]} ||= 
+    ($_[0]->nonpersistent_column($_[1]) ? $_[0]->nonpersistent_column($_[1])->mutator_method_name : undef);
 }
 
 sub column_mutator_method_names_hash { shift->{'column_mutator_method'} }
@@ -3793,35 +4013,35 @@ sub _clear_table_generated_values
 {
   my($self) = shift;
 
-  $self->{'fq_table'}          = undef;
-  $self->{'fq_table_sql'}      = undef;
-  $self->{'get_column_sql_tmpl'} = undef;
-  $self->{'load_sql'}          = undef;
-  $self->{'load_all_sql'}      = undef;
-  $self->{'delete_sql'}        = undef;
-  $self->{'fq_primary_key_sequence_names'} = undef;
-  $self->{'primary_key_sequence_names'} = undef;
-  $self->{'insert_sql'}        = undef;
+  $self->{'fq_table'}                       = undef;
+  $self->{'fq_table_sql'}                   = undef;
+  $self->{'get_column_sql_tmpl'}            = undef;
+  $self->{'load_sql'}                       = undef;
+  $self->{'load_all_sql'}                   = undef;
+  $self->{'delete_sql'}                     = undef;
+  $self->{'fq_primary_key_sequence_names'}  = undef;
+  $self->{'primary_key_sequence_names'}     = undef;
+  $self->{'insert_sql'}                     = undef;
   $self->{'insert_sql_with_inlining_start'} = undef;
   $self->{'insert_changes_only_sql_prefix'} = undef;
-  $self->{'update_sql_prefix'} = undef;
+  $self->{'update_sql_prefix'}              = undef;
   $self->{'update_sql_with_inlining_start'} = undef;
-  $self->{'update_all_sql'}    = undef;
+  $self->{'update_all_sql'}                 = undef;
 }
 
 sub _clear_column_generated_values
 {
   my($self) = shift;
 
-  $self->{'fq_table'}               = undef;
-  $self->{'fq_table_sql'}           = undef;
-  $self->{'column_names'}           = undef;
-  $self->{'num_columns'}            = undef;
-  $self->{'nonlazy_column_names'}   = undef;
-  $self->{'lazy_column_names'}      = undef;
-  $self->{'column_names_sql'}       = undef;
-  $self->{'get_column_sql_tmpl'}    = undef;
-  $self->{'column_names_string_sql'} = undef;
+  $self->{'fq_table'}                             = undef;
+  $self->{'fq_table_sql'}                         = undef;
+  $self->{'column_names'}                         = undef;
+  $self->{'num_columns'}                          = undef;
+  $self->{'nonlazy_column_names'}                 = undef;
+  $self->{'lazy_column_names'}                    = undef;
+  $self->{'column_names_sql'}                     = undef;
+  $self->{'get_column_sql_tmpl'}                  = undef;
+  $self->{'column_names_string_sql'}              = undef;
   $self->{'nonlazy_column_names_string_sql'}      = undef;
   $self->{'column_rw_method_names'}               = undef;
   $self->{'column_accessor_method_names'}         = undef;
@@ -3835,21 +4055,32 @@ sub _clear_column_generated_values
   $self->{'select_columns_string_sql'}            = undef;
   $self->{'select_columns_sql'}                   = undef;
   $self->{'select_nonlazy_columns_sql'}           = undef;
-  $self->{'method_columns'}         = undef;
-  $self->{'column_accessor_method'} = undef;
-  $self->{'column_mutator_method'}  = undef;
-  $self->{'column_rw_method'}       = undef;
-  $self->{'load_sql'}               = undef;
-  $self->{'load_all_sql'}           = undef;
-  $self->{'update_all_sql'}         = undef;
-  $self->{'update_sql_prefix'}      = undef;
-  $self->{'insert_sql'}             = undef;
-  $self->{'insert_sql_with_inlining_start'} = undef;
-  $self->{'update_sql_with_inlining_start'} = undef;
-  $self->{'insert_changes_only_sql_prefix'} = undef;
-  $self->{'delete_sql'}             = undef;
-  $self->{'insert_columns_placeholders_sql'} = undef;
-  $self->{'dbi_requires_bind_param'} = undef;
+  $self->{'method_columns'}                       = undef;
+  $self->{'column_accessor_method'}               = undef;
+  $self->{'column_mutator_method'}                = undef;
+  $self->{'column_rw_method'}                     = undef;
+  $self->{'load_sql'}                             = undef;
+  $self->{'load_all_sql'}                         = undef;
+  $self->{'update_all_sql'}                       = undef;
+  $self->{'update_sql_prefix'}                    = undef;
+  $self->{'insert_sql'}                           = undef;
+  $self->{'insert_sql_with_inlining_start'}       = undef;
+  $self->{'update_sql_with_inlining_start'}       = undef;
+  $self->{'insert_changes_only_sql_prefix'}       = undef;
+  $self->{'delete_sql'}                           = undef;
+  $self->{'insert_columns_placeholders_sql'}      = undef;
+  $self->{'dbi_requires_bind_param'}              = undef;
+}
+
+sub _clear_nonpersistent_column_generated_values
+{
+  my($self) = shift;
+
+  $self->{'nonpersistent_column_names'}                 = undef;
+  $self->{'nonpersistent_column_accessor_method_names'} = undef;
+  $self->{'nonpersistent_column_accessor_method'}       = undef;
+  $self->{'nonpersistent_column_mutator_method_names'}  = undef;
+  $self->{'nonpersistent_column_mutator_method'}        = undef;
 }
 
 sub _clear_primary_key_column_generated_values
@@ -3888,7 +4119,7 @@ sub method_name_from_column_name
 {
   my($self, $column_name, $method_type) = @_;
 
-  my $column = $self->column($column_name)
+  my $column = $self->column($column_name) || $self->nonpersistent_column($column_name)
     or Carp::confess "No such column: $column_name";
 
   return $self->method_name_from_column($column, $method_type);
@@ -4565,6 +4796,10 @@ The default mapping of type names to class names is:
 
   chkpass   => Rose::DB::Object::Metadata::Column::Pg::Chkpass
 
+=item B<column_type_names>
+
+Returns the list (in list context) or reference to an array (in scalar context) of registered column type names.
+
 =item B<convention_manager_class NAME [, CLASS]>
 
 Given the string NAME, return the name of the L<Rose::DB::Object::ConventionManager>-derived class L<mapped|/convention_manager_classes> to that name.
@@ -4681,6 +4916,8 @@ If the hash contains the key "primary_key" with a true value, then the column is
 
 If the hash contains the key "alias", then the value of that key is used as the alias for the column.  This is a shorthand equivalent to explicitly calling the L<alias_column|/alias_column> column method.
 
+If the hash contains the key "temp" and its value is true, then the column is actually added to the list of L<non-persistent columns|/nonpersistent_columns>.
+
 If the hash contains a key with the same name as a L<column trigger event type|Rose::DB::Object::Metadata::Column/TRIGGERS> (e.g., "on_set", "on_load", "inflate") then the value of that key must be a code reference or a reference to an array of code references, which will be L<added|Rose::DB::Object::Metadata::Column/add_trigger> to the list of the column's L<triggers|Rose::DB::Object::Metadata::Column/TRIGGERS> for the specified event type.
 
 If the hash contains the key "methods", then its value must be a reference to an array or a reference to a hash.  The L<auto_method_types|Rose::DB::Object::Metadata::Column/auto_method_types> of the column are then set to the values of the referenced array, or the keys of the referenced hash.  The values of the referenced hash are used to set the L<method_name|Rose::DB::Object::Metadata::Column/method_name> for their corresponding method types.
@@ -4734,6 +4971,14 @@ Example:
       Rose::DB::Object::Metadata::Column::Date->new(
         name => 'start_date'),
     );
+
+=item B<add_nonpersistent_column ARGS>
+
+This is an alias for the L<add_nonpersistent_columns|/add_nonpersistent_columns> method.
+
+=item B<add_nonpersistent_columns ARGS>
+
+This method behaves like the L<add_columns|/add_columns> method, except that it adds to the list of L<non-persistent columns|/nonpersistent_columns>.  See the documentation for the L<nonpersistent_columns|/nonpersistent_columns> method for more information.
 
 =item B<add_foreign_keys ARGS>
 
@@ -5048,7 +5293,7 @@ Delete the column named NAME.
 
 =item B<delete_columns>
 
-Delete all of the columns.
+Delete all of the L<columns|/columns>.
 
 =item B<delete_column_type_class TYPE>
 
@@ -5057,6 +5302,14 @@ Delete the type/class L<mapping|/column_type_classes> entry for the column type 
 =item B<delete_convention_manager_class NAME>
 
 Delete the name/class L<mapping|/convention_manager_classes> entry for the convention manager class mapped to NAME.
+
+=item B<delete_nonpersistent_column NAME>
+
+Delete the L<non-persistent column|/nonpersistent_columns> named NAME.
+
+=item B<delete_nonpersistent_columns>
+
+Delete all of the L<nonpersistent_columns|/nonpersistent_columns>.
 
 =item B<delete_relationship NAME>
 
@@ -5168,7 +5421,7 @@ This method creates a L<Rose::DB::Object::Manager>-derived class to manage objec
 
 =item B<make_methods [ARGS]>
 
-Create object methods in L<class|/class> for each L<column|/columns>, L<foreign key|/foreign_keys>, and L<relationship|/relationship>.  This is done by calling L<make_column_methods|/make_column_methods>, L<make_foreign_key_methods|/make_foreign_key_methods>, and L<make_relationship_methods|/make_relationship_methods>, in that order.
+Create object methods in L<class|/class> for each L<column|/columns>, L<foreign key|/foreign_keys>, and L<relationship|/relationship>.  This is done by calling L<make_column_methods|/make_column_methods>, L<make_nonpersistent_column_methods|/make_nonpersistent_column_methods>, L<make_foreign_key_methods|/make_foreign_key_methods>, and L<make_relationship_methods|/make_relationship_methods>, in that order.
 
 ARGS are name/value pairs which are passed on to the other C<make_*_methods> calls.  They are all optional.  Valid ARGS are:
 
@@ -5224,6 +5477,10 @@ For each L<auto_method_type|Rose::DB::Object::Metadata::ForeignKey/auto_method_t
 
 Foreign keys and relationships with the L<type|Rose::DB::Object::Metadata::Relationship/type> "one to one" or "many to one" both encapsulate essentially the same information.  They are kept in sync when this method is called by setting the L<foreign_key|Rose::DB::Object::Metadata::Relationship::ManyToOne/foreign_key> attribute of each "L<one to one|Rose::DB::Object::Metadata::Relationship::OneToOne>" or "L<many to one|Rose::DB::Object::Metadata::Relationship::ManyToOne>" relationship object to be the corresponding foreign key object.
 
+=item B<make_nonpersistent_column_methods [ARGS]>
+
+This method behaves like the L<make_column_methods|/make_column_methods> method, except that it works with L<non-persistent columns|/nonpersistent_columns>.  See the documentation for the L<nonpersistent_columns|/nonpersistent_columns> method for more information on non-persistent columns.
+
 =item B<make_relationship_methods [ARGS]>
 
 Create object methods in L<class|/class> for each L<relationship|/relationships>.  ARGS are name/value pairs, and are all optional.  Valid ARGS are:
@@ -5277,6 +5534,42 @@ Given a L<Rose::DB::Object::Metadata::Column>-derived column object and a column
 =item B<method_name_is_reserved NAME, CLASS>
 
 Given the method name NAME and the class name CLASS, returns true if the method name is reserved (i.e., is used by the CLASS API), false otherwise.
+
+=item B<nonpersistent_column NAME [, COLUMN | HASHREF]>
+
+This method behaves like the L<column|/column> method, except that it works with L<non-persistent columns|/nonpersistent_columns>.  See the documentation for the L<nonpersistent_columns|/nonpersistent_columns> method for more information on non-persistent columns.
+
+=item B<nonpersistent_columns [ARGS]>
+
+Get or set the full list of non-persistent columns.  If ARGS are passed, the non-persistent column list is cleared and then ARGS are passed to the L<add_nonpersistent_columns|/add_nonpersistent_columns> method.
+
+Returns a list of non-persistent column objects in list context, or a reference to an array of non-persistent column objects in scalar context.
+
+Non-persistent columns allow the creation of object attributes and associated accessor/mutator methods exactly like those associated with L<columns|/columns>, but I<without> ever sending any of these attributes to (or pulling any these attributes from) the database.
+
+Non-persistent columns are tracked entirely separately from L<columns|/columns>.  L<Adding|/add_nonpersistent_columns>, L<deleting|/delete_nonpersistent_column>, and listing non-persistent columns has no affect on the list of normal (i.e., "persistent") L<columns|/column>.
+
+You cannot query the database (e.g., using L<Rose::DB::Object::Manager>) and filter on a non-persistent column; non-persistent columns do not exist in the database.  This feature exists solely to leverage the method creation abilities of the various column classes.
+
+=item B<nonpersistent_column_accessor_method_name NAME>
+
+Returns the name of the "get" method for the L<non-persistent|/nonpersistent_columns> column named NAME.  This is just a shortcut for C<$meta-E<gt>nonpersistent_column(NAME)-E<gt>accessor_method_name>.
+
+=item B<nonpersistent_column_accessor_method_names>
+
+Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "set" methods for all the L<non-persistent|/nonpersistent_columns> columns, in the order that the columns are returned by L<nonpersistent_column_names|/nonpersistent_column_names>.
+
+=item B<nonpersistent_column_mutator_method_name NAME>
+
+Returns the name of the "set" method for the L<non-persistent|/nonpersistent_columns> column named NAME.  This is just a shortcut for C<$meta-E<gt>nonpersistent_column(NAME)-E<gt>mutator_method_name>.
+
+=item B<nonpersistent_column_mutator_method_names>
+
+Returns a list (in list context) or a reference to the array (in scalar context) of the names of the "set" methods for all the L<non-persistent columns|/nonpersistent_columns>, in the order that the columns are returned by L<nonpersistent_column_names|/nonpersistent_column_names>.
+
+=item B<nonpersistent_column_names>
+
+Returns a list (in list context) or a reference to an array (in scalar context) of L<non-persistent|/nonpersistent_columns> column names.
 
 =item B<pk_columns [COLUMNS]>
 

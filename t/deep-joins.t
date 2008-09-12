@@ -11,11 +11,16 @@ BEGIN
   use_ok('Rose::DB::Object::Helpers');
 }
 
+use Data::Dumper;
+$Data::Dumper::Sortkeys = 1;
+
 our %Have;
 
 #
 # Tests
 #
+
+use Rose::DB::Object::Constants qw(STATE_SAVING);
 
 #$Rose::DB::Object::Manager::Debug = 1;
 
@@ -60,6 +65,8 @@ foreach my $db_type (qw(sqlite mysql pg pg_with_schema informix))
 
   my $product_class = $class_prefix  . '::Product';
   my $manager_class = $product_class . '::Manager';
+
+  Rose::DB::Object::Helpers->import(-target_class => $product_class, qw(as_tree new_from_tree init_with_tree));
 
   my $p1 = 
     $product_class->new(
