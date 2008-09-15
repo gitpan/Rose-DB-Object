@@ -9,7 +9,7 @@ our @ISA = qw(Rose::Object::MixIn);
 
 use Carp;
 
-our $VERSION = '0.771';
+our $VERSION = '0.7711';
 
 __PACKAGE__->export_tags
 (
@@ -909,7 +909,7 @@ The point is, these are just conventions.  Use any of these subroutines as funct
 
 Returns a JSON-formatted string created from the object tree as created by the L<as_tree|/as_tree> method.  PARAMS are the same as for the L<as_tree|/as_tree> method, except that the C<deflate> parameter is ignored (it is always set to true).
 
-You must have the L<JSON> module installed in order to use this helper method.  If you have the L<JSON::XS> module installed, this method will work a lot faster.
+You must have the L<JSON> module version 2.12 or later installed in order to use this helper method.  If you have the L<JSON::XS> module version 2.2222 or later installed, this method will work a lot faster.
 
 =head2 as_tree [PARAMS]
 
@@ -967,7 +967,7 @@ B<Caveats>: Currently, you cannot have a relationship and a column with the same
 
 The exact format of the "tree" data structure returned by this method is not public and may change in the future (e.g., to overcome the limitation described above).
 
-=head2 as_yaml [PARAMS]>
+=head2 as_yaml [PARAMS]
 
 Returns a YAML-formatted string created from the object tree as created by the L<as_tree|/as_tree> method.  PARAMS are the same as for the L<as_tree|/as_tree> method, except that the C<deflate> parameter is ignored (it is always set to true).
 
@@ -1008,7 +1008,7 @@ is equivalent to this:
 
 =head2 column_values_as_json
 
-Returns a string containing a JSON representation of the object's column values.  You must have the L<JSON> module installed in order to use this helper method.  If you have the L<JSON::XS> module installed, this method will work a lot faster.
+Returns a string containing a JSON representation of the object's column values.  You must have the L<JSON> module version 2.12 or later installed in order to use this helper method.  If you have the L<JSON::XS> module version 2.2222 or later installed, this method will work a lot faster.
 
 =head2 column_values_as_yaml
 
@@ -1262,7 +1262,7 @@ Do not remove any sub-objects (L<foreign keys|Rose::DB::Object::Metadata/foreign
 
 =back
 
-=head2 B<traverse_depth_first CODEREF | PARAMS>
+=head2 B<traverse_depth_first [ CODEREF | PARAMS ]>
 
 Do a depth-first traversal of the L<Rose::DB::Object>-derived object that this method is called on, descending into related objects. If a reference to a subroutine is passed as the sole argument, it is taken as the value of the C<object> key to the C<handlers> parameter hash (see below).  Otherwise, PARAMS name/value pairs are expected.  Valid parameters are:
 
