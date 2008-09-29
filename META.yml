@@ -1,28 +1,40 @@
 --- #YAML:1.0
-name:                Rose-DB-Object
-version:             0.772
-abstract:            ~
-license:             ~
-author:              ~
-generated_by:        ExtUtils::MakeMaker version 6.44
-distribution_type:   module
-requires:     
-    Bit::Vector:                   0
-    Clone:                         0.20
-    Cwd:                           0
-    Data::Dumper:                  2.121
-    DateTime:                      0
-    DBI:                           1.40
-    File::Path:                    0
-    File::Spec:                    0
-    List::MoreUtils:               0
-    Math::BigInt:                  1.77
-    Rose::DateTime::Util:          0.532
-    Rose::DB:                      0.745
-    Rose::Object:                  0.852
-    Scalar::Util:                  0
-    Test::More:                    0
-    Time::Clock:                   0
+name:               Rose-DB-Object
+version:            0.7721
+abstract:           ~
+author:  []
+license:            unknown
+distribution_type:  module
+configure_requires:
+    ExtUtils::MakeMaker:  0
+requires:
+    Bit::Vector:          0
+    Clone:                0.20
+    Cwd:                  0
+    Data::Dumper:         2.121
+    DateTime:             0
+    DBI:                  1.40
+    File::Path:           0
+    File::Spec:           0
+    List::MoreUtils:      0
+    Math::BigInt:         1.77
+    Rose::DateTime::Util:  0.532
+    Rose::DB:             0.745
+    Rose::Object:         0.852
+    Scalar::Util:         0
+    Test::More:           0
+    Time::Clock:          0
+resources:
+    bugtracker:   http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object
+    homepage:     http://rose.googlecode.com/
+    license:      http://dev.perl.org/licenses/
+    MailingList:  http://groups.google.com/group/rose-db-object
+    repository:   https://rose.googlecode.com/svn/trunk/modules/Rose-DB-Object
+no_index:
+    directory:
+        - t
+        - inc
+generated_by:       ExtUtils::MakeMaker version 6.46
 meta-spec:
-    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
-    version: 1.3
+    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
+    version:  1.4
