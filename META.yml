@@ -1,9 +1,9 @@
 --- #YAML:1.0
 name:               Rose-DB-Object
-version:            0.7722
+version:            0.773
 abstract:           ~
 author:  []
-license:            unknown
+license:            perl
 distribution_type:  module
 configure_requires:
     ExtUtils::MakeMaker:  0

@@ -16,7 +16,7 @@ use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Exception;
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.7722';
+our $VERSION = '0.773';
 
 our $Debug = 0;
 
@@ -582,7 +582,7 @@ sub save
         }
 
         # Add value(s)
-        if($code  = $todo->{'rel'}{$rel_name}{'add'})
+        if($code  = $todo->{'rel'}{$rel_name}{'add'}{'code'})
         {
           $code->($self, \%code_args) or die $self->error;
         }

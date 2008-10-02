@@ -19,7 +19,7 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.770';
+our $VERSION = '0.773';
 
 our $Debug = 0;
 
@@ -3669,8 +3669,10 @@ sub objects_by_key
           }
 
           # Blank the attribute, causing the objects to be fetched from
-          # the db next time, if there's a custom sort order
-          $self->{$key} = undef  if(defined $mgr_args->{'sort_by'});
+          # the db next time, if there's a custom sort order or if
+          # the list is defined but empty
+          $self->{$key} = undef  if(defined $mgr_args->{'sort_by'} ||
+                                    (defined $self->{$key} && !@{$self->{$key}}));
 
           return 1;
         };
@@ -4109,7 +4111,6 @@ sub objects_by_key
         # Add the objects
         push(@{$self->{$key}}, @$objects);
       }
-
       my $add_code = sub
       {
         my($self, $args) = @_;
@@ -4139,43 +4140,50 @@ sub objects_by_key
         my $db = $self->db;
 
         # Add all the objects.
-        foreach my $object (@$objects)
+        foreach my $object (@{$self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'}{'objects'}})
         {
-          # Map object to parent
-          $object->init(%map, db => $db);
-
-          my $dbh = $object->dbh;
-
-          my $ret;
-
-          # Ignore any errors due to missing primary keys
-          local $dbh->{'PrintError'} = 0;
-          eval { $ret = $object->load(speculative => 1) };
-
-          if(my $error = $@)
+          # Attempt to load the object if necessary
+          unless($object->{STATE_IN_DB()})
           {
-            # ...but re-throw all other errors
-            unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
-                   $error->code == EXCEPTION_CODE_NO_KEY)
+            my $dbh = $object->dbh;
+            my $ret;
+
+            # Ignore any errors due to missing primary keys
+            local $dbh->{'PrintError'} = 0;
+            eval { $ret = $object->load(speculative => 1) };
+
+            if(my $error = $@)
             {
-              die $error;
+              # ...but re-throw all other errors
+              unless(UNIVERSAL::isa($error, 'Rose::DB::Object::Exception') &&
+                     $error->code == EXCEPTION_CODE_NO_KEY)
+              {
+                die $error;
+              }
             }
           }
 
-          unless($ret)
-          {
-            $object->save(%$args) or die $object->error;
-          }
+          # Map object to parent
+          $object->init(%map, db => $db);
+
+          # Save changes to the object
+          $object->save(%$args, changes_only => 1) or die $object->error;
         }
 
         # Blank the attribute, causing the objects to be fetched from
-        # the db next time, if there's a custom sort order
-        $self->{$key} = undef  if(defined $mgr_args->{'sort_by'});
+        # the db next time, if there's a custom sort order or if
+        # the list is defined but empty
+        $self->{$key} = undef  if(defined $mgr_args->{'sort_by'} ||
+                                  (defined $self->{$key} && !@{$self->{$key}}));
 
         return 1;
       };
 
-      $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} = $add_code;
+      my $stash = $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} ||= {};
+
+      push(@{$stash->{'objects'}}, @$objects);
+      $stash->{'code'} = $add_code;
+
       return @$objects;
     };
   }
@@ -5377,8 +5385,10 @@ sub objects_by_map
           }
 
           # Blank the attribute, causing the objects to be fetched from
-          # the db next time, if there's a custom sort order
-          $self->{$key} = undef  if(defined $mgr_args->{'sort_by'});
+          # the db next time, if there's a custom sort order or if
+          # the list is defined but empty
+          $self->{$key} = undef  if(defined $mgr_args->{'sort_by'} ||
+                                    (defined $self->{$key} && !@{$self->{$key}}));
 
           return 1;
         };
@@ -5704,7 +5714,7 @@ sub objects_by_map
         my $db = $self->db;
 
         # Add all the objects.
-        foreach my $object (@$objects)
+        foreach my $object (@{$self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'}{'objects'}})
         {
           # It's essential to share the db so that the load()
           # below can see the delete (above) which happened in
@@ -5733,11 +5743,8 @@ sub objects_by_map
             }
           }
 
-          # Save the object, if necessary
-          unless($in_db)
-          {
-            $object->save(%$args) or die $object->error;
-          }
+          # Save changes to the object
+          $object->save(%$args, changes_only => 1) or die $object->error;
 
           # Not sharing?  Aw.
           $object->db(undef)  unless($share_db);
@@ -5758,9 +5765,23 @@ sub objects_by_map
           {
             my $dbh = $map_record->dbh;
 
-            # It's okay if this fails because the key(s) is/are undefined
+            # It's okay if this fails because the key(s) is/are undefined...
             local $dbh->{'PrintError'} = 0;
-            eval { $in_db = $map_record->load(speculative => 1) };
+
+            eval
+            {
+              if($in_db = $map_record->load(speculative => 1))
+              {
+                # (Re)connect map record to self
+                $map_record->init(%method_map_to_self);
+      
+                # (Re)connect map record to remote object
+                while(my($map_method, $remote_method) = each(%map_method_to_remote_method))
+                {
+                  $map_record->$map_method($object->$remote_method);
+                }
+              }
+            };
 
             if(my $error = $@)
             {
@@ -5773,21 +5794,24 @@ sub objects_by_map
             }
           }
 
-          # Save the map record, if necessary
-          unless($in_db)
-          {
-            $map_record->save or die $map_record->error;
-          }
+          # Save changes to map record
+          $map_record->save(changes_only => 1) or die $map_record->error;
         }
 
         # Blank the attribute, causing the objects to be fetched from
-        # the db next time, if there's a custom sort order
-        $self->{$key} = undef  if(defined $mgr_args->{'sort_by'});
+        # the db next time, if there's a custom sort order or if
+        # the list is defined but empty
+        $self->{$key} = undef  if(defined $mgr_args->{'sort_by'} ||
+                                  (defined $self->{$key} && !@{$self->{$key}}));
 
         return 1;
       };
 
-      $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} = $add_code;
+      my $stash = $self->{ON_SAVE_ATTR_NAME()}{'post'}{'rel'}{$rel_name}{'add'} ||= {};
+
+      push(@{$stash->{'objects'}}, @$objects);
+      $stash->{'code'} = $add_code;
+
       return @$objects;
     };
   }
@@ -7110,10 +7134,11 @@ Example - add_on_save interface:
     # Read from the bugs table
     $bugs = $prog->bugs;
 
-    $prog->name($new_name);     # Does not hit the db
-    $prog->add_bugs(@new_bugs); # Does not hit the db
+    $prog->name($new_name);      # Does not hit the db
+    $prog->add_bugs(@new_bugs);  # Does not hit the db
+    $prog->add_bugs(@more_bugs); # Does not hit the db
 
-    # @new_bugs can contain any mix of these types:
+    # @new_bugs and @more_bugs can contain any mix of these types:
     #
     # @new_bugs =
     # (
@@ -7643,7 +7668,7 @@ Example - get_set_on_save interface:
     $product->category({ id => 123 });
 
     # Write to both the products and categories tables
-    $product->save; 
+    $product->save;
 
 Example - delete_now interface:
 
