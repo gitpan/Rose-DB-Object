@@ -1,3 +1,11 @@
+0.775 (11.02.2008) - John Siracusa <siracusa@gmail.com>
+
+    * The insert_or_update(), load_or_insert(), and load_or_save() helper
+      methods no longer throw an exception when called on an object with 
+      no uniquely identifying column(s).  (Suggested by Richard Jones)
+    * Added detection of minimum JSON version (2.00) to test suite and
+      the Helpers module.
+
 0.774 (10.25.2008) - John Siracusa <siracusa@gmail.com>
 
     * Setting objects related through a one-to-many relationship
@@ -7,8 +15,8 @@
       "strict mode" quirk (or, IMO, "bug") which causes it to complain
       about a situation that is only a concern if it decided to do an
       INSERT rather than an UPDATE.  (Reported by Richard Jones)
-    * Fixed a regression ( t/spot-check-10.t) that caused adding objects
-      to one-to-many-related lists to fail under some circumstances.
+    * Fixed a regression in t/spot-check-10.t: adding objects to 
+      one-to-many-related lists failed in some circumstances.
     * Updated auto-initialization examples in the synopsis.
 
 0.773 (10.02.2008) - John Siracusa <siracusa@gmail.com>
