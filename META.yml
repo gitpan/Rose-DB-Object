@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Rose-DB-Object
-version:            0.775
+version:            0.775_03
 abstract:           Extensible, high performance object-relational mapper (ORM).
 author:
     - John Siracusa <siracusa@gmail.com>
@@ -10,7 +10,7 @@ configure_requires:
     ExtUtils::MakeMaker:  0
 requires:
     Bit::Vector:          0
-    Clone:                0.20
+    Clone:                0.29
     Cwd:                  0
     Data::Dumper:         2.121
     DateTime:             0
@@ -22,7 +22,7 @@ requires:
     perl:                 5.006000
     Rose::DateTime::Util:  0.532
     Rose::DB:             0.745
-    Rose::Object:         0.852
+    Rose::Object:         0.854
     Scalar::Util:         0
     Test::More:           0
     Time::Clock:          0

@@ -231,6 +231,9 @@ sub is_ready_to_make_methods
   # the info it needs, then we're not yet ready to make these methods.
   eval
   {
+    # Workaround for http://rt.perl.org/rt3/Ticket/Display.html?id=60890
+    local $SIG{'__DIE__'};
+
     my $map_class = $self->map_class or die "Missing map class";
 
     unless(UNIVERSAL::isa($map_class, 'Rose::DB::Object'))
@@ -791,7 +794,7 @@ Returns "many to many".
 
 John C. Siracusa (siracusa@gmail.com)
 
-=head1 COPYRIGHT
+=head1 LICENSE
 
 Copyright (c) 2008 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms

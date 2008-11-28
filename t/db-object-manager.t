@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 3900;
+use Test::More tests => 3903;
 
 BEGIN 
 {
@@ -8683,11 +8683,43 @@ EOF
 
 SKIP: foreach my $db_type (qw(sqlite))
 {
-  skip("SQLite tests", 788)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 791)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
   my($sql, $bind) = 
+    Rose::DB::Object::Manager->get_objects_sql(
+      object_class => 'MySQLiteObject',
+      where => [ name => { '@' => \q(xxx) } ]);
+
+  ok($sql =~ /\bname @ xxx\b/, "strict_ops 1 - $db_type");
+
+  eval
+  {
+    ($sql, $bind) = 
+      Rose::DB::Object::Manager->get_objects_sql(
+        object_class => 'MySQLiteObject',
+        strict_ops => 1,
+        where => [ name => { '@' => \q(xxx) } ]);
+  };
+
+  ok($@, "strict_ops 2 - $db_type");
+
+  Rose::DB::Object::Manager->strict_ops(1);
+
+  eval
+  {
+    ($sql, $bind) = 
+      Rose::DB::Object::Manager->get_objects_sql(
+        object_class => 'MySQLiteObject',
+        where => [ name => { '@' => \q(xxx) } ]);
+  };
+
+  ok($@, "strict_ops 3 - $db_type");
+
+  Rose::DB::Object::Manager->strict_ops(0);
+
+  ($sql, $bind) = 
     Rose::DB::Object::Manager->get_objects_sql(
       object_class => 'MySQLiteObject',
       where => [ name => { like => \q('%foo%') } ]);
@@ -9086,7 +9118,7 @@ SKIP: foreach my $db_type (qw(sqlite))
 
   # Start "one to many" tests
 
-  ok($fo = MySQLiteNick->new(id   => 1,
+  ok($fo = MySQLiteNick->new(eyedee   => 1,
                              o_id => 5,
                              nick => 'none',
                              type => { name => 'nt one', t2 => { name => 'nt2 one' } },
@@ -9097,33 +9129,33 @@ SKIP: foreach my $db_type (qw(sqlite))
                                        { opt => 'opt one 2' } ])->save,
       "nick object save() 1 - $db_type");
 
-  $fo = MySQLiteNick->new(id   => 2,
+  $fo = MySQLiteNick->new(eyedee   => 2,
                           o_id => 2,
                           nick => 'ntwo',
                           type => { name => 'nt two', t2 => { name => 'nt2 two' } },
                           alts => [ { alt => 'alt two 1' } ]);
   ok($fo->save, "nick object save() 2 - $db_type");
 
-  $fo = MySQLiteNick->new(id   => 3,
+  $fo = MySQLiteNick->new(eyedee   => 3,
                           o_id => 5,
                           nick => 'nthree',
                           type => { name => 'nt three', t2 => { name => 'nt2 three' } },
                           opts => [ { opt => 'opt three 1' },  { opt => 'opt three 2' } ]);
   ok($fo->save, "nick object save() 3 - $db_type");
 
-  $fo = MySQLiteNick->new(id   => 4,
+  $fo = MySQLiteNick->new(eyedee   => 4,
                           o_id => 2,
                           nick => 'nfour',
                           type => { name => 'nt four', t2 => { name => 'nt2 four' } });
   ok($fo->save, "nick object save() 4 - $db_type");
 
-  $fo = MySQLiteNick->new(id   => 5,
+  $fo = MySQLiteNick->new(eyedee   => 5,
                           o_id => 5,
                           nick => 'nfive',
                           type => { name => 'nt five', t2 => { name => 'nt2 five' } });
   ok($fo->save, "nick object save() 5 - $db_type");
 
-  $fo = MySQLiteNick->new(id   => 6,
+  $fo = MySQLiteNick->new(eyedee   => 6,
                           o_id => 5,
                           nick => 'nsix',
                           type => { name => 'nt six', t2 => { name => 'nt2 six' } });
@@ -9144,6 +9176,7 @@ SKIP: foreach my $db_type (qw(sqlite))
         flag2      => 1,
         bits       => '10101',
         't2.nick'  => { like => 'n%' },
+        'eyedee'   => { ne => 12345 },
         start      => '5/20/2002',
         '!start'   => { gt => DateTime->new(year  => '2005', 
                                             month => 12,
@@ -9515,19 +9548,19 @@ SKIP: foreach my $db_type (qw(sqlite))
 
   ok($o8->save, "object save() 10 - $db_type");
 
-  $fo = MySQLiteNick->new(id   => 7,
+  $fo = MySQLiteNick->new(eyedee   => 7,
                       o_id => 60,
                       nick => 'nseven');
 
   ok($fo->save, "nick object save() 7 - $db_type");
 
-  $fo = MySQLiteNick->new(id   => 8,
+  $fo = MySQLiteNick->new(eyedee   => 8,
                       o_id => 60,
                       nick => 'neight');
 
   ok($fo->save, "nick object save() 8 - $db_type");
 
-  $fo = MySQLiteNick->new(id   => 9,
+  $fo = MySQLiteNick->new(eyedee   => 9,
                       o_id => 60,
                       nick => 'neight');
 
@@ -9697,13 +9730,13 @@ SKIP: foreach my $db_type (qw(sqlite))
   ok(!defined $objs->[7]->{'bb1'}, "get_objects() with many 37 - $db_type");
   ok(!defined $objs->[7]->{'nicks'}, "get_objects() with many 38 - $db_type");
 
-  $fo = MySQLiteNick->new(id => 7);
+  $fo = MySQLiteNick->new(eyedee => 7);
   ok($fo->delete, "with many clean-up 1 - $db_type");
 
-  $fo = MySQLiteNick->new(id => 8);
+  $fo = MySQLiteNick->new(eyedee => 8);
   ok($fo->delete, "with many clean-up 2 - $db_type");
 
-  $fo = MySQLiteNick->new(id => 9);
+  $fo = MySQLiteNick->new(eyedee => 9);
   ok($fo->delete, "with many clean-up 3 - $db_type");
 
   ok($o6->delete, "with many clean-up 4 - $db_type");
@@ -10401,9 +10434,9 @@ SKIP: foreach my $db_type (qw(sqlite))
   is($objs->[0]->{'bb2'}{'name'}, 'four', "get_objects() multi many with require 17 - $db_type");
   ok(!defined $objs->[1]->{'bb2'}{'name'}, "get_objects() multi many with require 18 - $db_type");
 
-  MySQLiteNick->new(id => 7, o_id => 10,  nick => 'nseven')->save;
-  MySQLiteNick->new(id => 8, o_id => 11,  nick => 'neight')->save;
-  MySQLiteNick->new(id => 9, o_id => 12,  nick => 'nnine')->save;
+  MySQLiteNick->new(eyedee => 7, o_id => 10,  nick => 'nseven')->save;
+  MySQLiteNick->new(eyedee => 8, o_id => 11,  nick => 'neight')->save;
+  MySQLiteNick->new(eyedee => 9, o_id => 12,  nick => 'nnine')->save;
 
   $objs = 
     Rose::DB::Object::Manager->get_objects(
@@ -15964,9 +15997,11 @@ EOF
     (
       name => { type => 'varchar'},
       k1   => { type => 'int' },
-      k2   => { type => 'int' },
+      k2   => { type => 'int', alias => 'ktwo' },
       k3   => { type => 'int' },
     );
+
+    sub k2 { shift->ktwo(@_) }
 
     MySQLiteOtherObject->meta->primary_key_columns([ qw(k1 k2 k3) ]);
 
@@ -16135,7 +16170,7 @@ EOF
 
     MySQLiteNick->meta->columns
     (
-      id   => { type => 'serial', primary_key => 1 },
+      id   => { type => 'serial', alias => 'eyedee', primary_key => 1 },
       o_id => { type => 'int' },
       nick => { type => 'varchar', lazy => 1 },
       type_id => { type => 'int' },

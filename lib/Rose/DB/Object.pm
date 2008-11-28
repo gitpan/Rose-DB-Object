@@ -16,7 +16,7 @@ use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Exception;
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.775';
+our $VERSION = '0.775_03';
 
 our $Debug = 0;
 
@@ -2348,13 +2348,13 @@ L<http://rose.googlecode.com>
 
 =head1 CONTRIBUTORS
 
-Bradley C Bailey, Graham Barr, David Christensen, Lucian Dragus, Justin Ellison, Perrin Harkins, Cees Hek, Peter Karman, Michael Reece, Teodor Zlatanov
+Bradley C Bailey, Graham Barr, David Christensen, Lucian Dragus, Justin Ellison, Perrin Harkins, Cees Hek, Benjamin Hitz, Peter Karman, Michael Reece, Teodor Zlatanov
 
 =head1 AUTHOR
 
 John C. Siracusa (siracusa@gmail.com)
 
-=head1 COPYRIGHT
+=head1 LICENSE
 
 Copyright (c) 2008 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms

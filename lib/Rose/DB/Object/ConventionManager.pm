@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Object;
 our @ISA = qw(Rose::DB::Object::Metadata::Object);
 
-our $VERSION = '0.769';
+our $VERSION = '0.776';
 
 our $Debug = 0;
 
@@ -182,7 +182,7 @@ sub auto_primary_key_column_names
 sub auto_column_method_name
 {
   my($self, $type, $column, $name, $object_class) = @_;
-  return undef; # rely on hard-coded defaults in Manager
+  return undef; # rely on hard-coded defaults in Metadata
 }
 
 sub init_singular_to_plural_function { }
@@ -1608,7 +1608,7 @@ Anyway, I don't recommend this kind of extreme approach, but it is an effective 
 
 John C. Siracusa (siracusa@gmail.com)
 
-=head1 COPYRIGHT
+=head1 LICENSE
 
 Copyright (c) 2008 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms

@@ -274,6 +274,9 @@ sub is_ready_to_make_methods
 
   eval
   {
+    # Workaround for http://rt.perl.org/rt3/Ticket/Display.html?id=60890
+    local $SIG{'__DIE__'};
+
     $self->class->isa('Rose::DB::Object') or die
       Rose::DB::Object::Exception::ClassNotReady->new(
         "Missing or invalid foreign class");
@@ -695,7 +698,7 @@ Returns the method maker method type for the foreign key method type TYPE.
 
 John C. Siracusa (siracusa@gmail.com)
 
-=head1 COPYRIGHT
+=head1 LICENSE
 
 Copyright (c) 2008 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms

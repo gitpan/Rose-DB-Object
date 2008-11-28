@@ -1,3 +1,22 @@
+0.775_03 (11.27.2008) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed a bug that was preventing the use of new comparison
+      operators with QueryBuilder.  (Reported by Derek Wueppelmann)
+    * Added a strict_ops parameter and class method to the Manager
+      to allow the policy to b changed per-call or per-class.
+    * Auto-initialization under Oracle should no longer be confused
+      by tables with the same names in different schemas. (Patch by 
+      Benjamin Hitz)
+    * Removed the on-again, off-again restriction on aliasing primary 
+      key columns.  I think it's off for good this time.
+    * Refined column alias policy to keep from appearing to override
+      more granular column method name customization.
+    * Overhauled related object mutator methods to better match the
+      documentation and reduce unnecessary queries.
+    * Fixed a bug that caused the init_with_tree() helper method to
+      overwrite columns involved in relationship mapping in some 
+      circumstances.  (Reported by Todd Lyons)
+
 0.775 (11.02.2008) - John Siracusa <siracusa@gmail.com>
 
     * The insert_or_update(), load_or_insert(), and load_or_save() helper

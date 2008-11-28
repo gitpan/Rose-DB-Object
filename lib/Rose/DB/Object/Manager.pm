@@ -16,7 +16,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.771';
+our $VERSION = '0.776';
 
 our $Debug = 0;
 
@@ -38,6 +38,7 @@ use Rose::Class::MakeMethods::Generic
     'default_limit_with_subselect',
     'default_nested_joins',
     'dbi_prepare_cached',
+    'strict_ops',
   ],
 );
 
@@ -46,6 +47,7 @@ __PACKAGE__->default_objects_per_page(20);
 __PACKAGE__->default_limit_with_subselect(1);
 __PACKAGE__->default_nested_joins(1);
 __PACKAGE__->dbi_prepare_cached(0);
+__PACKAGE__->strict_ops(0);
 __PACKAGE__->default_manager_method_types(qw(objects iterator count delete update));
 
 sub handle_error
@@ -412,6 +414,8 @@ sub get_objects
   # Alias by popular demand...
   $args{'query'} = delete $args{'where'}
     if($args{'where'} && !exists $args{'query'});
+
+  $args{'strict_ops'} = $class->strict_ops  unless(exists $args{'strict_ops'});
 
   my $no_forced_sort = delete $args{'no_forced_sort'};
 
@@ -1602,7 +1606,7 @@ sub get_objects
           }
           else
           {
-            push(@select, "$prefix$_");
+            push(@select, "$prefix$column");
           }
         }
       }
@@ -2076,14 +2080,16 @@ sub get_objects
         {
           my(@seen, %seen, @sub_objects);
 
-          my @pk_columns = $meta->primary_key_column_names;
+          #my @pk_columns = $meta->primary_key_column_names;
+          my $pk_columns = $meta->primary_key_column_names_or_aliases;
 
           # Get list of primary key columns for each sub-table
           my @sub_pk_columns;
 
           foreach my $i (1 .. $num_subtables)
           {
-            $sub_pk_columns[$i + 1] = [ $classes[$i]->meta->primary_key_column_names ];
+            #$sub_pk_columns[$i + 1] = [ $classes[$i]->meta->primary_key_column_names ];
+            $sub_pk_columns[$i + 1] = $classes[$i]->meta->primary_key_column_names_or_aliases;
           }
 
           my($last_object, %subobjects, %parent_objects);
@@ -2104,7 +2110,7 @@ sub get_objects
 
                 while($sth->fetch)
                 {
-                  my $pk = join(PK_JOIN, map { $row{$object_class,0}{$_} } @pk_columns);
+                  my $pk = join(PK_JOIN, map { $row{$object_class,0}{$_} } @$pk_columns);
 
                   # If this is a new main (t1) table row that we haven't seen before
                   unless($seen[0]{$pk}++)
@@ -2576,21 +2582,23 @@ sub get_objects
       {
         my(@seen, %seen, @sub_objects);
 
-        my @pk_columns = $meta->primary_key_column_names;
+        #my @pk_columns = $meta->primary_key_column_names;
+        my $pk_columns = $meta->primary_key_column_names_or_aliases;
 
         # Get list of primary key columns for each sub-table
         my @sub_pk_columns;
 
         foreach my $i (1 .. $num_subtables)
         {
-          $sub_pk_columns[$i + 1] = [ $classes[$i]->meta->primary_key_column_names ];
+          #$sub_pk_columns[$i + 1] = [ $classes[$i]->meta->primary_key_column_names ];
+          $sub_pk_columns[$i + 1] = $classes[$i]->meta->primary_key_column_names_or_aliases;
         }
 
         my($last_object, %subobjects, %parent_objects);
 
         ROW: while($sth->fetch)
         {
-          my $pk = join(PK_JOIN, map { $row{$object_class,0}{$_} } @pk_columns);
+          my $pk = join(PK_JOIN, map { $row{$object_class,0}{$_} } @$pk_columns);
 
           my $object;
 
@@ -4174,6 +4182,10 @@ If true, indicate to the database that the result set is expected to be small.
 
 If true, ask the database to join the tables in the order that they are listed in the "FROM" clause of the SQL statement.
 
+=item B<strict_ops BOOL>
+
+If true, any comparison operator used in the C<query> that is not listed in the L<Rose::DB::Object::QueryBuilder> documentation will cause a fatal error.  The default value is determined by the L<strict_ops|/strict_ops> class method.
+
 =item B<use_index [ INDEX | ARRAYREF ]>
 
 Prefer to use the named indexes, specified by an index name or a reference to an array of index names.
@@ -4980,6 +4992,10 @@ If this parameter is omitted, this method will refuse to update all rows in the 
 
 =back
 
+=item B<strict_ops [BOOL]>
+
+Get or set a boolean value that indicates whether using a comparison operator in the C<query> that is not listed in the L<Rose::DB::Object::QueryBuilder> documentation will cause a fatal error.  The default value is false.
+
 =back
 
 =head1 SUPPORT
@@ -5004,7 +5020,7 @@ L<http://rose.googlecode.com>
 
 John C. Siracusa (siracusa@gmail.com)
 
-=head1 COPYRIGHT
+=head1 LICENSE
 
 Copyright (c) 2008 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms

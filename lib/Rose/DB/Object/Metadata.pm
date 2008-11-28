@@ -25,7 +25,7 @@ eval { require Scalar::Util::Clone };
 
 use Clone(); # This is the backup clone method
 
-our $VERSION = '0.7721';
+our $VERSION = '0.776';
 
 our $Debug = 0;
 
@@ -680,6 +680,19 @@ sub primary_key_generator    { shift->primary_key->generator(@_)    }
 sub primary_key_columns      { shift->primary_key->columns(@_)      }
 sub primary_key_column_names { shift->primary_key->column_names(@_) }
 sub pk_columns               { shift->primary_key_columns(@_)       }
+
+sub primary_key_column_names_or_aliases 
+{
+  my($self) = shift;
+
+  if($self->{'primary_key_column_names_or_aliases'})
+  {
+    return $self->{'primary_key_column_names_or_aliases'};
+  }
+
+  return $self->{'primary_key_column_names_or_aliases'} =
+    [ map { $_->alias || $_->name } $self->primary_key_columns ];
+}
 
 sub init_primary_key_column_info
 {
@@ -1659,6 +1672,10 @@ sub initialize
     }
   }
 
+  # Regardless of cache priming, call this to ensure it's initialized, 
+  # since it is very likely to be used.
+  $self->key_column_accessor_method_names_hash;
+
   $self->prime_caches  if($self->auto_prime_caches);
 
   return;
@@ -1834,14 +1851,12 @@ sub make_column_methods
 
     $column->make_methods(%args);
 
-    # Primary key columns cannot be aliased
-    if($column->is_primary_key_member && $column->alias && $column->alias ne $column->name)
-    {
-      Carp::croak "Primary key columns cannot be aliased (the culprit: '$name')";
-    }
-
-    # Allow primary keys to be aliased
-    # XXX: Disabled because the Manager is not happy with this.
+    # XXX: Re-enabling the ability to alias primary keys
+    #if($column->is_primary_key_member && $column->alias && $column->alias ne $column->name)
+    #{
+    #  Carp::croak "Primary key columns cannot be aliased (the culprit: '$name')";
+    #}
+    #
     #if($method ne $name)
     #{
     #  # Primary key columns can be aliased, but we make a column-named 
@@ -3042,16 +3057,15 @@ sub alias_column
   Carp::cluck "Pointless alias for '$name' to '$new_name' for table ", $self->table
     unless($name ne $new_name);
 
-  # XXX: We now allow this, but create a duplicate method using the real
-  # XXX: column name anyway in make_column_methods().
-  # XXX: Not really.  Disregard the above.
-  foreach my $column ($self->primary_key_column_names)
-  {
-    if($name eq $column)
-    {
-      Carp::croak "Primary key columns cannot be aliased (the culprit: '$name')";
-    }
-  }
+  # XXX: Allow primary keys to be aliased
+  # XXX: Was disabled because the Manager was not happy with this.
+  #foreach my $column ($self->primary_key_column_names)
+  #{
+  #  if($name eq $column)
+  #  {
+  #    Carp::croak "Primary key columns cannot be aliased (the culprit: '$name')";
+  #  }
+  #}
 
   $self->_clear_column_generated_values;
 
@@ -3084,6 +3098,28 @@ sub nonpersistent_column_accessor_method_name
 sub column_accessor_method_names_hash { shift->{'column_accessor_method'} }
 
 sub nonpersistent_column_accessor_method_names_hash { shift->{'nonpersistent_column_accessor_method'} }
+
+sub key_column_accessor_method_names_hash
+{
+  my($self) = shift;
+  
+  return $self->{'key_column_accessor_method'}  if($self->{'key_column_accessor_method'});
+
+  foreach my $column (grep { ref } $self->primary_key_columns)
+  {
+    $self->{'key_column_accessor_method'}{$column->name} = $column->accessor_method_name;
+  }
+
+  foreach my $uk ($self->unique_keys)
+  {
+    foreach my $column (grep { ref } $uk->columns)
+    {
+      $self->{'key_column_accessor_method'}{$column->name} = $column->accessor_method_name;
+    }
+  }
+ 
+  return $self->{'key_column_accessor_method'};
+}
 
 sub column_mutator_method_name
 {
@@ -3973,7 +4009,7 @@ sub prime_caches
        nonlazy_column_mutator_method_names nonlazy_column_db_value_hash_keys
        primary_key_column_db_value_hash_keys column_db_value_hash_keys
        column_accessor_method_names column_mutator_method_names
-       column_rw_method_names);
+       column_rw_method_names key_column_accessor_method_names_hash);
 
   foreach my $method (@methods)
   {
@@ -3999,7 +4035,7 @@ sub prime_caches
     $self->$method($db);
   }
 
-  @methods = undef; # reclaim memory?
+  undef @methods; # reclaim memory?
 
   foreach my $key ($self->primary_key, $self->unique_keys)
   {
@@ -4051,6 +4087,7 @@ sub _clear_column_generated_values
   $self->{'nonlazy_column_mutator_method_names'}  = undef;
   $self->{'nonlazy_column_db_value_hash_keys'}    = undef;
   $self->{'primary_key_column_db_value_hash_keys'}= undef;
+  $self->{'primary_key_column_names_or_aliases'}  = undef
   $self->{'column_db_value_hash_keys'}            = undef;
   $self->{'select_nonlazy_columns_string_sql'}    = undef;
   $self->{'select_columns_string_sql'}            = undef;
@@ -4058,7 +4095,7 @@ sub _clear_column_generated_values
   $self->{'select_nonlazy_columns_sql'}           = undef;
   $self->{'method_columns'}                       = undef;
   $self->{'column_accessor_method'}               = undef;
-  $self->{'column_mutator_method'}                = undef;
+  $self->{'key_column_accessor_method'}           = undef;
   $self->{'column_rw_method'}                     = undef;
   $self->{'load_sql'}                             = undef;
   $self->{'load_all_sql'}                         = undef;
@@ -4087,8 +4124,10 @@ sub _clear_nonpersistent_column_generated_values
 sub _clear_primary_key_column_generated_values
 {
   my($self) = shift;
-  $self->{'primary_key_column_accessor_names'} = undef;
-  $self->{'primary_key_column_mutator_names'} = undef;
+  $self->{'primary_key_column_accessor_names'}   = undef;
+  $self->{'primary_key_column_mutator_names'}    = undef;
+  $self->{'key_column_accessor_method'}          = undef;
+  $self->{'primary_key_column_names_or_aliases'} = undef;
 }
 
 sub method_name_is_reserved
@@ -4326,7 +4365,7 @@ sub init_auto_helper
     my $auto_helper_class = $self->auto_helper_class;
 
     no strict 'refs';
-    unless(${"${auto_helper_class}::VERSION"})
+    unless(@{"${auto_helper_class}::ISA"})
     {
       eval "use $auto_helper_class";
       Carp::croak "Could not load '$auto_helper_class' - $@"  if($@);
@@ -6461,7 +6500,7 @@ The "object" style sets unique keys using calls to the L<Rose::DB::Object::Metad
 
 John C. Siracusa (siracusa@gmail.com)
 
-=head1 COPYRIGHT
+=head1 LICENSE
 
 Copyright (c) 2008 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
