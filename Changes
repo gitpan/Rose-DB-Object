@@ -1,3 +1,10 @@
+0.778 (02.06.2009) - John Siracusa <siracusa@gmail.com>
+
+    * Added PostgreSQL's "ltree" query extensions to QueryBuilder.  
+      (Patch by Rick Apichairuk)
+    * Improved the efficiency of the check-and-merge function used
+      when related objects are added.  (Reported by Bryan Opfer)
+
 0.777 (12.12.2008) - John Siracusa <siracusa@gmail.com>
 
     * Fixed a bug that caused foreign key proxy relationships to
