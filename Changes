@@ -1,3 +1,10 @@
+0.779 (02.26.2009) - John Siracusa <siracusa@gmail.com>
+
+    * Added missing documentation on one-to-many and many-to-many 
+      relationship "iterator" and "find" method type names.
+    * Corrected an error message in Rose::DB::Object::MakeMethods::Generic
+      (RT 43667)
+
 0.778 (02.06.2009) - John Siracusa <siracusa@gmail.com>
 
     * Added PostgreSQL's "ltree" query extensions to QueryBuilder.  
