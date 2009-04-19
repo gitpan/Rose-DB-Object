@@ -1,3 +1,12 @@
+0.781 (04.19.2009) - John Siracusa <siracusa@gmail.com>
+
+    * Added an explicit SQL_BLOB bind_param() argument for blob columns
+      in SQLite.  (Reported by clausi)
+    * Added manager_iterator_method and support for manager_count_method
+      and manager_delete_method to relevant Relationship classes.
+      (Patch by Peter Karman)
+    * Updated test suite to consider DBD::SQLite 1.19+ non-broken.
+
 0.780 (03.04.2009) - John Siracusa <siracusa@gmail.com>
 
     * Fixed a bug that caused the delete_relationships() Metadata method
