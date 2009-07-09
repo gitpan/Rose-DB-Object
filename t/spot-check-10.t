@@ -360,7 +360,7 @@ BEGIN
   our %Have;
 
   #
-  # Postgres
+  # PostgreSQL
   #
 
   my $dbh;
@@ -541,7 +541,7 @@ EOF
     {
       local $dbh->{'PrintError'} = 0;
       eval { $dbh->do($sql) };
-      
+
       if($@)
       {
         warn $@  unless($@ =~ /language "plpgsql" does not exist/);
@@ -562,7 +562,7 @@ END
 
   if($Have{'pg'})
   {
-    # Postgres
+    # PostgreSQL
     my $dbh = Rose::DB->new('pg_admin')->retain_dbh()
       or die Rose::DB->error;
 

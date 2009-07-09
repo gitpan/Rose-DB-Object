@@ -16,12 +16,12 @@ Rose::DB::Object::Util->import(':all');
 our($PG_HAS_CHKPASS, $HAVE_PG, $HAVE_MYSQL, $HAVE_INFORMIX, $HAVE_SQLITE);
 
 #
-# Postgres
+# PostgreSQL
 #
 
 SKIP: foreach my $db_type (qw(pg pg_with_schema))
 {
-  skip("Postgres tests", 226)  unless($HAVE_PG);
+  skip("PostgreSQL tests", 226)  unless($HAVE_PG);
 
   Rose::DB->default_type($db_type);
 
@@ -875,7 +875,7 @@ SKIP: foreach my $db_type ('sqlite')
   Rose::DB->default_type($db_type);
 
   my $o = MySQLiteObject->new;
-  
+
   $o->k1(0);
 
   ok(has_modified_columns($o), "has_modified_columns() zero - $db_type");
@@ -883,7 +883,7 @@ SKIP: foreach my $db_type ('sqlite')
   $o->k1(undef);
 
   ok(has_modified_columns($o), "has_modified_columns() undef - $db_type");
-  
+
   $o = MySQLiteObject->new(name => 'John',
                            k1   => 0,
                            k2   => undef,
@@ -1099,11 +1099,11 @@ SKIP: foreach my $db_type ('sqlite')
 
   $o->num(undef);
   $o->save;
-  
+
   $o->num(0);
   ok(has_modified_columns($o), "zero mod 1 - $db_type");
   $o->save(changes_only => 1);
-  
+
   $o->num(0);
   ok(!has_modified_columns($o), "zero mod 2 - $db_type");
   $o->save(changes_only => 1);
@@ -1119,7 +1119,7 @@ SKIP: foreach my $db_type ('sqlite')
   $o->load;
 
   is($o->num, '', "empty string mod 2 - $db_type");
-  
+
   $o = MySQLiteObject4->new(id => 1)->save;
   $o = MySQLiteObject4->new(id => 1)->load;
   ok($o->save, "noop update pk only 1 - $db_type");
@@ -1135,7 +1135,7 @@ SKIP: foreach my $db_type ('sqlite')
 BEGIN
 {
   #
-  # Postgres
+  # PostgreSQL
   #
 
   my $dbh;
@@ -1902,7 +1902,7 @@ END
 
   if($HAVE_PG)
   {
-    # Postgres
+    # PostgreSQL
     my $dbh = Rose::DB->new('pg_admin')->retain_dbh()
       or die Rose::DB->error;
 

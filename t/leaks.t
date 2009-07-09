@@ -2,180 +2,129 @@
 
 use strict;
 
-my $Iterations;
+use Config;
 
-BEGIN { $Iterations = 2 }
-use Test::More tests => 2 + (5 * 9 * $Iterations);
+use Test::More;
+
+eval { require Test::Memory::Cycle };
+
+plan(skip_all => 'Test::Memory::Cycle required for leak tests')  if($@); 
+
+use Rose::DB::Object::Manager;
+
+Test::More->import(tests => 5 * 2);
 
 BEGIN 
 {
   require 't/test-lib.pl';
-  use_ok('Rose::DB::Object');
-  use_ok('Rose::DB::Object::Manager');
+  use Rose::DB::Object::Loader;
+  use Rose::DB::Object::Manager;
 }
 
 our %Have;
 
-#
-# Setup
-#
-
-# Some good test cases:
-#@Classes = qw(Color Price ProductsColors Vendor Product);
-#@Classes = qw(Price ProductsColors Product Color Vendor);
-#@Classes = qw(ProductsColors Price Vendor Product Color);
-#@Classes = qw(Price Color Vendor ProductsColors Product)
-my @Classes = qw(Vendor Product Price Color ProductsColors);
-
-eval { require List::Util };
-my $Can_Shuffle = $@ ? 0 : 1;
-
-my %Tables =
-(
-  Vendor  => 'vendors',
-  Product => 'products',
-  Price   => 'prices',
-  Color   => 'colors',
-  ProductsColors => 'products_colors',
-);
-
-my %Setup_Class;
+our @Tables = qw(vendors Products prices Colors product_color_map pk_test);
+our $Include_Tables = join('|', @Tables);
 
 #
 # Tests
 #
 
-foreach my $i (1 .. $Iterations)
+my $i = 1;
+
+foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
 {
-  my @dbs = qw(mysql pg pg_with_schema informix sqlite);
-  eval { require List::Util };
-  @dbs = List::Util::shuffle(@dbs)  unless($@);
-
-  # Good test orders:
-  #@dbs = qw(sqlite pg_with_schema pg mysql informix);
-
-  print "# db type order: @dbs\n";
-
-  foreach my $db_type (@dbs)
+  SKIP:
   {
-    SKIP:
-    {
-      skip("$db_type tests", 9)  unless($Have{$db_type});
-    }
-
-    next  unless($Have{$db_type});
-
-    Rose::DB->default_type($db_type);
-    Rose::DB::Object::Metadata->unregister_all_classes;
-
-    my $class_prefix = ucfirst($db_type eq 'pg_with_schema' ? 'pg' : $db_type) . $i;
-
-    @Classes = List::Util::shuffle(@Classes)  if($Can_Shuffle);
-    print "# Class order: @Classes\n";
-
-    #$Rose::DB::Object::Metadata::Debug = 1;
-
-    foreach my $class_root (@Classes)
-    {
-      my $class = $class_prefix . $class_root;
-
-      if($Setup_Class{$class}++)
-      {
-        #$class->meta->init_with_db(Rose::DB->new);
-      }
-      else
-      {   
-        no strict 'refs';
-        @{"${class}::ISA"} = qw(Rose::DB::Object);
-        $class->meta->table($Tables{$class_root});
-        #$class->meta->init_with_db(Rose::DB->new);
-        $class->meta->auto_initialize;
-      }
-    }
-
-    my $product_class = $class_prefix . 'Product';
-
-    ##
-    ## Run tests
-    ##
-
-    my $p = $product_class->new(name => "Sled $i");
-
-    $p->vendor(name => "Acme $i");
-
-    $p->prices({ price => 1.23, region => 'US' },
-               { price => 4.56, region => 'UK' });
-
-    $p->colors({ name => 'red'   }, 
-               { name => 'green' });
-
-
-    $p->save;
-
-    $p = $product_class->new(id => $p->id)->load;
-    is($p->vendor->name, "Acme $i", "vendor $i.1 - $db_type");
-
-
-    my @prices = sort { $a->price <=> $b->price } $p->prices;
-
-    is(scalar @prices, 2, "prices $i.1 - $db_type");
-    is($prices[0]->price, 1.23, "prices $i.2 - $db_type");
-    is($prices[1]->price, 4.56, "prices $i.3 - $db_type");
-
-    my @colors = sort { $a->name cmp $b->name } $p->colors;
-
-    is(scalar @colors, 2, "colors $i.1 - $db_type");
-    is($colors[0]->name, 'green', "colors $i.2 - $db_type");
-    is($colors[1]->name, 'red', "colors $i.3 - $db_type");
-
-    #$DB::single = 1;
-    #$Rose::DB::Object::Debug = 1;
-
-    #
-    # Test code generation
-    #
-
-    is($product_class->meta->perl_relationships_definition,
-       <<"EOF", "perl_relationships_definition $i.1 - $db_type");
-__PACKAGE__->meta->relationships(
-    colors => {
-        map_class => '${class_prefix}ProductsColors',
-        map_from  => 'product',
-        map_to    => 'color',
-        type      => 'many to many',
-    },
-
-    prices => {
-        class      => '${class_prefix}Price',
-        column_map => { id => 'product_id' },
-        type       => 'one to many',
-    },
-);
-EOF
-
-    is($product_class->meta->perl_relationships_definition(braces => 'bsd', indent => 2),
-       <<"EOF", "perl_relationships_definition $i.2 - $db_type");
-__PACKAGE__->meta->relationships
-(
-  colors => 
-  {
-    map_class => '${class_prefix}ProductsColors',
-    map_from  => 'product',
-    map_to    => 'color',
-    type      => 'many to many',
-  },
-
-  prices => 
-  {
-    class      => '${class_prefix}Price',
-    column_map => { id => 'product_id' },
-    type       => 'one to many',
-  },
-);
-EOF
-
-    $product_class->meta_class->clear_all_dbs;
+    skip("$db_type tests", 2)  unless($Have{$db_type});
   }
+
+  next  unless($Have{$db_type});
+
+  $i++;
+
+  Rose::DB->default_type($db_type);
+  Rose::DB::Object::Metadata->unregister_all_classes;
+
+  my $class_prefix = ucfirst($db_type eq 'pg_with_schema' ? 'pgws' : $db_type);
+
+  #$Rose::DB::Object::Metadata::Debug = 1;
+
+  my $loader = 
+    Rose::DB::Object::Loader->new(
+      db           => Rose::DB->new,
+      class_prefix => $class_prefix);
+
+  my @classes = $loader->make_classes(include_tables => $Include_Tables);
+
+  #foreach my $class (@classes)
+  #{
+  #  next  unless($class->isa('Rose::DB::Object'));
+  #  print $class->meta->perl_class_definition, "\n";
+  #}
+
+  my $product_class = $class_prefix . '::Product';
+
+  $product_class->new(id => 1, name => 'p1')->save;
+  $product_class->new(id => 2, name => 'p2')->save;
+
+  my $iterator = 
+    Rose::DB::Object::Manager->get_objects_iterator(
+      object_class => $product_class,
+      with_objects => [ 'vendor', 'prices' ]);
+
+  $iterator->next;
+
+  Test::Memory::Cycle::memory_cycle_ok($iterator, "no memory cycles - $db_type");
+
+  # XXX: Confine lame memory tests to a known OS.
+  # XXX: Should use a real rusage-ish module.
+  if($^O eq 'darwin' && $Config{'osvers'} =~ /^9\./ && !$ENV{'AUTOMATED_TESTING'})
+  {
+    my $first_size = `/bin/ps -orss= -p $$`;
+    my $last_size = 0;
+
+    use constant ITERATIONS => 100;
+
+    my @leaked;
+
+    foreach my $iterations (ITERATIONS, ITERATIONS * 2)
+    {
+      for(0 .. $iterations) 
+      {
+        my $iterator = 
+          Rose::DB::Object::Manager->get_objects_iterator(
+            object_class => $product_class,
+            with_objects => [ 'vendor', 'prices' ]);
+
+        $iterator->next;
+
+        next;
+
+        my $size = `/bin/ps -orss= -p $$`;
+
+        if($size > $last_size)
+        {
+          print "$size (+" . ($size - $last_size) . ")\n";
+          $last_size = $size;
+        }
+      }
+
+      $last_size ||= `/bin/ps -orss= -p $$`;
+      my $leaked = $last_size - $first_size;
+      #$leaked && print "# Leaked ", ($leaked * 1024), ' bytes (', (($leaked * 1024) / $iterations), " bytes per iteration)\n";
+      push(@leaked, $leaked);
+    }
+
+    # There is a constant memory loss due to God-knows-what inside perl.
+    # The thing to check is that it does not grow as iterations increase.
+    is($leaked[0], $leaked[1], "no per-iteration leaks - $db_type");
+  }
+  else
+  {
+    SKIP: { skip('leak tests that only run non-automated on darwin 9', 1) }
+  }
+
 }
 
 BEGIN
@@ -204,13 +153,14 @@ BEGIN
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
 
-      $dbh->do('DROP TABLE products_colors CASCADE');
+      $dbh->do('DROP TABLE product_color_map CASCADE');
       $dbh->do('DROP TABLE colors CASCADE');
       $dbh->do('DROP TABLE prices CASCADE');
       $dbh->do('DROP TABLE products CASCADE');
       $dbh->do('DROP TABLE vendors CASCADE');
+      $dbh->do('DROP TABLE pk_test CASCADE');
 
-      $dbh->do('DROP TABLE Rose_db_object_private.products_colors CASCADE');
+      $dbh->do('DROP TABLE Rose_db_object_private.product_color_map CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.colors CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.prices CASCADE');
       $dbh->do('DROP TABLE Rose_db_object_private.products CASCADE');
@@ -219,6 +169,17 @@ BEGIN
       $dbh->do('DROP SCHEMA Rose_db_object_private CASCADE');
       $dbh->do('CREATE SCHEMA Rose_db_object_private');
     }
+
+    $dbh->do(<<"EOF");
+CREATE TABLE pk_test
+(
+  num   INT NOT NULL,
+  year  VARCHAR(255) NOT NULL,
+  name  VARCHAR(255),
+
+  PRIMARY KEY(num, year)
+)
+EOF
 
     $dbh->do(<<"EOF");
 CREATE TABLE vendors
@@ -272,12 +233,23 @@ CREATE TABLE colors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products_colors
+CREATE TABLE product_color_map
 (
   product_id  INT NOT NULL REFERENCES products (id),
   color_id    INT NOT NULL REFERENCES colors (id),
 
   PRIMARY KEY(product_id, color_id)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE Rose_db_object_private.pk_test
+(
+  num   INT NOT NULL,
+  year  VARCHAR(255) NOT NULL,
+  name  VARCHAR(255),
+
+  PRIMARY KEY(num, year)
 )
 EOF
 
@@ -298,7 +270,7 @@ CREATE TABLE Rose_db_object_private.products
   name    VARCHAR(255) NOT NULL,
   price   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
-  vendor_id  INT REFERENCES Rose_db_object_private.vendors (id),
+  vendor_id  INT REFERENCES vendors (id),
 
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
             CHECK(status IN ('inactive', 'active', 'defunct')),
@@ -314,7 +286,7 @@ EOF
 CREATE TABLE Rose_db_object_private.prices
 (
   id          SERIAL NOT NULL PRIMARY KEY,
-  product_id  INT NOT NULL REFERENCES Rose_db_object_private.products (id),
+  product_id  INT NOT NULL REFERENCES products (id),
   region      CHAR(2) NOT NULL DEFAULT 'US',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
@@ -333,10 +305,10 @@ CREATE TABLE Rose_db_object_private.colors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE Rose_db_object_private.products_colors
+CREATE TABLE Rose_db_object_private.product_color_map
 (
-  product_id  INT NOT NULL REFERENCES Rose_db_object_private.products (id),
-  color_id    INT NOT NULL REFERENCES Rose_db_object_private.colors (id),
+  product_id  INT NOT NULL REFERENCES products (id),
+  color_id    INT NOT NULL REFERENCES colors (id),
 
   PRIMARY KEY(product_id, color_id)
 )
@@ -361,11 +333,12 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
 
-      $dbh->do('DROP TABLE products_colors CASCADE');
+      $dbh->do('DROP TABLE product_color_map CASCADE');
       $dbh->do('DROP TABLE colors CASCADE');
       $dbh->do('DROP TABLE prices CASCADE');
       $dbh->do('DROP TABLE products CASCADE');
       $dbh->do('DROP TABLE vendors CASCADE');
+      $dbh->do('DROP TABLE pk_test CASCADE');
     }
 
     # Foreign key stuff requires InnoDB support
@@ -399,6 +372,17 @@ EOF
     $Have{'mysql'} = 1;
 
     $dbh->do(<<"EOF");
+CREATE TABLE pk_test
+(
+  num   INT NOT NULL,
+  year  VARCHAR(255) NOT NULL,
+  name  VARCHAR(255),
+
+  PRIMARY KEY(num, year)
+)
+EOF
+
+    $dbh->do(<<"EOF");
 CREATE TABLE products
 (
   id      INT AUTO_INCREMENT PRIMARY KEY,
@@ -416,7 +400,7 @@ CREATE TABLE products
   UNIQUE(name),
   INDEX(vendor_id),
 
-  FOREIGN KEY (vendor_id) REFERENCES vendors (id)
+  FOREIGN KEY (vendor_id) REFERENCES vendors (id) ON DELETE NO ACTION
 )
 TYPE=InnoDB
 EOF
@@ -432,7 +416,7 @@ CREATE TABLE prices
   UNIQUE(product_id, region),
   INDEX(product_id),
 
-  FOREIGN KEY (product_id) REFERENCES products (id)
+  FOREIGN KEY (product_id) REFERENCES products (id) ON UPDATE NO ACTION
 )
 TYPE=InnoDB
 EOF
@@ -449,7 +433,7 @@ TYPE=InnoDB
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products_colors
+CREATE TABLE product_color_map
 (
   product_id  INT NOT NULL,
   color_id    INT NOT NULL,
@@ -459,8 +443,8 @@ CREATE TABLE products_colors
   INDEX(color_id),
   INDEX(product_id),
 
-  FOREIGN KEY (product_id) REFERENCES products (id),
-  FOREIGN KEY (color_id) REFERENCES colors (id)
+  FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE NO ACTION,
+  FOREIGN KEY (color_id) REFERENCES colors (id) ON UPDATE NO ACTION
 )
 TYPE=InnoDB
 EOF
@@ -487,12 +471,24 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
 
-      $dbh->do('DROP TABLE products_colors CASCADE');
+      $dbh->do('DROP TABLE product_color_map CASCADE');
       $dbh->do('DROP TABLE colors CASCADE');
       $dbh->do('DROP TABLE prices CASCADE');
       $dbh->do('DROP TABLE products CASCADE');
       $dbh->do('DROP TABLE vendors CASCADE');
+      $dbh->do('DROP TABLE pk_test CASCADE');
     }
+
+    $dbh->do(<<"EOF");
+CREATE TABLE pk_test
+(
+  num   INT NOT NULL,
+  year  VARCHAR(255) NOT NULL,
+  name  VARCHAR(255),
+
+  PRIMARY KEY(num, year)
+)
+EOF
 
     $dbh->do(<<"EOF");
 CREATE TABLE vendors
@@ -546,7 +542,7 @@ CREATE TABLE colors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products_colors
+CREATE TABLE product_color_map
 (
   product_id  INT NOT NULL REFERENCES products (id),
   color_id    INT NOT NULL REFERENCES colors (id),
@@ -555,7 +551,6 @@ CREATE TABLE products_colors
 )
 EOF
 
-    $dbh->commit;
     $dbh->disconnect;
   }
 
@@ -578,12 +573,24 @@ EOF
       local $dbh->{'RaiseError'} = 0;
       local $dbh->{'PrintError'} = 0;
 
-      $dbh->do('DROP TABLE products_colors');
+      $dbh->do('DROP TABLE product_color_map');
       $dbh->do('DROP TABLE colors');
       $dbh->do('DROP TABLE prices');
       $dbh->do('DROP TABLE products');
       $dbh->do('DROP TABLE vendors');
+      $dbh->do('DROP TABLE pk_test');
     }
+
+    $dbh->do(<<"EOF");
+CREATE TABLE pk_test
+(
+  num   INT NOT NULL,
+  year  VARCHAR(255) NOT NULL,
+  name  VARCHAR(255),
+
+  PRIMARY KEY(num, year)
+)
+EOF
 
     $dbh->do(<<"EOF");
 CREATE TABLE vendors
@@ -637,7 +644,7 @@ CREATE TABLE colors
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE products_colors
+CREATE TABLE product_color_map
 (
   product_id  INT NOT NULL REFERENCES products (id),
   color_id    INT NOT NULL REFERENCES colors (id),
@@ -660,13 +667,14 @@ END
     my $dbh = Rose::DB->new('pg_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE products_colors CASCADE');
+    $dbh->do('DROP TABLE product_color_map CASCADE');
     $dbh->do('DROP TABLE colors CASCADE');
     $dbh->do('DROP TABLE prices CASCADE');
     $dbh->do('DROP TABLE products CASCADE');
     $dbh->do('DROP TABLE vendors CASCADE');
+    $dbh->do('DROP TABLE pk_test CASCADE');
 
-    $dbh->do('DROP TABLE Rose_db_object_private.products_colors CASCADE');
+    $dbh->do('DROP TABLE Rose_db_object_private.product_color_map CASCADE');
     $dbh->do('DROP TABLE Rose_db_object_private.colors CASCADE');
     $dbh->do('DROP TABLE Rose_db_object_private.prices CASCADE');
     $dbh->do('DROP TABLE Rose_db_object_private.products CASCADE');
@@ -683,11 +691,12 @@ END
     my $dbh = Rose::DB->new('mysql_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE products_colors CASCADE');
+    $dbh->do('DROP TABLE product_color_map CASCADE');
     $dbh->do('DROP TABLE colors CASCADE');
     $dbh->do('DROP TABLE prices CASCADE');
     $dbh->do('DROP TABLE products CASCADE');
     $dbh->do('DROP TABLE vendors CASCADE');
+    $dbh->do('DROP TABLE pk_test CASCADE');
 
     $dbh->disconnect;
   }
@@ -698,27 +707,28 @@ END
     my $dbh = Rose::DB->new('informix_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE products_colors CASCADE');
+    $dbh->do('DROP TABLE product_color_map CASCADE');
     $dbh->do('DROP TABLE colors CASCADE');
     $dbh->do('DROP TABLE prices CASCADE');
     $dbh->do('DROP TABLE products CASCADE');
     $dbh->do('DROP TABLE vendors CASCADE');
-
+    $dbh->do('DROP TABLE pk_test CASCADE');
 
     $dbh->disconnect;
   }
 
   if($Have{'sqlite'})
   {
-    # SQLite
+    # Informix
     my $dbh = Rose::DB->new('sqlite_admin')->retain_dbh()
       or die Rose::DB->error;
 
-    $dbh->do('DROP TABLE products_colors');
+    $dbh->do('DROP TABLE product_color_map');
     $dbh->do('DROP TABLE colors');
     $dbh->do('DROP TABLE prices');
     $dbh->do('DROP TABLE products');
     $dbh->do('DROP TABLE vendors');
+    $dbh->do('DROP TABLE pk_test');
 
     $dbh->disconnect;
   }

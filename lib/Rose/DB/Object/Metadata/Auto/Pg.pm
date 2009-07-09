@@ -9,7 +9,9 @@ use Rose::DB::Object::Metadata::UniqueKey;
 use Rose::DB::Object::Metadata::Auto;
 our @ISA = qw(Rose::DB::Object::Metadata::Auto);
 
-our $VERSION = '0.725';
+our $Debug;
+
+our $VERSION = '0.782';
 
 # Other useful columns, not selected for now
 #   pg_get_indexdef(i.oid) AS indexdef
@@ -25,7 +27,8 @@ use constant UNIQUE_INDEX_SQL => <<'EOF';
 SELECT 
   x.indrelid,
   x.indkey,
-  i.relname AS key_name
+  i.relname AS key_name,
+  CASE WHEN x.indpred IS NULL THEN 0 ELSE 1 END AS has_predicate
 FROM 
   pg_catalog.pg_index x
   JOIN pg_catalog.pg_class c ON c.oid = x.indrelid
@@ -75,20 +78,37 @@ sub auto_generate_unique_keys
 
     my $table = lc $self->table;
 
-    my($relation_id, $column_nums, $key_name);
+    my($relation_id, $column_nums, $key_name, $has_predicate);
 
     my $sth = $dbh->prepare(UNIQUE_INDEX_SQL);
 
     $sth->execute($schema, $table);
-    $sth->bind_columns(\($relation_id, $column_nums, $key_name));
+    $sth->bind_columns(\($relation_id, $column_nums, $key_name, $has_predicate));
 
     while($sth->fetch)
     {
-      my $uk = Rose::DB::Object::Metadata::UniqueKey->new(name   => $key_name,
-                                                          parent => $self);
+      # See if we need to ignore predicated unique indices.  The semantics 
+      # of predicated indexes, e.g.,
+      #
+      #    CREATE UNIQUE INDEX ... WHERE column = 'value'
+      #
+      # are different from RDBO's unique key semantics in that predicates
+      # (may) cause the index to apply only partially to the table.
+      if($has_predicate && !$self->include_predicated_unique_indexes)
+      {
+        $Debug && warn "$class - Skipping predicated unique index $key_name\n";
+        next;
+      }
 
-      # Functional indexes show up this way, e.g. "... ON (LOWER(name))"
+      # Skip functional indexes (e.g., "... ON (LOWER(name))") which show up
+      # as having a pg_index.indkey ($column_nums) value of 0.
       next  if($column_nums eq '0'); 
+
+      my $uk = 
+        Rose::DB::Object::Metadata::UniqueKey->new(
+          name          => $key_name,
+          parent        => $self,
+          has_predicate => $has_predicate);
 
       # column_nums is a space-separated list of numbers.  It's really an
       # "in2vector" data type, which seems sketchy to me, but whatever. 

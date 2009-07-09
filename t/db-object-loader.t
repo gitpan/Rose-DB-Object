@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1 + (5 * 27) + 9;
+use Test::More tests => 1 + (5 * 33) + 9;
 
 BEGIN 
 {
@@ -42,7 +42,7 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
   {
     unless($Have{$db_type})
     {
-      skip("$db_type tests", 27 + scalar @{$Reserved_Words{$db_type} ||= []});
+      skip("$db_type tests", 33 + scalar @{$Reserved_Words{$db_type} ||= []});
     }
   }
 
@@ -69,10 +69,69 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
       ($db_type eq 'mysql' ? (require_primary_key => 0) : ()),
       pre_init_hook => sub { $pre_init_hook++ });
 
+  my %extra_loader_args;
+
+  if($db_type eq 'sqlite')
+  {
+    $loader->warn_on_missing_primary_key(0);
+    $loader->warn_on_missing_pk(1);
+  }
+  elsif($db_type eq 'pg')
+  {
+    $loader->include_predicated_unique_indexes(1);
+  }
+  elsif($db_type eq 'mysql')
+  {
+    $loader->warn_on_missing_pk(0);
+    $loader->warn_on_missing_primary_key(1);
+    $extra_loader_args{'warn_on_missing_pk'} = undef;
+    $extra_loader_args{'warn_on_missing_primary_key'} = undef;
+  }
+
   $loader->convention_manager($i % 2 ? 'MyCM' : MyCM->new);
 
-  my @classes = $loader->make_classes(include_tables => $Include_Tables . 
-                                      ($db_type eq 'mysql' ? '|read' : ''));
+  my @classes;
+
+  my $i = 0;
+
+  # Test aliased parameter conflicts
+  foreach my $a (0, 1, undef)
+  {
+    foreach my $b (0, 1, undef)
+    {
+      if(($a || 0) != ($b || 0))
+      {
+        $i++;
+
+        eval
+        {
+          $loader->make_classes(warn_on_missing_pk => $a,
+                                warn_on_missing_primary_key => $b);
+        };
+
+        ok($@, "warn_on_missing_pk conflict $i - $db_type");
+      }      
+    }
+  }
+
+  CATCH_WARNINGS:
+  {
+    my $warnings;
+    local $SIG{'__WARN__'} = sub { $warnings .= "@_\n" };
+    @classes = $loader->make_classes(include_tables => $Include_Tables . 
+                                     ($db_type eq 'mysql' ? '|read' : ''),
+                                     %extra_loader_args);
+
+    if($db_type eq 'sqlite')
+    {
+      ok($warnings =~ /\QWarning: table 'no_pk_test' has no primary key defined.  Skipping./,
+         "warn_on_missing_primary_key - $db_type");
+    }
+    else
+    {
+      is($warnings, undef, "warn_on_missing_primary_key - $db_type");
+    }
+  }
 
   ok(scalar keys %JCS::Called_Custom_CM >= 3, "custom convention manager - $db_type");
   ok($pre_init_hook > 0, "pre_init_hook - $db_type");
@@ -131,6 +190,21 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
   else
   {
     SKIP: { skip("serial coercion test for $db_type", 1) }
+  }
+
+  if($db_type eq 'pg')
+  {
+    my $uk = $product_class->meta->unique_key_by_name('products_uk_test');
+    ok($uk && $uk->has_predicate, "include unique index with predicate - $db_type");
+  }
+  elsif($db_type eq 'pg_with_schema')
+  {
+    my $uk = $product_class->meta->unique_key_by_name('products_uk_test');
+    ok(!$uk, "skip unique index with predicate - $db_type");
+  }
+  else
+  {
+    SKIP: { skip("unique index with predicate for $db_type", 1) }
   }
 
   if($db_type eq 'mysql' && $db->dbh->{'Driver'}{'Version'} >= 4.002)
@@ -278,7 +352,7 @@ BEGIN
   );
 
   #
-  # Postgres
+  # PostgreSQL
   #
 
   my $dbh;
@@ -374,6 +448,10 @@ CREATE TABLE products
 EOF
 
     $dbh->do(<<"EOF");
+CREATE UNIQUE INDEX products_uk_test ON products (date_created) WHERE status = 'inactive';
+EOF
+
+    $dbh->do(<<"EOF");
 CREATE UNIQUE INDEX products_uk1 ON products (LOWER(name))
 EOF
 
@@ -461,6 +539,10 @@ CREATE TABLE Rose_db_object_private.products
 
   UNIQUE(name)
 )
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE UNIQUE INDEX products_uk_test ON Rose_db_object_private.products (date_created) WHERE status = 'inactive';
 EOF
 
     $dbh->do(<<"EOF");
@@ -777,7 +859,7 @@ EOF
     }
 
     $dbh->do(<<"EOF");
-CREATE TABLE no_pk_test
+CREATE TABLE 'no_pk_test'
 (
   id    INT NOT NULL,
   name  VARCHAR(255) NOT NULL,
@@ -787,12 +869,12 @@ CREATE TABLE no_pk_test
 EOF
 
     $dbh->do(<<"EOF");
-CREATE TABLE vendors
+CREATE TABLE "vendors"
 (
-  id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  "id"    INTEGER PRIMARY KEY AUTOINCREMENT,
   name  VARCHAR(255) NOT NULL,
 
-  UNIQUE(name)
+  UNIQUE("name")
 )
 EOF
 
@@ -811,7 +893,7 @@ CREATE TABLE products
   date_created  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   release_date  DATETIME,
 
-  UNIQUE(name)
+  UNIQUE('name')
 )
 EOF
 
@@ -857,7 +939,7 @@ END
 
   if($Have{'pg'})
   {
-    # Postgres
+    # PostgreSQL
     my $dbh = Rose::DB->new('pg_admin')->retain_dbh()
       or die Rose::DB->error;
 

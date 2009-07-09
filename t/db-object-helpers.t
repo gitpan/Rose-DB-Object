@@ -298,7 +298,7 @@ foreach my $db_type (qw(mysql pg informix sqlite))
   else { SKIP: { skip("tests that require Storable - $db_type", 1) } }
 
   $o = $class->new(id => 1, name => 'John', age => 30)->load_or_save;
-  
+
   is(scalar $o->dirty_columns, 0, "dirty_columns 1 - $db_type");
 
   $o->dirty_columns(qw(name age));
@@ -379,7 +379,7 @@ BEGIN
   our(%Have, $Have_YAML, $Have_JSON, $All);
 
   #
-  # Postgres
+  # PostgreSQL
   #
 
   my $dbh;
@@ -692,7 +692,7 @@ END
   # Delete test tables
   if($Have{'pg'})
   {
-    # Postgres
+    # PostgreSQL
     my $dbh = Rose::DB->new('pg_admin')->retain_dbh()
       or die Rose::DB->error;
 

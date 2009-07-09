@@ -17,7 +17,7 @@ use Rose::DB::Object::Metadata::Auto;
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.770';
+our $VERSION = '0.782';
 
 our $Debug = 0;
 
@@ -54,9 +54,13 @@ use Rose::Object::MakeMethods::Generic
     'with_managers'       => { default => 1 },
     'with_foreign_keys'   => { default => 1 },
     'with_unique_keys'    => { default => 1 },
-    'convention_manager_was_set' => { default => 0 },
+    'convention_manager_was_set'  => { default => 0 },
+    'warn_on_missing_primary_key',
+    'include_predicated_unique_indexes' => { default => 0 },
   ],
 );
+
+sub warn_on_missing_pk { shift->warn_on_missing_primary_key(@_) }
 
 # Get the best available clone method
 eval 
@@ -542,6 +546,38 @@ sub make_classes
   my $require_primary_key = exists $args{'require_primary_key'} ? 
     delete $args{'require_primary_key'} : $self->require_primary_key;
 
+  # Check for parameter alias conflicts
+  if(exists $args{'warn_on_missing_pk'})
+  {
+    if(exists $args{'warn_on_missing_primary_key'} &&
+       (($args{'warn_on_missing_pk'} ? 1 : 0) != ($args{'warn_on_missing_primary_key'} ? 1 : 0)))
+    {
+      croak "The warn_on_missing_primary_key and warn_on_missing_pk parameters ",
+            "were both passed, and they conflict.  Since these two parameters are ",
+            "aliases for each other, try passing just one.";
+    }
+
+    $args{'warn_on_missing_primary_key'} = delete $args{'warn_on_missing_pk'}; 
+  }
+
+  my $warn_on_missing_primary_key;
+
+  # If not requiring PKs and no explicit decision, either in args or 
+  # in the object, has been made about whether to warn on missing PKs,
+  # then don't warn (because not requiring PKs is a strong indication
+  # that their absence is not worth a warning)
+  if(!$require_primary_key &&
+     ((!exists $args{'warn_on_missing_primary_key'} && !defined $self->warn_on_missing_primary_key) ||
+      exists $args{'warn_on_missing_primary_key'} && !defined $args{'warn_on_missing_primary_key'}))
+  {
+    $warn_on_missing_primary_key = 0;
+  }
+  else
+  {
+    $warn_on_missing_primary_key = exists $args{'warn_on_missing_primary_key'} ? 
+      delete $args{'warn_on_missing_primary_key'} : $self->warn_on_missing_primary_key;
+  }
+
   my $include_views = exists $args{'include_views'} ? 
     delete $args{'include_views'} : $self->include_views;
 
@@ -874,8 +910,18 @@ sub make_classes
     local $_ = $table;
     next  unless(!$filter || $filter->($table));
 
-    # Skip tables with no primary keys
-    next  if($require_primary_key && !$db->has_primary_key($table));
+    unless($db->has_primary_key($table))
+    {
+      if($warn_on_missing_primary_key)
+      {
+        # Warn about tables with no primary keys
+        warn "Warning: table '$table' has no primary key defined.", 
+              ($require_primary_key ? "  Skipping.\n" : "\n");
+      }
+
+      # Skip table if primary keys are required
+      next  if($require_primary_key);
+    }
 
     my $obj_class = $class_prefix . $cm->table_to_class($table);
 
@@ -937,6 +983,13 @@ sub make_classes
     $meta->table($table);
     $meta->convention_manager($cm->clone);
     $meta->db($db);
+
+    my $include_predicated_unique_indexes = 
+      exists $args{'include_predicated_unique_indexes'} 
+        ? delete $args{'include_predicated_unique_indexes'} 
+        : $self->include_predicated_unique_indexes;
+
+    $meta->include_predicated_unique_indexes($include_predicated_unique_indexes);
 
     $meta->auto_initialize(%args);
 
@@ -1260,6 +1313,10 @@ Get or set a regular expression or reference to an array of table names to inclu
 
 Table names are compared to REGEX and the names in ARRAYREF in a case-insensitive manner.  To override this in the case of the REGEX, add C<(?-i)> to the front of the REGEX.  Otherwise, use the L<filter_tables|/filter_tables> method instead.
 
+=item B<include_predicated_unique_indexes BOOL>
+
+Get or set a boolean value that will be assigned to the L<include_predicated_unique_indexes|Rose::DB::Object::Metadata/include_predicated_unique_indexes> attribute of the L<Rose::DB::Object::Metadata> object for each class created by the L<make_classes|/make_classes> method.  The default value is false.
+
 =item B<include_views BOOL>
 
 If true, database views will also be processed by default during calls to the L<make_classes|/make_classes> method.  Defaults to false.
@@ -1296,6 +1353,10 @@ A reference to a subroutine that takes a single table name argument and returns 
 
 Defaults to the value of the loader object's L<filter_tables|/filter_tables> attribute, provided that both the C<exclude_tables> and C<include_tables> values are undefined.  Tables without primary keys are automatically skipped.
 
+=item B<include_predicated_unique_indexes BOOL>
+
+This value will be assigned to the L<include_predicated_unique_indexes|Rose::DB::Object::Metadata/include_predicated_unique_indexes> attribute of the L<Rose::DB::Object::Metadata> object for each class created by this method.  Defaults to the value of the loader object's L<include_predicated_unique_indexes|/include_predicated_unique_indexes> attribute.
+
 =item B<include_views BOOL>
 
 If true, database views will also be processed.  Defaults to the value of the loader object's L<include_views|/include_views> attribute.
@@ -1311,6 +1372,18 @@ A reference to a subroutine or a reference to an array of code references that w
 =item B<require_primary_key BOOL>
 
 If true, then any table that does not have a primary key will be skipped.  Defaults to the value of the loader object's L<require_primary_key|/require_primary_key> attribute.  Note that a L<Rose::DB::Object>-derived class based on a table with no primary key will not function correctly in all circumstances.  Use this feature at your own risk.
+
+=item B<warn_on_missing_pk BOOL>
+
+This is an alias for the C<warn_on_missing_primary_key> parameter.
+
+=item B<warn_on_missing_primary_key BOOL>
+
+If true, then any table that does not have a primary key will trigger a warning.
+
+If C<require_primary_key> is false and the loader object's L<warn_on_missing_primary_key|/warn_on_missing_primary_key> attribute is undefined, or if the C<warn_on_missing_primary_key> parameter is set to an undefined valur or is not passed to the L<make_classes|/make_classes> call at all, then C<warn_on_missing_primary_key> is set to false.  Otherwise, it defaults to the value of the loader object's L<warn_on_missing_primary_key|/warn_on_missing_primary_key> attribute.  Note that a L<Rose::DB::Object>-derived class based on a table with no primary key will not function correctly in all circumstances.
+
+These complicated defaults are intended to honor the intentions of the C<require_primary_key> attribute/parameter.  If not requiring primary keys and no explicit decision has been made about whether to warn about missing primary keys, either in the parameters to the  L<make_classes|/make_classes> call or in the loader object itself, then we don't warn about missing primary keys.  The idea is that not requiring primary keys is a strong indication that their absence is not worth a warning.
 
 =item B<with_foreign_keys BOOL>
 
@@ -1399,6 +1472,14 @@ Get or set a reference to a subroutine to be called just before each L<Rose::DB:
 Get or set a boolean value that determines whether or not the L<make_classes|/make_classes> method will skip any table that does not have a primary key will be skipped.  Defaults to true.
 
 Note that a L<Rose::DB::Object>-derived class based on a table with no primary key will not function correctly in all circumstances.  Use this feature at your own risk.
+
+=item B<warn_on_missing_pk BOOL>
+
+This is an alias for the L<warn_on_missing_primary_key|/warn_on_missing_primary_key> method.
+
+=item B<warn_on_missing_primary_key BOOL>
+
+Get or set a boolean value that determines whether or not the L<make_classes|/make_classes> method will emit a warning when it encounters a table that does not have a primary key.  Defaults to undefined.
 
 =item B<with_foreign_keys BOOL>
 

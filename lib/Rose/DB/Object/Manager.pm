@@ -16,7 +16,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.776';
+our $VERSION = '0.782';
 
 our $Debug = 0;
 
@@ -1741,7 +1741,7 @@ sub get_objects
   if(my $sort_by = $args{'sort_by'})
   {
     # Alter sort_by SQL, replacing table and relationship names with aliases.
-    # This is to prevent databases like Postgres from "adding missing FROM
+    # This is to prevent databases like PostgreSQL from "adding missing FROM
     # clause"s.  See: http://sql-info.de/postgresql/postgres-gotchas.html#1_5
     if($table_aliases)
     {
@@ -2094,6 +2094,8 @@ sub get_objects
 
           my($last_object, %subobjects, %parent_objects);
 
+          weaken(my $witerator = $iterator);
+
           $iterator->_next_code(sub
           {
             my($self) = shift;
@@ -2326,7 +2328,7 @@ sub get_objects
                   no warnings;
                   if($manual_limit && $self->{'_count'} == $manual_limit)
                   {
-                    $iterator->finish;
+                    $self->finish;
                     last ROW;
                   }
                 }
@@ -2388,7 +2390,7 @@ sub get_objects
               if($manual_limit && $self->{'_count'} == $manual_limit)
               {
                 $self->total($self->{'_count'});
-                $iterator->finish;
+                $self->finish;
               }
 
               #$Debug && warn "Return $object_class $objects[-1]{'id'}\n";

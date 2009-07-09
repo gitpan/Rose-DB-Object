@@ -16,7 +16,7 @@ use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Exception;
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.781';
+our $VERSION = '0.782';
 
 our $Debug = 0;
 
@@ -392,6 +392,8 @@ sub load
 
     # The load() query shouldn't find more than one row anyway, 
     # but DBD::SQLite demands this :-/
+    # XXX: Recent versions of DBD::SQLite seem to have cured this.
+    # XXX: Safe to remove?
     $sth->finish;
 
     if($loaded_ok)
@@ -1545,8 +1547,16 @@ EOF
     }
   };
 
-  $AUTOLOAD =~ /^(.+)::(\w+)$/;
-  Carp::confess qq(Can't locate object method "$2" via package "$1"$msg);
+  my $method_type = ref $self ? 'object' : 'class';
+
+  if($AUTOLOAD =~ /^(.+)::(.+)$/)
+  {
+    Carp::confess qq(Can't locate $method_type method "$2" via package "$1"$msg);
+  }
+  else # notreached?
+  {
+    Carp::confess qq(Can't locate $method_type method $AUTOLOAD$msg);
+  }
 }
 
 sub DESTROY { }
@@ -2348,7 +2358,7 @@ L<http://rose.googlecode.com>
 
 =head1 CONTRIBUTORS
 
-Bradley C Bailey, Graham Barr, David Christensen, Lucian Dragus, Justin Ellison, Perrin Harkins, Cees Hek, Benjamin Hitz, Peter Karman, Michael Reece, Teodor Zlatanov
+Bradley C Bailey, Graham Barr, David Christensen, Lucian Dragus, Justin Ellison, Perrin Harkins, Cees Hek, Benjamin Hitz, Peter Karman, Ed Loehr, Michael Reece, Thomas Whaples, Teodor Zlatanov
 
 =head1 AUTHOR
 
