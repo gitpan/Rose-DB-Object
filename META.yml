@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Rose-DB-Object
-version:            0.782
+version:            0.783
 abstract:           Extensible, high performance object-relational mapper (ORM).
 author:
     - John Siracusa <siracusa@gmail.com>
@@ -38,7 +38,7 @@ no_index:
     directory:
         - t
         - inc
-generated_by:       ExtUtils::MakeMaker version 6.52
+generated_by:       ExtUtils::MakeMaker version 6.54
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
     version:  1.4

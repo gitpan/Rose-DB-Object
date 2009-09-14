@@ -11,7 +11,7 @@ require Rose::DB::Object::Util;
 
 use Carp;
 
-our $VERSION = '0.776';
+our $VERSION = '0.783';
 
 __PACKAGE__->export_tags
 (
@@ -554,9 +554,41 @@ sub strip
     delete $self->{'db'};
   }
 
+  # Strip "on-save" code references: destructive!
+  unless($args{'strip_on_save_ok'})
+  {
+    if(__contains_code_ref($self->{ON_SAVE_ATTR_NAME()}))
+    {
+      croak qq(Refusing to strip "on-save" actions from ), ref($self),
+        qq( object without strip_on_save_ok parameter);
+    }
+  }
+
+  delete $self->{ON_SAVE_ATTR_NAME()};
+
+  # Reference to metadata object will be regenrated as needed
   delete $self->{META_ATTR_NAME()};
 
   return $self;
+}
+
+sub __contains_code_ref
+{
+  my($hash_ref) = shift;
+
+  foreach my $key (keys %$hash_ref)
+  {
+    return 1  if(ref $hash_ref->{$key} eq 'CODE');
+
+    if(ref $hash_ref->{$key} eq 'HASH')
+    {
+      return 1  if(__contains_code_ref($hash_ref->{$key}));
+    }
+    else
+    {
+      Carp::confess "Unexpected reference encountered: $hash_ref->{$key}";
+    }
+  }
 }
 
 # XXX: A value that is unlikely to exist in a primary key column value
@@ -663,7 +695,8 @@ sub _traverse_depth_first
         $objs = [ $objs ]  unless(ref $objs eq 'ARRAY');
       }
 
-      my $c = $handlers->{'relationship'}->($self, $context, $rel)  if($handlers->{'relationship'});
+      my $c = $handlers->{'relationship'} ? 
+        $handlers->{'relationship'}->($self, $context, $rel) : $context;
 
       OBJ: foreach my $obj (@$objs)
       {
@@ -763,7 +796,7 @@ sub as_tree
 }
 
 # XXX: This version requires all relationship and column mutators to have 
-# XXX: the same names as the relationships and columnsthemselves.
+# XXX: the same names as the relationships and columns themselves.
 # sub init_with_tree { shift->init(@_) }
 
 # XXX: This version requires all relationship mutators to have the same 
@@ -1345,6 +1378,10 @@ The method is the equivalent of creating a new object and then calling the L<ini
 
 This method prepares an object for serialization by stripping out internal structures known to contain code references or other values that do not survive serialization.  The object itself is returned, now stripped.
 
+B<Note:> Operations that were scheduled to happen "on L<save()|Rose::DB::Object/save>" will I<also> be stripped out by this method.  Examples include the databsae update or insertion of any child objects attached to the parent object using C<get_set_on_save>, C<add_on_save>, or C<delete_on_save> methods.  If such operations exist, an exception will be thrown unless the C<strip_on_save_ok> parameter is true.
+
+If your object has these kinds of pending changes, either L<save()|Rose::DB::Object/save> first and then L<strip()|/strip>, or L<clone()|/clone> and then L<strip()|/strip> the clone.
+
 By default, the L<db|Rose::DB::Object/db> object and all sub-objects (foreign keys or relationships) are removed.  PARAMS are optional name/value pairs.  Valid PARAMS are:
 
 =over 4
@@ -1372,6 +1409,10 @@ Do not removed sub-objects that have L<already been loaded|/has_loaded_related> 
 Do not remove any sub-objects (L<foreign keys|Rose::DB::Object::Metadata/foreign_keys> or L<relationships|Rose::DB::Object::Metadata/relationships>) that have L<already been loaded|/has_loaded_related> by this object.  This option is the same as specifying both the C<foreign_keys> and C<relationships> names.
 
 =back
+
+=item B<strip_on_save_ok BOOL>
+
+If true, do not throw an exception when pending "on-save" changes exist in the object; just strip them.  (See description above for details.)  
 
 =back
 
@@ -1413,7 +1454,9 @@ A reference to a hash of handler subroutines.  Valid keys, calling context, and 
 
 =item B<object>
 
-This handler is called whenever a L<Rose::DB::Object>-derived object is encountered.  This includes the object that L<traverse_depth_first|/traverse_depth_first> was called on as well as any sub-objects.  The handler is passed the object, the C<context>, the parent object (undef, if none), the L<Rose::DB::Object::Metadata::Relationship>-derived object through which this object was arrived at (undef if none), and the depth.  Example:
+This handler is called whenever a L<Rose::DB::Object>-derived object is encountered.  This includes the object that L<traverse_depth_first|/traverse_depth_first> was called on as well as any sub-objects.  The handler is passed the object, the C<context>, the parent object (undef, if none), the L<Rose::DB::Object::Metadata::Relationship>-derived object through which this object was arrived at (undef if none), and the depth.
+
+The handler I<must> return the value to be used as the C<context> during the traversal of any related sub-objects.  The context returned may be different than the context passed in.  Example:
 
     handlers =>
     {
@@ -1421,6 +1464,8 @@ This handler is called whenever a L<Rose::DB::Object>-derived object is encounte
       {
         my($object, $context, $parent, $rel_meta, $depth) = @_;
         ...
+
+        return $context; # Important!
       }
       ...
     }
@@ -1429,7 +1474,7 @@ This handler is called whenever a L<Rose::DB::Object>-derived object is encounte
 
 This handler is called just before a L<Rose::DB::Object::Metadata::Relationship>-derived object is descended into  (i.e., just before the sub-objectes related through this relationship are processed). The handler is passed the object that contains the relationship, the C<context>, the C<context>, and the L<relationship|Rose::DB::Object::Metadata::Relationship> object itself.
 
-The handler I<must> return the value to be used as the C<context> during the traversal of the objects related through this relationship.  The context returned may be different than the context passed in.  Example:
+The handler I<must> return the value to be used as the C<context> during the traversal of the objects related through this relationship.  (If you do not define this handler, then the current context object will be used.)  The context returned may be different than the context passed in.  Example:
 
     handlers =>
     {

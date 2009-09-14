@@ -1,3 +1,23 @@
+0.783 (09.14.2009) - John Siracusa <siracusa@gmail.com>
+
+    * Added new range operators: between, gt_lt, gt_le, ge_lt, and ge_le.
+    * The strip() helper method will now throw an exception when there are
+      pending "on-save" actions.  (Reported by Kevin McGrath)
+    * Added strip_on_save_ok parameter to strip() to override the default
+      behavior.
+    * Worked around yet another MySQL empty-string-default "feature."
+      (Reported by Terrence Brannon)
+    * Added missing documentation about the required return value of the
+      "object" handler in the traverse_depth_first() helper method.
+      (Reported by David Christensen)
+    * The traverse_depth_first() helper now preserves the existing context
+      object if a "relationship" handler is not defined.  (Reported by
+      David Christensen)
+    * Fixed a bug that prevented scalar reference filter arguments from working
+      correctly with date columns in Manager queries.  (Reported by Todd Lyons)
+    * Fixed a multi-many Manager bug that caused duplicate sub-objects to be
+      linked to the wrong parent object.  (Reported by Anton Shevchenko)
+
 0.782 (07.09.2009) - John Siracusa <siracusa@gmail.com>
 
     * Altered tests to confirm the fix for RT 45836.

@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 3903;
+use Test::More tests => 3904;
 
 BEGIN 
 {
@@ -125,6 +125,22 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
       [
         id         => { ge => 1 },
         id         => [ \'1', \'id' ], #'
+        id         => { gt_lt => [ -1, 991 ] },
+        id         => { gt_le => [ -1, 992 ] },
+        id         => { ge_lt => [ -1, 993 ] },
+        id         => { ge_le => [ -1, 994 ] },
+        id         => { gt_lt_sql => [ -1, 991 ] },
+        id         => { gt_le_sql => [ -1, 992 ] },
+        id         => { ge_lt_sql => [ -1, 993 ] },
+        id         => { ge_le_sql => [ -1, 994 ] },
+        id         => { gt_lt => [ -1, \991 ] },
+        id         => { gt_le => [ \-1, 992 ] },
+        id         => { ge_lt => [ -1, \993 ] },
+        id         => { ge_le => [ \-1, 994 ] },
+        id         => { between => [ 0, 99 ] },
+        id         => { between => [ 0, \q(101) ] },
+        id         => { between => [ \1, 99 ] },
+        id         => { ne => undef },
         name       => 'John',  
         flag       => 't',
         flag2      => 'f',
@@ -138,6 +154,9 @@ SKIP: foreach my $db_type (qw(pg)) #pg_with_schema
         or         => [ and => [ '!bits' => '00001', bits => { ne => '11111' } ],
                         and => [ bits => { lt => '10101' }, '!bits' => '10000' ] ],
         start      => '2001-01-02',
+        start      => { lt => \q('now'::date + interval '30 days') },
+        start      => { between => [ '1/1/1999', 'now' ] },
+        start      => { between_sql => [ "'1999-02-02'", "'now'" ] },
         save       => [ 1, 5 ],
         nums       => '{1,2,3}',
         fk1        => 2,
@@ -3030,6 +3049,23 @@ SKIP: foreach my $db_type ('mysql')
       query        =>
       [
         id         => { ge => 1 },
+        id         => { ge => 1 },
+        id         => [ \'1', \'id' ], #'
+        id         => { gt_lt => [ -1, 991 ] },
+        id         => { gt_le => [ -1, 992 ] },
+        id         => { ge_lt => [ -1, 993 ] },
+        id         => { ge_le => [ -1, 994 ] },
+        id         => { gt_lt_sql => [ -1, 991 ] },
+        id         => { gt_le_sql => [ -1, 992 ] },
+        id         => { ge_lt_sql => [ -1, 993 ] },
+        id         => { ge_le_sql => [ -1, 994 ] },
+        id         => { gt_lt => [ -1, \991 ] },
+        id         => { gt_le => [ \-1, 992 ] },
+        id         => { ge_lt => [ -1, \993 ] },
+        id         => { ge_le => [ \-1, 994 ] },
+        id         => { between => [ 0, 99 ] },
+        id         => { between => [ 0, \q(101) ] },
+        id         => { between => [ \1, 99 ] },
         name       => 'John',  
         flag       => 1,
         flag2      => 0,
@@ -3062,6 +3098,9 @@ SKIP: foreach my $db_type ('mysql')
         or         => [ and => [ '!bits' => '00001', bits => { ne => '11111' } ],
                         and => [ bits => { lt => '10101' }, '!bits' => '10000' ] ],
         start      => '2001-01-02',
+        start      => { le => \q(NOW()) },
+        start      => { between => [ '1/1/1999', 'NOW()' ] },
+        start      => { between_sql => [ "'1999-02-02'", 'NOW()' ] },
         save_col   => [ 1, 5 ],
         last_modified => { le => 'now' },
         date_created  => '2004-03-30 12:34:56',
@@ -8683,16 +8722,21 @@ EOF
 
 SKIP: foreach my $db_type (qw(sqlite))
 {
-  skip("SQLite tests", 791)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 792)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
   my($sql, $bind) = 
     Rose::DB::Object::Manager->get_objects_sql(
       object_class => 'MySQLiteObject',
-      where => [ name => { '@' => \q(xxx) } ]);
+      where => 
+      [
+        name  => { '@' => \q(xxx) },
+        start => { lt => \q(CURRENT_TIMESTAMP) },
+      ]);
 
-  ok($sql =~ /\bname @ xxx\b/, "strict_ops 1 - $db_type");
+  like($sql, qr/\bname @ xxx\b/, "strict_ops 1.0 - $db_type");
+  like($sql, qr/\bstart < CURRENT_TIMESTAMP\b/, "strict_ops 1.1 - $db_type");
 
   eval
   {
@@ -8786,6 +8830,21 @@ SKIP: foreach my $db_type (qw(sqlite))
       #debug => 1,
       query        =>
       [
+        id         => { gt_lt => [ -1, 991 ] },
+        id         => { gt_le => [ -1, 992 ] },
+        id         => { ge_lt => [ -1, 993 ] },
+        id         => { ge_le => [ -1, 994 ] },
+        id         => { gt_lt_sql => [ -1, 991 ] },
+        id         => { gt_le_sql => [ -1, 992 ] },
+        id         => { ge_lt_sql => [ -1, 993 ] },
+        id         => { ge_le_sql => [ -1, 994 ] },
+        id         => { gt_lt => [ -1, \991 ] },
+        id         => { gt_le => [ \-1, 992 ] },
+        id         => { ge_lt => [ -1, \993 ] },
+        id         => { ge_le => [ \-1, 994 ] },
+        id         => { between => [ 0, 99 ] },
+        id         => { between => [ 0, \q(101) ] },
+        id         => { between => [ \1, 99 ] },
         id         => { ge => 1 },
         id         => { ne => undef },
         fk3        => { eq => undef },
@@ -8795,6 +8854,9 @@ SKIP: foreach my $db_type (qw(sqlite))
         flag2      => 0,
         \q((1 = 1 and 5 > 2)),
         [ \q(fk1 > ?), 1 ],
+        start      => { le => \q(CURRENT_TIMESTAMP) },
+        start      => { between => [ '1/1/1999', 'CURRENT_TIMESTAMP' ] },
+        start      => { between_sql => [ "'1999-02-02'", 'CURRENT_TIMESTAMP' ] },
         or =>
         [
           bits => '00001',
