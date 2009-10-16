@@ -1,3 +1,10 @@
+0.784 (10.16.2009) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed a bug introduced by the multi-many Manager bug fix in the
+      0.783 release.  (Reported by Mark Frost)
+    * Added missing exception error explanations to relationship methods.
+    * Updated eval blocks to avoid stomping on $@ from an outer scope.
+
 0.783 (09.14.2009) - John Siracusa <siracusa@gmail.com>
 
     * Added new range operators: between, gt_lt, gt_le, ge_lt, and ge_le.
