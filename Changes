@@ -1,3 +1,14 @@
+0.785 (12.31.2009) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed Rose::DB::Object::Cached to correctly honor alternate column
+      accessor/mutator method names.  (Reported by Kevin McGrath)
+    * Stopped the default auto-init handler from asking the convention
+      manager to name foreign keys that have only partially populated
+      column lists, causing it to burn through the "good" foreign key
+      names.  (Patch by Douglas Wilson)
+    * Corrected some typos in the ManyToMany documentation and the tutorial.
+      (Thanks to Bart Dopheide)
+
 0.784 (10.16.2009) - John Siracusa <siracusa@gmail.com>
 
     * Fixed a bug introduced by the multi-many Manager bug fix in the
