@@ -10,7 +10,7 @@ use Rose::DB::Object::Metadata::ForeignKey;
 use Rose::DB::Object::Metadata::Object;
 our @ISA = qw(Rose::DB::Object::Metadata::Object);
 
-our $VERSION = '0.784';
+our $VERSION = '0.786';
 
 our $Debug = 0;
 
@@ -25,6 +25,8 @@ use Rose::Object::MakeMethods::Generic
   boolean => 
   [
     tables_are_singular => { default => 0 },
+    force_lowercase     => { default => 0 },
+    no_auto_sequences   => { default => 0 },
   ],
 );
 
@@ -64,6 +66,7 @@ sub table_to_class_plural
 sub table_to_class
 {
   my($self, $table, $prefix, $plural) = @_;
+  $table = lc $table if ($self->force_lowercase);
   $table = $self->plural_to_singular($table)  unless($plural);
   $table =~ s/_(.)/\U$1/g;
   $table =~ s/[^\w:]/_/g;
@@ -75,6 +78,8 @@ sub auto_manager_base_name
   my($self, $table, $object_class) = @_;
 
   $table ||= $self->class_to_table_plural;
+
+  $table = lc $table  if($self->force_lowercase);
 
   return $self->tables_are_singular ? $self->singular_to_plural($table) : $table;
 }
@@ -182,6 +187,7 @@ sub auto_primary_key_column_names
 sub auto_column_method_name
 {
   my($self, $type, $column, $name, $object_class) = @_;
+  return lc $name if ($self->force_lowercase);
   return undef; # rely on hard-coded defaults in Metadata
 }
 
@@ -220,7 +226,7 @@ sub plural_to_singular
 
   $word =~ s/ies$/y/i;
 
-  return $word  if($word =~ s/ses$/s/);
+  return $word  if($word =~ s/ses$/s/i);
   return $word  if($word =~ /[aeiouy]ss$/i);
 
   $word =~ s/s$//i;
@@ -273,9 +279,27 @@ sub method_name_conflicts
   return 0;
 }
 
+sub auto_column_sequence_name
+{
+  my($self, $table, $column, $db) = @_;
+  my $name = join('_', $table, $column, 'seq');
+  return uc $name  if($db && $db->likes_uppercase_sequence_names);
+  return lc $name  if($db && $db->likes_lowercase_sequence_names);
+  return $name;
+}
+
+sub auto_primary_key_column_sequence_name { shift->auto_column_sequence_name(@_) }
+
 sub auto_foreign_key_name
 {
   my($self, $f_class, $current_name, $key_columns, $used_names) = @_;
+
+  if($self->force_lowercase)
+  {
+    $current_name = lc $current_name;
+    $key_columns = { map { lc } %$key_columns };
+  }
+
   my $f_meta = $f_class->meta or return $current_name;
   my $name = $self->plural_to_singular($f_meta->table) || $current_name;
 
@@ -285,7 +309,7 @@ sub auto_foreign_key_name
 
     # Try to lop off foreign column name.  Example:
     # my_foreign_object_id -> my_foreign_object
-    if($local_column =~ s/_$foreign_column$//)
+    if($local_column =~ s/_$foreign_column$//i)
     {
       $name = $local_column;
     }
@@ -323,6 +347,7 @@ sub auto_foreign_key_name
 sub auto_table_to_relationship_name_plural
 {
   my($self, $table) = @_;
+  $table = lc $table if ($self->force_lowercase);
   return $self->tables_are_singular ? $self->singular_to_plural($table) : $table;
 }
 
@@ -335,7 +360,8 @@ sub auto_class_to_relationship_name_plural
 sub auto_foreign_key_to_relationship_name_plural
 {
   my($self, $fk) = @_;
-  return $self->singular_to_plural($fk->name);
+  my $name = $self->force_lowercase ? lc $fk->name : $fk->name;
+  return $self->singular_to_plural($name);
 }
 
 sub auto_relationship_name_one_to_many
@@ -398,6 +424,9 @@ sub auto_relationship_name_many_to_many
 sub auto_relationship_name_one_to_one
 {
   my($self, $table, $class) = @_;
+
+  $table = lc $table if ($self->force_lowercase);
+
   my $name = $self->plural_to_singular($table);
 
   # Avoid method name conflicts
@@ -462,7 +491,7 @@ sub looks_like_map_table
                     (?:\w+_){2,}map             # foo_bar_map
                   | (?:\w+_)*\w+_(?:\w+_)*\w+s  # foo_bars
                   | (?:\w+_)*\w+s_(?:\w+_)*\w+s # foos_bars
-               )$}x)
+               )$}xi)
   {
     return 1;
   }
@@ -1180,6 +1209,10 @@ Examples:
     Product       product
     My::Product   product
     My::Box       box
+
+=item B<force_lowercase [BOOL]>
+
+Get or set a boolean value that indicates whether or not L<metadata|Rose::DB::Object::Metadata> entity names should be forced to lowercase even when the related entity is uppercase or mixed case.  ("Metadata entities" are thing like L<columns|Rose::DB::Object::Metadata/columns>, L<relationships|Rose::DB::Object::Metadata/relationships>, and L<foreign keys|Rose::DB::Object::Metadata/foreign_keys>.)  The default value is false.
 
 =item B<is_map_class CLASS>
 

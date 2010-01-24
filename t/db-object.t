@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 567;
+use Test::More tests => 568;
 
 BEGIN 
 {
@@ -1148,7 +1148,7 @@ SKIP: foreach my $db_type ('sqlite')
 
 SKIP: foreach my $db_type (qw(oracle))
 {
-  skip("Oracle tests", 73)  unless($HAVE_ORACLE);
+  skip("Oracle tests", 74)  unless($HAVE_ORACLE);
 
   Rose::DB->default_type($db_type);
 
@@ -1179,7 +1179,7 @@ SKIP: foreach my $db_type (qw(oracle))
     ok($o->insert, "insert() 1 - $db_type");
   }
 
-  is($o->meta->primary_key->sequence_names->[0], 'rose_db_object_test_id_seq', 
+  is($o->meta->primary_key->sequence_names->[0], 'ROSE_DB_OBJECT_TEST_ID_SEQ', 
      "pk sequence name - $db_type");
 
   ok(is_in_db($o), "is_in_db - $db_type");
@@ -1370,6 +1370,15 @@ SKIP: foreach my $db_type (qw(oracle))
   ok(!$o->load(speculative => 1), "load() speculative explicit 2 - $db_type");
   eval { $o->load(speculative => 0) };
   ok($@, "load() non-speculative explicit 2 - $db_type");
+
+  $o = MyOracleObject->new(name => 'Sequence Test', 
+                              k1   => 4,
+                              k2   => 5,
+                              k3   => 6);
+
+  $o->save;
+  
+  like($o->id, qr/^\d+$/, "save() serial - $db_type");
 
   # Reset for next trip through loop (if any)
   $o->meta->default_load_speculative(0);
@@ -2050,6 +2059,7 @@ CREATE TABLE rose_db_object_test
   nums           VARCHAR(255),
   start_date     DATE,
   save           INT,
+  claim#         INT,
   last_modified  TIMESTAMP,
   date_created   TIMESTAMP
 )
@@ -2097,6 +2107,7 @@ EOF
       status   => { default => 'active', add_methods => [ qw(get set) ] },
       start_date => { type => 'date', default => '12/24/1980', lazy => 1 },
       save     => { type => 'scalar' },
+      'claim#' => { type => 'int' },
       nums     => { type => 'array' },
       bitz     => { type => 'bitfield', bits => 5, default => 101, alias => 'bits' },
       decs     => { type => 'decimal', precision => 10, scale => 2 },

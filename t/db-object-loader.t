@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1 + (5 * 33) + 9;
+use Test::More tests => 1 + (6 * 34) + 9;
 
 BEGIN 
 {
@@ -36,13 +36,13 @@ FOO:
 
 my $i = 1;
 
-foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
+foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite oracle))
 {
   SKIP:
   {
     unless($Have{$db_type})
     {
-      skip("$db_type tests", 33 + scalar @{$Reserved_Words{$db_type} ||= []});
+      skip("$db_type tests", 34 + scalar @{$Reserved_Words{$db_type} ||= []});
     }
   }
 
@@ -64,10 +64,10 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
   my $db = Rose::DB->new;
   my $loader = 
     Rose::DB::Object::Loader->new(
-      db            => $db,
-      class_prefix  => $class_prefix,
+      db              => $db,
+      class_prefix    => $class_prefix,
       ($db_type eq 'mysql' ? (require_primary_key => 0) : ()),
-      pre_init_hook => sub { $pre_init_hook++ });
+      pre_init_hook   => sub { $pre_init_hook++ });
 
   my %extra_loader_args;
 
@@ -121,6 +121,12 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
     @classes = $loader->make_classes(include_tables => $Include_Tables . 
                                      ($db_type eq 'mysql' ? '|read' : ''),
                                      %extra_loader_args);
+
+    #foreach my $class (@classes)
+    #{
+    #  next unless($class->isa('Rose::DB::Object'));
+    #  print $class->meta->perl_class_definition, "\n";
+    #}
 
     if($db_type eq 'sqlite')
     {
@@ -216,9 +222,9 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
     SKIP: { skip("bigserial test for $db_type", 1) }
   }
 
-  if($db_type eq 'informix')
+  if($db_type eq 'informix' || $db_type eq 'oracle')
   {
-    SKIP: { skip("count distinct multi-pk doesn't work in Informix yet", 1) }
+    SKIP: { skip("count distinct multi-pk doesn't work in \u$db_type yet", 1) }
   }
   else
   {
@@ -255,6 +261,7 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
     $t = $p->meta->column('tee_time5')->default;
     $t =~ s/0+$//;
     is($t, '12:34:56.12345', "time default 2 - $db_type");
+    is($price_class->meta->column('mprice')->length, undef, "money 1 - $db_type");
   }
   elsif($db_type eq 'informix')
   {
@@ -263,6 +270,7 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
     ok(!$p->meta->column('tee_time'), "time precision check 2 - $db_type");
     is($p->meta->column('bint1')->type, 'bigint', "bigint 1 - $db_type");
     ok($p->bint1 =~ /^\+?9223372036854775800$/, "bigint 2 - $db_type");
+    SKIP: { skip("money tests - $db_type", 1) }
   }
   else
   {
@@ -271,6 +279,7 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite))
     ok(!$p->meta->column('tee_time'), "time precision check 2 - $db_type");
     ok(1, "time default 1 - $db_type");
     ok(1, "time default 2 - $db_type");
+    SKIP: { skip("money tests - $db_type", 1) }
   }
 
   OBJECT_CLASS:
@@ -462,6 +471,7 @@ CREATE TABLE prices
   product_id  INT NOT NULL REFERENCES products (id),
   region      CHAR(2) NOT NULL DEFAULT 'US',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  mprice      MONEY,
 
   UNIQUE(product_id, region)
 )
@@ -552,6 +562,7 @@ CREATE TABLE Rose_db_object_private.prices
   product_id  INT NOT NULL REFERENCES products (id),
   region      CHAR(2) NOT NULL DEFAULT 'US',
   price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  mprice      MONEY,
 
   UNIQUE(product_id, region)
 )
@@ -931,6 +942,157 @@ EOF
 
     $dbh->disconnect;
   }
+
+  #
+  # Oracle
+  #
+
+  eval
+  {
+    $dbh = Rose::DB->new('oracle_admin')->retain_dbh()
+      or die Rose::DB->error;
+  };
+
+  if(!$@ && $dbh)
+  {
+    $Have{'oracle'} = 1;
+
+    # Drop existing tables, ignoring errors
+    {
+      local $dbh->{'RaiseError'} = 0;
+      local $dbh->{'PrintError'} = 0;
+
+      $dbh->do('DROP TABLE no_pk_test');
+      $dbh->do('DROP TABLE products_colors');
+      $dbh->do('DROP TABLE colors');
+      $dbh->do('DROP TABLE prices');
+      $dbh->do('DROP TABLE products');
+      $dbh->do('DROP TABLE vendors');
+      $dbh->do('DROP SEQUENCE vendors_id_seq');
+      $dbh->do('DROP SEQUENCE products_id_seq');
+      $dbh->do('DROP SEQUENCE prices_id_seq');
+      $dbh->do('DROP SEQUENCE colors_id_seq');
+    }
+
+    $dbh->do(<<"EOF");
+CREATE TABLE no_pk_test
+(
+  id    INT NOT NULL,
+  name  VARCHAR(255) NOT NULL,
+  
+  CONSTRAINT no_pk_test_name UNIQUE (name)
+)
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE vendors
+(
+  id    INT NOT NULL PRIMARY KEY,
+  name  VARCHAR(255) NOT NULL,
+
+  CONSTRAINT vendors_name UNIQUE (name)
+)
+EOF
+    
+    $dbh->do('CREATE SEQUENCE vendors_id_seq');
+    $dbh->do(<<"EOF");
+CREATE OR REPLACE TRIGGER vendors_insert BEFORE INSERT ON vendors
+FOR EACH ROW
+BEGIN
+    SELECT NVL(:new.id, vendors_id_seq.nextval)
+      INTO :new.id FROM dual;
+END;
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE products
+(
+  id      INT NOT NULL PRIMARY KEY,
+  name    VARCHAR(255) NOT NULL,
+  price   DECIMAL(10,2) DEFAULT 0.00 NOT NULL,
+
+  vendor_id  INT,
+
+  status  VARCHAR(128) DEFAULT 'inactive' NOT NULL
+            CHECK(status IN ('inactive', 'active', 'defunct')),
+
+  rint1         INT,
+  bint1         NUMBER(20) DEFAULT 9223372036854775800,
+
+  date_created  TIMESTAMP,
+
+  CONSTRAINT products_name UNIQUE (name),
+  CONSTRAINT products_vendor_id_fk FOREIGN KEY (vendor_id) REFERENCES vendors (id)
+)
+EOF
+
+    $dbh->do('CREATE SEQUENCE products_id_seq');
+    $dbh->do(<<"EOF");
+CREATE OR REPLACE TRIGGER products_insert BEFORE INSERT ON products
+FOR EACH ROW
+BEGIN
+    SELECT NVL(:new.id, products_id_seq.nextval)
+      INTO :new.id FROM dual;
+END;
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE prices
+(
+  id          INT NOT NULL PRIMARY KEY,
+  product_id  INT NOT NULL,
+  region      CHAR(2) DEFAULT 'US' NOT NULL,
+  price       NUMBER(10,2) DEFAULT 0.00 NOT NULL,
+
+  CONSTRAINT prices_uk UNIQUE (product_id, region),
+  CONSTRAINT prices_product_id_fk FOREIGN KEY (product_id) REFERENCES products (id)
+)
+EOF
+    
+    $dbh->do('CREATE SEQUENCE prices_id_seq');
+    $dbh->do(<<"EOF");
+CREATE OR REPLACE TRIGGER prices_insert BEFORE INSERT ON prices
+FOR EACH ROW
+BEGIN
+    SELECT NVL(:new.id, prices_id_seq.nextval)
+      INTO :new.id FROM dual;
+END;
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE colors
+(
+  id    INT NOT NULL PRIMARY KEY,
+  name  VARCHAR(255) NOT NULL,
+
+  CONSTRAINT colors_name UNIQUE (name)
+)
+EOF
+
+    $dbh->do('CREATE SEQUENCE colors_id_seq');
+    $dbh->do(<<"EOF");
+CREATE OR REPLACE TRIGGER colors_insert BEFORE INSERT ON colors
+FOR EACH ROW
+BEGIN
+    SELECT NVL(:new.id, colors_id_seq.nextval)
+      INTO :new.id FROM dual;
+END;
+EOF
+
+    $dbh->do(<<"EOF");
+CREATE TABLE products_colors
+(
+  product_id  INT NOT NULL,
+  color_id    INT NOT NULL,
+
+  CONSTRAINT products_colors_pk PRIMARY KEY (product_id, color_id),
+  CONSTRAINT products_colors_product_id_fk FOREIGN KEY (product_id) REFERENCES products (id), 
+  CONSTRAINT products_colors_color_id_fk FOREIGN KEY (color_id) REFERENCES colors (id)
+)
+EOF
+
+    $dbh->disconnect;
+  }
 }
 
 END
@@ -1009,6 +1171,26 @@ END
     $dbh->do('DROP TABLE prices');
     $dbh->do('DROP TABLE products');
     $dbh->do('DROP TABLE vendors');
+
+    $dbh->disconnect;
+  }
+
+  if($Have{'oracle'})
+  {
+    # Informix
+    my $dbh = Rose::DB->new('oracle_admin')->retain_dbh()
+      or die Rose::DB->error;
+
+    $dbh->do('DROP TABLE no_pk_test');
+    $dbh->do('DROP TABLE products_colors');
+    $dbh->do('DROP TABLE colors');
+    $dbh->do('DROP TABLE prices');
+    $dbh->do('DROP TABLE products');
+    $dbh->do('DROP TABLE vendors');
+    $dbh->do('DROP SEQUENCE vendors_id_seq');
+    $dbh->do('DROP SEQUENCE products_id_seq');
+    $dbh->do('DROP SEQUENCE prices_id_seq');
+    $dbh->do('DROP SEQUENCE colors_id_seq');
 
     $dbh->disconnect;
   }
