@@ -182,7 +182,7 @@ __PACKAGE__->column_type_classes
   'datetime'  => 'Rose::DB::Object::Metadata::Column::Datetime',
   'timestamp' => 'Rose::DB::Object::Metadata::Column::Timestamp',
 
-  'timestamp with time zone'    => 'Rose::DB::Object::Metadata::Column::Timestamp',
+  'timestamp with time zone'    => 'Rose::DB::Object::Metadata::Column::TimestampWithTimeZone',
   'timestamp without time zone' => 'Rose::DB::Object::Metadata::Column::Timestamp',
 
   'datetime year to fraction'    => 'Rose::DB::Object::Metadata::Column::DatetimeYearToFraction',
@@ -4913,6 +4913,12 @@ The default mapping of type names to class names is:
   datetime  => Rose::DB::Object::Metadata::Column::Datetime
   timestamp => Rose::DB::Object::Metadata::Column::Timestamp
 
+  timestamptz =>
+    Rose::DB::Object::Metadata::Column::TimestampWithTimeZone
+
+  'timestamp with time zone' =>
+    Rose::DB::Object::Metadata::Column::TimestampWithTimeZone
+
   'datetime year to fraction' => 
     Rose::DB::Object::Metadata::Column::DatetimeYearToFraction
 
@@ -6631,6 +6637,6 @@ John C. Siracusa (siracusa@gmail.com)
 
 =head1 LICENSE
 
-Copyright (c) 2009 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2010 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

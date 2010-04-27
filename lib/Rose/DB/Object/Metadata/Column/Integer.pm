@@ -5,7 +5,7 @@ use strict;
 use Rose::DB::Object::Metadata::Column::Scalar;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Scalar);
 
-our $VERSION = '0.771';
+our $VERSION = '0.787';
 
 __PACKAGE__->add_common_method_maker_argument_names(qw(min max));
 __PACKAGE__->delete_common_method_maker_argument_names(qw(length));
@@ -25,10 +25,10 @@ sub type { 'integer' }
 
 sub should_inline_value
 {
-  #my($self, $db, $value) = @_;
+  my($self, $db, $value) = @_;
   no warnings 'uninitialized';
-  return (($_[1]->validate_integer_keyword($_[2]) && $_[1]->should_inline_integer_keywords) || 
-          $_[2] =~ /^\w+\(.*\)$/) ? 1 : 0;
+  return (($db->validate_integer_keyword($value) && $db->should_inline_integer_keywords) ||
+          ($db->keyword_function_calls && $value =~ /^\w+\(.*\)$/)) ? 1 : 0;
 }
 
 sub perl_column_definition_attributes
@@ -102,6 +102,6 @@ John C. Siracusa (siracusa@gmail.com)
 
 =head1 LICENSE
 
-Copyright (c) 2009 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2010 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

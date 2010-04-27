@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 272;
+use Test::More tests => 274;
 
 BEGIN 
 {
@@ -323,7 +323,7 @@ EOF
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 64)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 66)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -422,20 +422,23 @@ SKIP: foreach my $db_type ('mysql')
   ok(!$o4->load(speculative => 1), "load() nonexistent - $db_type");
   ok($o4->not_found, "not_found() 2 - $db_type");
 
-  $o->nums([ 4, 5, 6 ]);
+  $o->nums([ 4, 5, 6, 'aaa', '"\\"' ]);
+
   ok($o->save, "save() 3 - $db_type");
   ok($o->load, "load() 4 - $db_type");
 
   is($o->nums->[0], 4, "load() verify 10 (array value) - $db_type");
   is($o->nums->[1], 5, "load() verify 11 (array value) - $db_type");
   is($o->nums->[2], 6, "load() verify 12 (array value) - $db_type");
+  is($o->nums->[3], 'aaa', "load() verify (string in array value) - $db_type");
+  is($o->nums->[4], '"\\"', "load() verify (escapes in array value) - $db_type");
 
   my @a = $o->nums;
 
   is($a[0], 4, "load() verify 13 (array value) - $db_type");
   is($a[1], 5, "load() verify 14 (array value) - $db_type");
   is($a[2], 6, "load() verify 15 (array value) - $db_type");
-  is(@a, 3, "load() verify 16 (array value) - $db_type");
+  is(@a, 5, "load() verify 16 (array value) - $db_type");
 
   ok($o->delete, "delete() - $db_type");
 

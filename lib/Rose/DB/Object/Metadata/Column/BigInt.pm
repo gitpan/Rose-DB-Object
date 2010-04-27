@@ -7,7 +7,7 @@ use Rose::DB::Object::MakeMethods::BigNum;
 use Rose::DB::Object::Metadata::Column::Integer;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Integer);
 
-our $VERSION = '0.771';
+our $VERSION = '0.787';
 
 INIT_METHOD_MAKER_INFO:
 {
@@ -52,10 +52,10 @@ sub type { 'bigint' }
 
 sub should_inline_value
 {
-  #my($self, $db, $value) = @_;
+  my($self, $db, $value) = @_;
   no warnings 'uninitialized';
-  return (($_[1]->validate_bigint_keyword($_[2]) && $_[1]->should_inline_bigint_keywords) || 
-          $_[2] =~ /^\w+\(.*\)$/) ? 1 : 0;
+  return (($db->validate_bigint_keyword($value) && $db->should_inline_bigint_keywords) ||
+          ($db->keyword_function_calls && $value =~ /^\w+\(.*\)$/)) ? 1 : 0;
 }
 
 sub format_value
@@ -142,6 +142,6 @@ John C. Siracusa (siracusa@gmail.com)
 
 =head1 LICENSE
 
-Copyright (c) 2009 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2010 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

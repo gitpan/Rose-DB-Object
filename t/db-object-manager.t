@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 3904;
+use Test::More tests => 3905;
 
 BEGIN 
 {
@@ -11,6 +11,8 @@ BEGIN
   use_ok('Rose::DB::Object');
   use_ok('Rose::DB::Object::Manager');
 }
+
+use Rose::DateTime::Util qw(parse_date);
 
 CONVENTION_AND_DEFAULTS_TESTS:
 {
@@ -3021,6 +3023,8 @@ SKIP: foreach my $db_type ('mysql')
   skip("MySQL tests", 788)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
+
+  Rose::DB->default_keyword_function_calls(1);
 
   my $o = MyMySQLObject->new(id         => 1,
                              name       => 'John',  
@@ -8724,7 +8728,7 @@ EOF
 
 SKIP: foreach my $db_type (qw(sqlite))
 {
-  skip("SQLite tests", 792)  unless($HAVE_SQLITE);
+  skip("SQLite tests", 793)  unless($HAVE_SQLITE);
 
   Rose::DB->default_type($db_type);
 
@@ -10757,6 +10761,19 @@ SKIP: foreach my $db_type (qw(sqlite))
 
   # Start get_objects_from_sql tests
 
+  eval
+  {
+    $objs = 
+      MySQLiteObjectManager->get_objects_from_sql(
+        db  => MySQLiteObject->init_db,
+        object_class => 'MySQLiteObject',
+      sql => <<"EOF");
+SELECT id, id as nonesuch FROM rose_db_object_test WHERE id != fk1 ORDER BY id DESC
+EOF
+  };
+
+  like($@, qr/method "nonesuch"/, "get_objects_from_sql error message - $db_type");
+
   $objs = 
     MySQLiteObjectManager->get_objects_from_sql(
       db  => MySQLiteObject->init_db,
@@ -11625,7 +11642,7 @@ SKIP: foreach my $db_type (qw(oracle))
         start_date => '01/02/2001',
         save_col   => [ 1, 5 ],
         fk1        => 2,
-        last_modified => { le => $o->db->format_timestamp($o->db->parse_timestamp('now')) },
+        last_modified => { le => $o->last_modified },
         date_created  => '2004-03-30 12:34:56',
         date_created  => { le => 'now' },
         date_created  => [ 'now', '2004-03-30 12:34:56' ],
@@ -11713,7 +11730,7 @@ SKIP: foreach my $db_type (qw(oracle))
         bits       => '00001',
         start_date => '01/02/2001',
         save_col   => [ 1, 5 ],
-        last_modified => { le => $o->db->format_timestamp($o->db->parse_timestamp('now')) },
+        last_modified => { le => parse_date('now') },
         date_created  => '2004-03-30 12:34:56',
         status        => { like => 'AC%', field => 'UPPER(status)' },
       ],
@@ -11740,7 +11757,7 @@ SKIP: foreach my $db_type (qw(oracle))
         bits       => '00001',
         start_date => '01/02/2001',
         save_col   => [ 1, 5 ],
-        last_modified => { le => $o->db->format_timestamp($o->db->parse_timestamp('now')) },
+        last_modified => { le => parse_date('now') },
         date_created  => '2004-03-30 12:34:56',
         status        => { like => 'AC%', field => 'UPPER(status)' },
       ],
@@ -11796,7 +11813,7 @@ SKIP: foreach my $db_type (qw(oracle))
         bits       => '00001',
         start_date => '01/02/2001',
         save_col   => [ 1, 5 ],
-        last_modified => { le => $o->db->format_timestamp($o->db->parse_timestamp('now')) },
+        last_modified => { le => parse_date('now') },
         date_created  => '2004-03-30 12:34:56',
         status        => { like => 'AC%', field => 'UPPER(status)' },
       ],
@@ -11832,7 +11849,7 @@ SKIP: foreach my $db_type (qw(oracle))
         bits       => '00001',
         start_date => '01/02/2001',
         save_col   => [ 1, 5 ],
-        last_modified => { le => $save_o->db->format_timestamp($save_o->db->parse_timestamp('now')) },
+        last_modified => { le => parse_date('now') },
         date_created  => '2004-03-30 12:34:56',
         status        => { like => 'AC%', field => 'UPPER(status)' },
       ],

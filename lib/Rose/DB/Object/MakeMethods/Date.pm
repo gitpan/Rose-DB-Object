@@ -13,7 +13,7 @@ use Rose::DB::Object::Constants
 
 use Rose::DB::Object::Util qw(column_value_formatted_key);
 
-our $VERSION = '0.771';
+our $VERSION = '0.787';
 
 sub date
 {
@@ -802,6 +802,11 @@ sub timestamp
   my $mod_columns_key = ($args->{'column'} ? $args->{'column'}->nonpersistent : 0) ? 
     MODIFIED_NP_COLUMNS : MODIFIED_COLUMNS;
 
+  my $with_time_zone = $args->{'_with_time_zone'} ? 1 : 0;
+
+  my $parse_method  = 'parse_timestamp' . ($with_time_zone ? '_with_time_zone' : '');
+  my $format_method = 'format_timestamp' . ($with_time_zone ? '_with_time_zone' : '');
+
   my %methods;
 
   if($interface eq 'get_set')
@@ -821,7 +826,7 @@ sub timestamp
 
           if(defined $dt && !ref $dt)
           {
-            my $dt2 = $db->parse_timestamp($dt);
+            my $dt2 = $db->$parse_method($dt);
 
             unless($dt2)
             {
@@ -840,7 +845,7 @@ sub timestamp
           elsif($_[0] eq 'truncate')
           {
             return undef  unless($self->{$key});
-            return $db->format_timestamp($dt)  unless(ref $dt);
+            return $db->$format_method($dt)  unless(ref $dt);
             return $dt->clone->truncate(to => $_[1]);
           }
           else
@@ -858,7 +863,7 @@ sub timestamp
           }
           else
           {
-            my $dt = $db->parse_timestamp($_[0]);
+            my $dt = $db->$parse_method($_[0]);
 
             unless($dt)
             {
@@ -866,7 +871,18 @@ sub timestamp
                 Carp::croak "Invalid timestamp: '$_[0]'";
             }
 
-            $dt->set_time_zone($tz || $db->server_time_zone)  if(ref $dt);
+            if(ref $dt)
+            {
+              if($with_time_zone)
+              {
+                $dt->set_time_zone($tz)  if($tz);
+              }
+              else
+              {
+                $dt->set_time_zone($tz || $db->server_time_zone);
+              }
+            }
+
             $self->{$key} = $dt;
             $self->{$formatted_key,$driver} = undef;
 
@@ -888,7 +904,7 @@ sub timestamp
              ($undef_overrides_default && ($self->{$mod_columns_key}{$column_name} || 
               ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{$mod_columns_key}{$column_name})))))
       {
-        my $dt = $db->parse_timestamp($default);
+        my $dt = $db->$parse_method($default);
 
         unless($dt)
         {
@@ -898,7 +914,15 @@ sub timestamp
 
         if(ref $dt)
         {
-          $dt->set_time_zone($tz || $db->server_time_zone);
+          if($with_time_zone)
+          {
+            $dt->set_time_zone($tz)  if($tz);
+          }
+          else
+          {
+            $dt->set_time_zone($tz || $db->server_time_zone);
+          }
+
           $self->{$key} = $dt;
           $self->{$formatted_key,$driver} = undef;
         }
@@ -915,14 +939,14 @@ sub timestamp
       if($self->{STATE_SAVING()})
       {
         return ($self->{$key} || $self->{$formatted_key,$driver}) ? 
-          ($self->{$formatted_key,$driver} ||= $db->format_timestamp($self->{$key})) : undef;
+          ($self->{$formatted_key,$driver} ||= $db->$format_method($self->{$key})) : undef;
       }
 
       return $self->{$key}   if($self->{$key});
 
       if(my $value = $self->{$formatted_key,$driver})
       {
-        my $dt = $db->parse_timestamp($value);
+        my $dt = $db->$parse_method($value);
 
         unless($dt)
         {
@@ -932,7 +956,14 @@ sub timestamp
 
         if(ref $dt)
         {
-          $dt->set_time_zone($tz || $db->server_time_zone);
+          if($with_time_zone)
+          {
+            $dt->set_time_zone($tz)  if($tz);
+          }
+          else
+          {
+            $dt->set_time_zone($tz || $db->server_time_zone);
+          }
         }
 
         return $self->{$key} = $dt;
@@ -956,7 +987,7 @@ sub timestamp
 
         if(defined $dt && !ref $dt)
         {
-          my $dt2 = $db->parse_timestamp($dt);
+          my $dt2 = $db->$parse_method($dt);
 
           unless($dt2)
           {
@@ -975,7 +1006,7 @@ sub timestamp
         elsif($_[0] eq 'truncate')
         {
           return undef  unless($self->{$key});
-          return $db->format_timestamp($dt)  unless(ref $dt);
+          return $db->$format_method($dt)  unless(ref $dt);
           return $dt->clone->truncate(to => $_[1]);
         }
         else
@@ -990,7 +1021,7 @@ sub timestamp
              ($undef_overrides_default && ($self->{$mod_columns_key}{$column_name} || 
               ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{$mod_columns_key}{$column_name})))))
       {
-        my $dt = $db->parse_timestamp($default);
+        my $dt = $db->$parse_method($default);
 
         unless($dt)
         {
@@ -1000,7 +1031,15 @@ sub timestamp
 
         if(ref $dt)
         {
-          $dt->set_time_zone($tz || $db->server_time_zone);
+          if($with_time_zone)
+          {
+            $dt->set_time_zone($tz)  if($tz);
+          }
+          else
+          {
+            $dt->set_time_zone($tz || $db->server_time_zone);
+          }
+
           $self->{$key} = $dt;
           $self->{$formatted_key,$driver} = undef;
         }
@@ -1017,14 +1056,14 @@ sub timestamp
       if($self->{STATE_SAVING()})
       {
         return ($self->{$key} || $self->{$formatted_key,$driver}) ? 
-          ($self->{$formatted_key,$driver} ||= $db->format_timestamp($self->{$key})) : undef;
+          ($self->{$formatted_key,$driver} ||= $db->$format_method($self->{$key})) : undef;
       }
 
       return $self->{$key}   if($self->{$key});
 
       if(my $value = $self->{$formatted_key,$driver})
       {
-        my $dt = $db->parse_timestamp($value);
+        my $dt = $db->$parse_method($value);
 
         unless($dt)
         {
@@ -1034,7 +1073,14 @@ sub timestamp
 
         if(ref $dt)
         {
-          $dt->set_time_zone($tz || $db->server_time_zone);
+          if($with_time_zone)
+          {
+            $dt->set_time_zone($tz)  if($tz);
+          }
+          else
+          {
+            $dt->set_time_zone($tz || $db->server_time_zone);
+          }
         }
 
         return $self->{$key} = $dt;
@@ -1063,7 +1109,7 @@ sub timestamp
         }
         else
         {
-          my $dt = $db->parse_timestamp($_[0]);
+          my $dt = $db->$parse_method($_[0]);
 
           unless($dt)
           {
@@ -1071,7 +1117,18 @@ sub timestamp
               Carp::croak "Invalid timestamp: '$_[0]'";
           }
 
-          $dt->set_time_zone($tz || $db->server_time_zone)  if(ref $dt);
+          if(ref $dt)
+          {
+            if($with_time_zone)
+            {
+              $dt->set_time_zone($tz)  if($tz);
+            }
+            else
+            {
+              $dt->set_time_zone($tz || $db->server_time_zone);
+            }
+          }
+
           $self->{$key} = $dt;
           $self->{$formatted_key,$driver} = undef;
 
@@ -1092,7 +1149,7 @@ sub timestamp
              ($undef_overrides_default && ($self->{$mod_columns_key}{$column_name} || 
               ($self->{STATE_IN_DB()} && !($self->{SET_COLUMNS()}{$column_name} || $self->{$mod_columns_key}{$column_name})))))
       {
-        my $dt = $db->parse_timestamp($default);
+        my $dt = $db->$parse_method($default);
 
         unless($dt)
         {
@@ -1102,7 +1159,15 @@ sub timestamp
 
         if(ref $dt)
         {
-          $dt->set_time_zone($tz || $db->server_time_zone);
+          if($with_time_zone)
+          {
+            $dt->set_time_zone($tz)  if($tz);
+          }
+          else
+          {
+            $dt->set_time_zone($tz || $db->server_time_zone);
+          }
+
           $self->{$key} = $dt;
           $self->{$formatted_key,$driver} = undef;
         }
@@ -1119,14 +1184,14 @@ sub timestamp
       if($self->{STATE_SAVING()})
       {
         return ($self->{$key} || $self->{$formatted_key,$driver}) ? 
-          ($self->{$formatted_key,$driver} ||= $db->format_timestamp($self->{$key})) : undef;
+          ($self->{$formatted_key,$driver} ||= $db->$format_method($self->{$key})) : undef;
       }
 
-      return $self->{$key}   if($self->{$key});
+      return $self->{$key}  if($self->{$key});
 
       if(my $value = $self->{$formatted_key,$driver})
       {
-        my $dt = $db->parse_timestamp($value);
+        my $dt = $db->$parse_method($value);
 
         unless($dt)
         {
@@ -1136,7 +1201,14 @@ sub timestamp
 
         if(ref $dt)
         {
-          $dt->set_time_zone($tz || $db->server_time_zone);
+          if($with_time_zone)
+          {
+            $dt->set_time_zone($tz)  if($tz);
+          }
+          else
+          {
+            $dt->set_time_zone($tz || $db->server_time_zone);
+          }
         }
 
         return $self->{$key} = $dt;
@@ -1150,7 +1222,12 @@ sub timestamp
   return \%methods;
 }
 
-*timestamp_with_time_zone = \&timestamp;
+sub timestamp_with_time_zone
+{
+  my($class, $name, $args) = @_;
+  $args->{'_with_time_zone'} = 1;
+  return shift->timestamp(@_);
+}
 
 sub epoch
 {
@@ -1931,7 +2008,7 @@ Choose the interface.  The default interface is C<get_set>.
 
 =item C<time_zone>
 
-The time zone name, which must be in a format that is understood by L<DateTime::TimeZone>.
+A time zone name, which must be in a format that is understood by L<DateTime::TimeZone>.
 
 =back
 
@@ -1945,7 +2022,7 @@ Creates a get/set method for a "timestamp" (year, month, day, hour, minute, seco
 
 The time zone of the L<DateTime> object that results from a successful parse is set to the value of the C<time_zone> option, if defined.  Otherwise, it is set to the L<server_time_zone|Rose::DB/server_time_zone> value of the  object's L<db|Rose::DB::Object/db> attribute using L<DateTime>'s L<set_time_zone|DateTime/set_time_zone> method.
 
-When saving to the database, the method will pass the attribute value through the L<format_date|Rose::DateTime::Util/format_date> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
+When saving to the database, the method will pass the attribute value through the L<format_timestamp|Rose::DB/format_timestamp> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
 
 This method is designed to allow timestamp values to make a round trip from and back into the database without ever being "inflated" into L<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_timestamp()> method of the object's L<db|Rose::DB::Object/db> attribute.  If that fails, L<Rose::DateTime::Util>'s L<parse_date()|Rose::DateTime::Util/parse_date> function is tried.  If that fails, a fatal error will occur.
 
@@ -1999,15 +2076,106 @@ Example:
     $dt = $o->start_date(truncate => 'day');
 
     # 01/30/2005 12:34:56.12300
-    print $o->end_date(format => '%m/%d/%Y %H:%M:%S.%5N'); 
-
-=item B<timestamp_with_time_zone>
-
-This is identical to the L<timestamp|/timestamp> method described above.
+    print $o->end_date(format => '%m/%d/%Y %H:%M:%S.%5N');
 
 =item B<timestamp_without_time_zone>
 
 This is identical to the L<timestamp|/timestamp> method described above, but with the C<time_zone> parameter always set to the value "floating".  Any attempt to set the C<time_zone> parameter explicitly will cause a fatal error.
+
+=item B<timestamp_with_time_zone>
+
+Create get/set methods for "timestamp with time zone" (year, month, day, hour, minute, second, fractional seconds, time zone) attributes.
+
+=over 4
+
+=item Options
+
+=over 4
+
+=item C<default>
+
+Determines the default value of the attribute.
+
+=item C<hash_key>
+
+The key inside the hash-based object to use for the storage of this
+attribute.  Defaults to the name of the method.
+
+=item C<interface>
+
+Choose the interface.  The default interface is C<get_set>.
+
+=item C<time_zone>
+
+A time zone name, which must be in a format that is understood by L<DateTime::TimeZone>.
+
+=back
+
+=item Interfaces
+
+=over 4
+
+=item C<get_set>
+
+Creates a get/set method for a "timestamp with time zone" (year, month, day, hour, minute, second, fractional seconds, time zone) attribute.  When setting the attribute, the value is passed through the C<parse_timestamp_with_timezone()> method of the object's L<db|Rose::DB::Object/db> attribute.  If that fails, the value is passed to L<Rose::DateTime::Util>'s L<parse_date()|Rose::DateTime::Util/parse_date> function.  If that fails, a fatal error will occur.
+
+The time zone of the L<DateTime> object will be set according to the successful parse of the "timestamp with time zone" value.  If the C<time_zone> option is set, then the time zone of the L<DateTime> object is set to this value.  Note that this happens I<after> the successful parse, which means that this operation may change the time and/or date according to the difference between the time zone of the value as originally parsed and the new time zone set according to the C<time_zone> option.
+
+When saving to the database, the method will pass the attribute value through the L<format_timestamp_with_timezone|Rose::DB/format_timestamp_with_timezone> method of the object's L<db|Rose::DB::Object/db> attribute before returning it.  Otherwise, the value is returned as-is.
+
+This method is designed to allow timestamp values to make a round trip from and back into the database without ever being "inflated" into L<DateTime> objects.  Any use of the attribute (get or set) outside the context of loading from or saving to the database will cause the value to be "inflated" using the  C<parse_timestamp_with_time_zone()> method of the object's L<db|Rose::DB::Object/db> attribute.  If that fails, L<Rose::DateTime::Util>'s L<parse_date()|Rose::DateTime::Util/parse_date> function is tried.  If that fails, a fatal error will occur.
+
+If passed two arguments and the first argument is "format", then the second argument is taken as a format string and passed to L<Rose::DateTime::Util>'s L<format_date|Rose::DateTime::Util/format_date> function along with the current value of the timestamp attribute.  Example:
+
+    $o->start_date('2004-05-22 12:34:56.123');
+    print $o->start_date(format => '%A'); # "Saturday"
+
+If passed two arguments and the first argument is "truncate", then the second argument is taken as the value of the C<to> argument to L<DateTime>'s L<truncate|DateTime/truncate> method, which is applied to a clone of the current value of the timestamp attribute, which is then returned.  Example:
+
+    $o->start_date('2004-05-22 04:32:01.456');
+
+    # Equivalent to: 
+    # $d = $o->start_date->clone->truncate(to => 'month')
+    $d = $o->start_date(truncate => 'month');
+
+If the timestamp attribute is undefined, then undef is returned (i.e., no clone or call to L<truncate|DateTime/truncate> is made).
+
+If a valid timestamp keyword is passed as an argument, the value will never be "inflated" but rather passed to the database I<and> returned to other code unmodified.  That means that the "truncate" and "format" calls described above will also return the timestamp keyword unmodified.  See the L<Rose::DB> documentation for more information on timestamp keywords.
+
+=item C<get>
+
+Creates an accessor method for a "timestamp with time zone" (year, month, day, hour, minute, second, fractional seconds, time zone) attribute.  This method behaves like the C<get_set> method, except that the value cannot be set. 
+
+=item C<set>
+
+Creates a mutator method for a "timestamp with time zone" (year, month, day, hour, minute, second, fractional seconds, time zone) attribute.  This method behaves like the C<get_set> method, except that a fatal error will occur if no arguments are passed.  It also does not support the C<truncate> and C<format> parameters.
+
+=back
+
+=back
+
+Example:
+
+    package MyDBObject;
+
+    use base 'Rose::DB::Object';
+
+    use Rose::DB::Object::MakeMethods::Date
+    (
+      timestamp_with_timezone => 
+      [
+        'start_date',
+        'end_date' => { default => '2005-01-30 12:34:56.123' }
+      ],
+    );
+
+    ...
+
+    $o->start_date('2/3/2004 8am');
+    $dt = $o->start_date(truncate => 'day');
+
+    # 01/30/2005 12:34:56.12300
+    print $o->end_date(format => '%m/%d/%Y %H:%M:%S.%5N');
 
 =back
 
@@ -2017,6 +2185,6 @@ John C. Siracusa (siracusa@gmail.com)
 
 =head1 LICENSE
 
-Copyright (c) 2009 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2010 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

@@ -17,7 +17,7 @@ use Rose::DB::Object::Metadata::Auto;
 use Rose::Object;
 our @ISA = qw(Rose::Object);
 
-our $VERSION = '0.786';
+our $VERSION = '0.787';
 
 our $Debug = 0;
 
@@ -270,7 +270,7 @@ sub class_prefix
 sub force_lowercase
 {
   my($self) = shift;
-  
+
   if(@_)
   {
     my $value = shift;
@@ -639,7 +639,7 @@ sub make_classes
 
   my $filter = exists $args{'filter_tables'} ? delete $args{'filter_tables'} : 
     (!defined $include && !defined $exclude) ? $self->filter_tables : undef;
-    
+
   if($include || $exclude)
   {
     if($filter)
@@ -925,7 +925,7 @@ sub make_classes
   }
 
   my $force_lowercase;
-  
+
   if(exists $args{'force_lowercase'})
   {
     $force_lowercase = delete $args{'force_lowercase'};
@@ -969,6 +969,8 @@ sub make_classes
   local $Rose::DB::Object::Metadata::Auto::Missing_PK_OK = 
     $require_primary_key ? 0 : 1;
 
+  my %created;
+
   # Iterate over tables, creating RDBO classes for each
   foreach my $table ($db->list_tables(%list_args))
   {
@@ -994,7 +996,8 @@ sub make_classes
 
     no strict 'refs';
     # Skip classes that have already been created
-    if($obj_class->isa('Rose::DB::Object') && $obj_class->meta->is_initialized)
+    #if($obj_class->isa('Rose::DB::Object') && $obj_class->meta->is_initialized)
+    if($created{$obj_class})
     {
       $Debug && warn "Skipping: $obj_class already initialized\n";
       next;
@@ -1059,6 +1062,8 @@ sub make_classes
     $meta->auto_initialize(%args);
 
     push(@classes, $obj_class);
+
+    $created{$obj_class}++;
 
     # Make the manager class
     if($with_managers)
@@ -1596,6 +1601,6 @@ John C. Siracusa (siracusa@gmail.com)
 
 =head1 LICENSE
 
-Copyright (c) 2009 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2010 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

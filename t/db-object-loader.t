@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 1 + (6 * 34) + 9;
+use Test::More tests => 1 + (6 * 36) + 9;
 
 BEGIN 
 {
@@ -42,7 +42,7 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite oracle))
   {
     unless($Have{$db_type})
     {
-      skip("$db_type tests", 34 + scalar @{$Reserved_Words{$db_type} ||= []});
+      skip("$db_type tests", 36 + scalar @{$Reserved_Words{$db_type} ||= []});
     }
   }
 
@@ -211,6 +211,19 @@ foreach my $db_type (qw(mysql pg pg_with_schema informix sqlite oracle))
   else
   {
     SKIP: { skip("unique index with predicate for $db_type", 1) }
+  }
+
+  if($db_type eq 'pg')
+  {
+    is($product_class->meta->column('release_date')->type, 'timestamp',
+      "timestamp - $db_type");
+
+    is($product_class->meta->column('release_date_tz')->type, 'timestamp with time zone',
+      "timestamp with time zone - $db_type");
+  }
+  else
+  {
+    SKIP: { skip("timestamp with time zone tests for $db_type", 2) }
   }
 
   if($db_type eq 'mysql' && $db->dbh->{'Driver'}{'Version'} >= 4.002)
@@ -446,11 +459,12 @@ CREATE TABLE products
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
             CHECK(status IN ('inactive', 'active', 'defunct')),
 
-  tee_time      TIME,
-  tee_time5     TIME(5) DEFAULT '12:34:56.12345',
+  tee_time        TIME,
+  tee_time5       TIME(5) DEFAULT '12:34:56.12345',
 
-  date_created  TIMESTAMP NOT NULL DEFAULT NOW(),
-  release_date  TIMESTAMP,
+  date_created    TIMESTAMP NOT NULL DEFAULT NOW(),
+  release_date    TIMESTAMP,
+  release_date_tz TIMESTAMP WITH TIME ZONE,
 
   UNIQUE(name)
 )
@@ -541,11 +555,12 @@ CREATE TABLE Rose_db_object_private.products
   status  VARCHAR(128) NOT NULL DEFAULT 'inactive' 
             CHECK(status IN ('inactive', 'active', 'defunct')),
 
-  tee_time      TIME,
-  tee_time5     TIME(5) DEFAULT '12:34:56.12345',
+  tee_time        TIME,
+  tee_time5       TIME(5) DEFAULT '12:34:56.12345',
 
-  date_created  TIMESTAMP NOT NULL DEFAULT NOW(),
-  release_date  TIMESTAMP,
+  date_created    TIMESTAMP NOT NULL DEFAULT NOW(),
+  release_date    TIMESTAMP,
+  release_date_tz TIMESTAMP WITH TIME ZONE,
 
   UNIQUE(name)
 )
@@ -979,7 +994,7 @@ CREATE TABLE no_pk_test
 (
   id    INT NOT NULL,
   name  VARCHAR(255) NOT NULL,
-  
+
   CONSTRAINT no_pk_test_name UNIQUE (name)
 )
 EOF
@@ -993,7 +1008,7 @@ CREATE TABLE vendors
   CONSTRAINT vendors_name UNIQUE (name)
 )
 EOF
-    
+
     $dbh->do('CREATE SEQUENCE vendors_id_seq');
     $dbh->do(<<"EOF");
 CREATE OR REPLACE TRIGGER vendors_insert BEFORE INSERT ON vendors
@@ -1048,7 +1063,7 @@ CREATE TABLE prices
   CONSTRAINT prices_product_id_fk FOREIGN KEY (product_id) REFERENCES products (id)
 )
 EOF
-    
+
     $dbh->do('CREATE SEQUENCE prices_id_seq');
     $dbh->do(<<"EOF");
 CREATE OR REPLACE TRIGGER prices_insert BEFORE INSERT ON prices

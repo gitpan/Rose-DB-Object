@@ -23,7 +23,7 @@ use Rose::DB::Object::MakeMethods::Generic;
 our $Triggers_Key      = 'triggers';
 our $Trigger_Index_Key = 'trigger_index';
 
-our $VERSION = '0.782';
+our $VERSION = '0.787';
 
 use overload
 (
@@ -52,12 +52,13 @@ use Rose::Class::MakeMethods::Generic
 
 __PACKAGE__->event_method_types
 (
-  inflate => [ qw(get_set get) ],
-  deflate => [ qw(get_set get) ],
-  on_load => [ qw(get_set set) ],
-  on_save => [ qw(get_set get) ],
-  on_set  => [ qw(get_set set) ],
-  on_get  => [ qw(get_set get) ],
+  inflate   => [ qw(get_set get) ],
+  deflate   => [ qw(get_set get) ],
+  on_load   => [ qw(get_set set) ],
+  on_save   => [ qw(get_set get) ],
+  on_set    => [ qw(get_set set) ],
+  on_get    => [ qw(get_set get) ],
+  lazy_load => [ qw(get_set get) ],
 );
 
 Rose::Object::MakeMethods::Generic->make_methods
@@ -79,6 +80,7 @@ Rose::Object::MakeMethods::Generic->make_methods
     'error',
     'ordinal_position',
     'parse_error',
+    'remarks',
     __PACKAGE__->common_method_maker_argument_names,
   ],
 );
@@ -146,7 +148,18 @@ sub default_value_sequence_name
   my $db;
   $db = shift  if(UNIVERSAL::isa($_[0], 'Rose::DB'));
   my $parent = $self->parent;
-  my $db_id = $db ? $db->id : $parent ? $parent->init_db_id : ANY_DB;
+  my ($db_id, $error);
+
+  # Sometimes data source are not set up yet when this method
+  # is called.  Allow for failure, falling back to ANY_DB
+  TRY:
+  {
+    local $@;
+    eval { $db_id = $db ? $db->id : $parent ? $parent->init_db_id : ANY_DB };
+    $error = $@;
+  }
+
+  $db_id = ANY_DB if ($error);
 
   return $self->{'default_value_sequence_name'}{$db_id}  unless(@_);
 
@@ -382,6 +395,11 @@ sub init_with_dbi_column_info
     $self->db_type($db_type);
   }
 
+  if($col_info->{'REMARKS'})
+  {
+    $self->remarks($col_info->{'REMARKS'});
+  }
+
   $self->ordinal_position($col_info->{'ORDINAL_POSITION'} || 0);
 
   $self->default_value_sequence_name($col_info->{'rdbo_default_value_sequence_name'});
@@ -573,7 +591,7 @@ sub lazy
     }
 
     $self->{'lazy'} = 1;
-    $self->add_builtin_trigger(event => 'on_get',
+    $self->add_builtin_trigger(event => 'lazy_load',
                                name  => 'load_on_demand',
                                code  => $self->load_on_demand_on_get_code);
 
@@ -647,12 +665,13 @@ sub load_on_demand_on_set_code
 
 our %Trigger_Events =
 (
-  inflate => 1,
-  deflate => 1,
-  on_load => 1,
-  on_save => 1,
-  on_set  => 1,
-  on_get  => 1,
+  inflate   => 1,
+  deflate   => 1,
+  on_load   => 1,
+  on_save   => 1,
+  on_set    => 1,
+  on_get    => 1,
+  lazy_load => 1,
 );
 
 sub trigger_events { keys %Trigger_Events }
@@ -971,6 +990,8 @@ sub apply_method_triggers
   unshift(@{$on_get_code ||= []}, @$builtins)
     if($builtins = $self->builtin_triggers('on_get'));  
 
+  my $lazy_load_code = $self->builtin_triggers('lazy_load');
+
   my $key             = $self->hash_key;
   my $formatted_key   = column_value_formatted_key($key);
   my $is_inflated_key = column_value_is_inflated_key($key);
@@ -981,7 +1002,8 @@ sub apply_method_triggers
   {
     if($inflate_code || $deflate_code || 
        $on_load_code || $on_save_code ||
-       $on_set_code  || $on_get_code)
+       $on_set_code  || $on_get_code  ||
+       $lazy_load_code)
     {
       my $method = sub
       {
@@ -1118,6 +1140,14 @@ sub apply_method_triggers
             {
               local $self->{'triggers_disabled'} = 1;
 
+              if($lazy_load_code)
+              {
+                foreach my $code (@$lazy_load_code)
+                {
+                  $code->($self);
+                }
+              }
+
               if($inflate_code)
               {
                 my $value;
@@ -1196,7 +1226,7 @@ sub apply_method_triggers
   }
   elsif($type eq 'get')
   {
-    if($inflate_code || $deflate_code || $on_save_code || $on_get_code)
+    if($inflate_code || $deflate_code || $on_save_code || $on_get_code || $lazy_load_code)
     {
       my $method = sub
       {
@@ -1263,6 +1293,14 @@ sub apply_method_triggers
           unless($self->{'triggers_disabled'})
           {
             local $self->{'triggers_disabled'} = 1;
+
+            if($lazy_load_code)
+            {
+              foreach my $code (@$lazy_load_code)
+              {
+                $code->($self);
+              }
+            }
 
             if($inflate_code)
             {
@@ -1870,6 +1908,10 @@ Parse and return a convenient Perl representation of VALUE.  What form this valu
 
 Get or set the column's ordinal position in the primary key.  Returns undef if the column is not part of the primary key.  Position numbering starts from 1.
 
+=item B<remarks [TEXT]>
+
+Get or set a text description of the column.
+
 =item B<rw_method_name>
 
 Returns the name of the method used to get or set the column value.  This is a convenient shortcut for:
@@ -2001,6 +2043,6 @@ John C. Siracusa (siracusa@gmail.com)
 
 =head1 LICENSE
 
-Copyright (c) 2009 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2010 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

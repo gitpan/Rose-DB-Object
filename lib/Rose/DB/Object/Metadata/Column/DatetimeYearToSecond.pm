@@ -5,16 +5,16 @@ use strict;
 use Rose::DB::Object::Metadata::Column::Datetime;
 our @ISA = qw(Rose::DB::Object::Metadata::Column::Datetime);
 
-our $VERSION = '0.771';
+our $VERSION = '0.787';
 
 sub type { 'datetime year to second' }
 
 sub should_inline_value
 {
-  #my($self, $db, $value) = @_;
+  my($self, $db, $value) = @_;
   no warnings 'uninitialized';
-  return (($_[1]->validate_datetime_year_to_second_keyword($_[2]) && $_[1]->should_inline_datetime_keywords) || 
-          $_[2] =~ /^\w+\(.*\)$/) ? 1 : 0;
+  return (($db->validate_datetime_year_to_second_keyword($value) && $db->should_inline_datetime_keywords) ||
+          ($db->keyword_function_calls && $value =~ /^\w+\(.*\)$/)) ? 1 : 0;
 }
 
 sub parse_value
@@ -110,6 +110,6 @@ John C. Siracusa (siracusa@gmail.com)
 
 =head1 LICENSE
 
-Copyright (c) 2009 by John C. Siracusa.  All rights reserved.  This program is
+Copyright (c) 2010 by John C. Siracusa.  All rights reserved.  This program is
 free software; you can redistribute it and/or modify it under the same terms
 as Perl itself.

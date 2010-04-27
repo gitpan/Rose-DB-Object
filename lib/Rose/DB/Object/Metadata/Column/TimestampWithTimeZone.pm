@@ -1,21 +1,18 @@
-package Rose::DB::Object::Metadata::Column::Timestamp;
+package Rose::DB::Object::Metadata::Column::TimestampWithTimeZone;
 
 use strict;
 
-use Rose::DateTime::Util;
-use Rose::DB::Object::MakeMethods::Date;
-
-use Rose::DB::Object::Metadata::Column::Date;
-our @ISA = qw(Rose::DB::Object::Metadata::Column::Date);
+use Rose::DB::Object::Metadata::Column::Timestamp;
+our @ISA = qw(Rose::DB::Object::Metadata::Column::Timestamp);
 
 our $VERSION = '0.787';
 
 foreach my $type (__PACKAGE__->available_method_types)
 {
-  __PACKAGE__->method_maker_type($type => 'timestamp');
+  __PACKAGE__->method_maker_type($type => 'timestamp_with_time_zone');
 }
 
-sub type { 'timestamp' }
+sub type { 'timestamp with time zone' }
 
 sub should_inline_value
 {
@@ -31,14 +28,9 @@ sub parse_value
 
   $self->parse_error(undef);
 
-  my $dt = $db->parse_timestamp(@_);
+  my $dt = $db->parse_timestamp_with_time_zone(@_);
 
-  if($dt)
-  {
-    $dt->set_time_zone($self->time_zone || $db->server_time_zone)
-      if(UNIVERSAL::isa($dt, 'DateTime'));
-  }
-  else
+  unless($dt)
   {
     $dt = Rose::DateTime::Util::parse_date($_[0], $self->time_zone || $db->server_time_zone);
 
@@ -52,7 +44,7 @@ sub parse_value
   return $dt;
 }
 
-sub format_value { shift; shift->format_timestamp(@_) }
+sub format_value { shift; shift->format_timestamp_with_time_zone(@_) }
 
 1;
 
@@ -60,13 +52,13 @@ __END__
 
 =head1 NAME
 
-Rose::DB::Object::Metadata::Column::Timestamp - Timestamp column metadata.
+Rose::DB::Object::Metadata::Column::TimestampWithTimeZone - Timestamp with time zone column metadata.
 
 =head1 SYNOPSIS
 
-  use Rose::DB::Object::Metadata::Column::Timestamp;
+  use Rose::DB::Object::Metadata::Column::TimestampWithTimeZone;
 
-  $col = Rose::DB::Object::Metadata::Column::Timestamp->new(...);
+  $col = Rose::DB::Object::Metadata::Column::TimestampWithTimeZone->new(...);
   $col->make_methods(...);
   ...
 
@@ -74,7 +66,7 @@ Rose::DB::Object::Metadata::Column::Timestamp - Timestamp column metadata.
 
 Objects of this class store and manipulate metadata for timestamp columns in a database.  Column metadata objects store information about columns (data type, size, etc.) and are responsible for creating object methods that manipulate column values.
 
-This class inherits from L<Rose::DB::Object::Metadata::Column::Date>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Date> documentation for more information.
+This class inherits from L<Rose::DB::Object::Metadata::Column::Timestamp>. Inherited methods that are not overridden will not be documented a second time here.  See the L<Rose::DB::Object::Metadata::Column::Date> documentation for more information.
 
 =head1 METHOD MAP
 
@@ -82,15 +74,15 @@ This class inherits from L<Rose::DB::Object::Metadata::Column::Date>. Inherited 
 
 =item C<get_set>
 
-L<Rose::DB::Object::MakeMethods::Date>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp>, C<interface =E<gt> 'get_set', ...>
+L<Rose::DB::Object::MakeMethods::Date>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp_with_time_zone>, C<interface =E<gt> 'get_set', ...>
 
 =item C<get>
 
-L<Rose::DB::Object::MakeMethods::Date>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp>, C<interface =E<gt> 'get', ...>
+L<Rose::DB::Object::MakeMethods::Date>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp_with_time_zone>, C<interface =E<gt> 'get', ...>
 
 =item C<set>
 
-L<Rose::DB::Object::MakeMethods::Date>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp>, C<interface =E<gt> 'set', ...>
+L<Rose::DB::Object::MakeMethods::Date>, L<timestamp|Rose::DB::Object::MakeMethods::Date/timestamp_with_time_zone>, C<interface =E<gt> 'set', ...>
 
 =back
 
@@ -106,7 +98,7 @@ Convert VALUE to the equivalent C<DateTime> object.  VALUE maybe returned unmodi
 
 =item B<type>
 
-Returns "timestamp".
+Returns "timestamp with time zone".
 
 =back
 
