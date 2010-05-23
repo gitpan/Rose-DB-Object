@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 583;
+use Test::More tests => 585;
 
 BEGIN 
 {
@@ -438,7 +438,7 @@ SKIP: foreach my $db_type (qw(pg pg_with_schema))
 
 SKIP: foreach my $db_type ('mysql')
 {
-  skip("MySQL tests", 117)  unless($HAVE_MYSQL);
+  skip("MySQL tests", 118)  unless($HAVE_MYSQL);
 
   Rose::DB->default_type($db_type);
 
@@ -471,6 +471,8 @@ SKIP: foreach my $db_type ('mysql')
   }
 
   ok($o->load, "load() 1 - $db_type");
+
+  is(ref $o->dt_default, 'DateTime', "now() default - $db_type");
 
   is($o->zepoch->ymd, '1970-01-01', "zero epoch default - $db_type");
 
@@ -1190,7 +1192,7 @@ SKIP: foreach my $db_type ('sqlite')
 
 SKIP: foreach my $db_type (qw(oracle))
 {
-  skip("Oracle tests", 79)  unless($HAVE_ORACLE);
+  skip("Oracle tests", 80)  unless($HAVE_ORACLE);
 
   Rose::DB->default_type($db_type);
 
@@ -1458,7 +1460,8 @@ SKIP: foreach my $db_type (qw(oracle))
   $o = MyOracleObject->new(name => 'Sequence Test', 
                               k1   => 4,
                               k2   => 5,
-                              k3   => 6);
+                              k3   => 6,
+                              key  => 123);
 
   $o->save;
 
@@ -1467,6 +1470,11 @@ SKIP: foreach my $db_type (qw(oracle))
   # Reset for next trip through loop (if any)
   $o->meta->default_load_speculative(0);
   $o->meta->error_mode('return');
+
+  $o = MyOracleObject->new(key => 123);
+  eval { $o->load };
+  
+  ok(!$@, "reserved-word load() - $db_type");
 }
 
 BEGIN
@@ -1722,6 +1730,7 @@ CREATE TABLE rose_db_object_test
   tee_time0      VARCHAR(32),
   tee_time5      VARCHAR(32) DEFAULT '12:34:56.123456789',
   tee_time9      VARCHAR(32),
+  dt_default     TIMESTAMP,
   last_modified  TIMESTAMP,
   date_created   TIMESTAMP,
 
@@ -1785,6 +1794,7 @@ EOF
       tee_time0 => { type => 'time', scale => 0 },
       tee_time5 => { type => 'time', scale => 5, default => '12:34:56.123456789' },
       tee_time9 => { type => 'time', scale => 9 },
+      dt_default => {  type => 'timestamp', default => 'now()' },
       last_modified => { type => 'timestamp' },
       date_created  => { type => 'timestamp' },
       main::nonpersistent_column_definitions(),
@@ -2150,6 +2160,7 @@ CREATE TABLE rose_db_object_test
   start_date      DATE,
   save            INT,
   claim#          INT,
+  key             INT,
   last_modified   TIMESTAMP,
   date_created    TIMESTAMP,
   date_created_tz TIMESTAMP WITH TIME ZONE,
@@ -2194,6 +2205,7 @@ EOF
       k1       => { type => 'int' },
       k2       => { type => 'int', lazy => 1 },
       k3       => { type => 'int' },
+      key      => { type => 'int' },
       flag     => { type => 'boolean', default => 1 },
       flag2    => { type => 'boolean' },
       status   => { default => 'active', add_methods => [ qw(get set) ] },
@@ -2221,6 +2233,7 @@ EOF
     Test::More::ok($@, 'meta->initialize() no override');
 
     MyOracleObject->meta->add_unique_key('save');
+    MyOracleObject->meta->add_unique_key('key');
     MyOracleObject->meta->add_unique_key([ qw(k1 k2 k3) ]);
 
     MyOracleObject->meta->initialize(preserve_existing => 1);
