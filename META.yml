@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Rose-DB-Object
-version:            0.788
+version:            0.789
 abstract:           Extensible, high performance object-relational mapper (ORM).
 author:
     - John Siracusa <siracusa@gmail.com>
@@ -23,7 +23,7 @@ requires:
     Math::BigInt:         1.77
     perl:                 5.006000
     Rose::DateTime::Util:  0.532
-    Rose::DB:             0.761
+    Rose::DB:             0.762
     Rose::Object:         0.854
     Scalar::Util:         0
     Test::More:           0

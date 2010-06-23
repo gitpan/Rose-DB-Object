@@ -16,7 +16,7 @@ use Rose::DB::Constants qw(IN_TRANSACTION);
 use Rose::DB::Object::Exception;
 use Rose::DB::Object::Util();
 
-our $VERSION = '0.788';
+our $VERSION = '0.789';
 
 our $Debug = 0;
 
@@ -267,6 +267,12 @@ sub load
     $column_names = $meta->column_names;
   }
 
+  # Coerce for_update boolean alias into lock argument
+  if(delete $args{'for_update'})
+  {
+    $args{'lock'}{'type'} ||= 'for update';
+  }
+
   #
   # Handle sub-object load in separate code path
   #
@@ -294,6 +300,7 @@ sub load
                                   multi_many_ok  => 1,
                                   nonlazy        => $args{'nonlazy'},
                                   inject_results => $args{'inject_results'},
+                                  lock           => $args{'lock'},
                                   (exists $args{'prepare_cached'} ?
                                   (prepare_cached =>  $args{'prepare_cached'}) : 
                                   ()))
@@ -399,6 +406,11 @@ sub load
         {
           $sql = $meta->load_all_sql(\@key_columns, $db);
         }
+      }
+
+      if(my $lock = $args{'lock'})
+      {
+        $sql .= ' ' . $db->format_select_lock($self, $lock);
       }
 
       # $meta->prepare_select_options (defunct)
@@ -2245,6 +2257,44 @@ PARAMS are optional name/value pairs.  Valid PARAMS are:
 
 =over 4
 
+=item B<for_update BOOL>
+
+If true, this parameter is translated to be the equivalent of passing the L<lock|/lock> parameter and setting the C<type> to C<for update>.  For example, these are both equivalent:
+
+    $object->load(for_update => 1);
+    $object->load(lock => { type => 'for update' });
+
+See the L<lock|/lock> parameter below for more information.
+
+=item B<lock [ TYPE | HASHREF ]>
+
+Load the object using some form of locking.  These lock directives have database-specific behavior and not all directives are supported by all databases.  The value should be a reference to a hash or a TYPE string, which is equivalent to setting the value of the C<type> key in the hash reference form.  For example, these are both equivalent:
+
+    $object->load(lock => 'for update');
+    $object->load(lock => { type => 'for update' });
+
+Valid hash keys are:
+
+=over 4
+
+=item B<columns ARRAYREF>
+
+A reference to an array of column names to lock.  References to scalars will be de-referenced and used as-is, included literally in the SQL locking clause.
+
+=item C<nowait BOOL>
+
+If true, do not wait to acquire the lock.    If supported, this is usually by adding a C<NOWAIT> directive to the SQL.
+
+=item C<type TYPE>
+
+The lock type.  Valid values for TYPE are C<for update> and C<shared>.  This parameter is required unless the L<for_update|/for_update> parameter was passed with a true value.
+
+=item C<wait TIME>
+
+Wait for the specified TIME (generally seconds) before giving up acquiring the lock.  If supported, this is usually by adding a C<WAIT ...> clause to the SQL.
+
+=back
+
 =item B<nonlazy BOOL>
 
 If true, then all columns will be fetched from the database, even L<lazy|Rose::DB::Object::Metadata::Column/load_on_demand> columns.  If omitted, the default is false.
@@ -2439,7 +2489,7 @@ L<http://rose.googlecode.com>
 
 =head1 CONTRIBUTORS
 
-Bradley C Bailey, Graham Barr, David Christensen, Lucian Dragus, Justin Ellison, Perrin Harkins, Cees Hek, Benjamin Hitz, Peter Karman, Ed Loehr, Adam Mackler, Michael Reece, Thomas Whaples, Douglas Wilson, Teodor Zlatanov
+Bradley C Bailey, Graham Barr, Kostas Chatzikokolakis, David Christensen, Lucian Dragus, Justin Ellison, Perrin Harkins, Cees Hek, Benjamin Hitz, Peter Karman, Ed Loehr, Adam Mackler, Michael Reece, Thomas Whaples, Douglas Wilson, Teodor Zlatanov
 
 =head1 AUTHOR
 
