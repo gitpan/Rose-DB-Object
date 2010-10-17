@@ -16,7 +16,7 @@ use Rose::DB::Object::Constants
 # XXX: A value that is unlikely to exist in a primary key column value
 use constant PK_JOIN => "\0\2,\3\0";
 
-our $VERSION = '0.784';
+our $VERSION = '0.790';
 
 our $Debug = 0;
 
@@ -217,7 +217,7 @@ sub make_manager_methods
 
     $args{'methods'} = 
     { 
-      $args{'base_name'} => [ $class->default_manager_method_types ] 
+      $base_name => [ $class->default_manager_method_types ] 
     };
   }
   elsif($args{'base_name'})
@@ -4392,7 +4392,7 @@ The value should be a reference to a hash or a TYPE string, which is equivalent 
 
     lock => 'for update'
     lock => { type => 'for update' }
- 
+
 Valid hash keys are:
 
 =over 4
