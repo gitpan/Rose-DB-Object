@@ -1,3 +1,8 @@
+0.791 (10.23.2010) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed a bug that caused on_save column triggers to fire when loading.
+    * More floating point rounding fixes in the test suite.
+
 0.790 (10.17.2010) - John Siracusa <siracusa@gmail.com>
 
     * The auto-initialization process no longer sets column default
