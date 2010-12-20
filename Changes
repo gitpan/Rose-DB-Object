@@ -1,3 +1,9 @@
+0.792 (12.20.2010) - John Siracusa <siracusa@gmail.com>
+
+    * Detect attempts to create methods whose names conflict with
+      methods defined in Rose::DB::Object itself.  (Reported by
+      Dave Howorth)
+
 0.791 (10.23.2010) - John Siracusa <siracusa@gmail.com>
 
     * Fixed a bug that caused on_save column triggers to fire when loading.
