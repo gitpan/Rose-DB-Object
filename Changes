@@ -1,3 +1,7 @@
+0.793 (12.21.2010) - John Siracusa <siracusa@gmail.com>
+
+    * Corrected skip count in t/db-object.t
+
 0.792 (12.20.2010) - John Siracusa <siracusa@gmail.com>
 
     * Detect attempts to create methods whose names conflict with
