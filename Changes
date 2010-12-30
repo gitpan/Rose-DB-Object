@@ -1,3 +1,8 @@
+0.794 (12.30.2010) - John Siracusa <siracusa@gmail.com>
+
+    * Handle null default values for foreign key columns in PostgreSQL
+      (RT 64331)
+
 0.793 (12.21.2010) - John Siracusa <siracusa@gmail.com>
 
     * Corrected skip count in t/db-object.t
