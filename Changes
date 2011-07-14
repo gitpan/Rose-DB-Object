@@ -1,3 +1,13 @@
+0.795 (07.14.2011) - John Siracusa <siracusa@gmail.com>
+
+    * The Loader now passes the Manager class name as a second argument to
+      module_preamble and module_postamble subroutines to allow Manager
+      classes to be distinguished from object classes.
+    * Corrected a typo in the ConventionManager documentation ("objs_"
+      should be "_objs")
+    * Fixed a bug that caused load-on-demand columns to be loaded by
+      load(with => ...) method calls.  (Reported by Marlon Bailey)
+
 0.794 (12.30.2010) - John Siracusa <siracusa@gmail.com>
 
     * Handle null default values for foreign key columns in PostgreSQL

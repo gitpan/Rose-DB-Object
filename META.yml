@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Rose-DB-Object
-version:            0.794
+version:            0.795
 abstract:           Extensible, high performance object-relational mapper (ORM).
 author:
     - John Siracusa <siracusa@gmail.com>
