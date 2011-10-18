@@ -222,4 +222,5 @@ t/spot-check-14.t
 t/test-lib.pl
 t/undef-overrides-default.t
 t/unique-key-prefs.t
-META.yml                                 Module meta-data (added by MakeMaker)
+META.yml                                 Module YAML meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)
