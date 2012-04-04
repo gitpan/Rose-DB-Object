@@ -1,3 +1,13 @@
+0.798 (04.04.2012) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed a typo in the Rose::DB::Object::Manager documentation.
+    * Fixed a bug that caused save() not to throw an exception when
+      a transaction could not be started (Reported by jdv79)
+    * Converted some uses of each() to keys() to avoid iteration
+      state bugs (RT 75773)
+    * Corrected a broken POD link in the one-to-many relationship
+      documentation.  (Reported by Nee)
+
 0.797 (11.21.2011) - John Siracusa <siracusa@gmail.com>
 
     * Fixed a bug that prevented explicitly disabling/enabling column
