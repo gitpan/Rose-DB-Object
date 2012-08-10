@@ -1,3 +1,11 @@
+0.799 (08.10.2012) - John Siracusa <siracusa@gmail.com>
+
+    * Added column type mappings for varchar2, nvarchar, and nvarchar2.
+      (Suggested by Chris Campise)
+    * Fixed some typos in the Loader documentation (RT 78860)
+    * Fixed a Loader bug that caused the base class's init_db method to
+      be ignored (RT 78571)
+
 0.798 (04.04.2012) - John Siracusa <siracusa@gmail.com>
 
     * Fixed a typo in the Rose::DB::Object::Manager documentation.
