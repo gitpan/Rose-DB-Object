@@ -1,3 +1,8 @@
+0.800 (09.09.2012) - John Siracusa <siracusa@gmail.com>
+
+    * Correct tests to account for the Loader's init_db generation fix
+      in 0.799 behavior (RT 79526)
+
 0.799 (08.10.2012) - John Siracusa <siracusa@gmail.com>
 
     * Added column type mappings for varchar2, nvarchar, and nvarchar2.
