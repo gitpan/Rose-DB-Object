@@ -1,3 +1,8 @@
+0.801 (11.24.2012) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed "DBD::Informix::st execute failed: SQL: -255: Not in transaction"
+      errors in the test suite.  (Patch by Sergey Leschenko.)
+
 0.800 (09.09.2012) - John Siracusa <siracusa@gmail.com>
 
     * Correct tests to account for the Loader's init_db generation fix
