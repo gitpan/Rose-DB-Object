@@ -1,6 +1,12 @@
+0.803 (01.04.2013) - John Siracusa <siracusa@gmail.com>
+
+    * Make char column's parse_value() method honor a column's overflow
+      attribute when handling column values that are too long.
+    * Correct length value in column overflow error messages.
+
 0.802 (01.03.2013) - John Siracusa <siracusa@gmail.com>
 
-    * Make string column's parse_value() method honor a column's overflow
+    * Make varchar column's parse_value() method honor a column's overflow
       attribute when handling column values that are too long.
 
 0.801 (11.24.2012) - John Siracusa <siracusa@gmail.com>
