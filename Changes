@@ -1,3 +1,7 @@
+0.804 (02.01.2013) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed some test failures on perl 5.16.2, mysql 5.5.29, and DBD::Pg 2.19.3.
+
 0.803 (01.04.2013) - John Siracusa <siracusa@gmail.com>
 
     * Make char column's parse_value() method honor a column's overflow
