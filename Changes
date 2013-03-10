@@ -1,3 +1,10 @@
+0.805 (03.10.2013) - John Siracusa <siracusa@gmail.com>
+
+    * Changed the recommended Oracle trigger PL/SQL to avoid sequence gaps.
+      (Patch by Tom Adamo.)
+    * Updated several Manager calls in bench.pl, adding the inject_results
+      parameter.
+
 0.804 (02.01.2013) - John Siracusa <siracusa@gmail.com>
 
     * Fixed some test failures on perl 5.16.2, mysql 5.5.29, and DBD::Pg 2.19.3.
