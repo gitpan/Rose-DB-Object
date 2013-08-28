@@ -1,3 +1,8 @@
+0.807 (08.28.2013) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed inheritance of Rose::DB::Object::Cached's cached_objects_expire_in
+      attribute.  (Patch by Frank Wesemann)
+
 0.806 (06.08.2013) - John Siracusa <siracusa@gmail.com>
 
     * Updated iterator leak test to work on perl 5.17.* and later (RT 86000)
