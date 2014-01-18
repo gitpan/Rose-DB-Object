@@ -7,7 +7,7 @@ build_requires:
 configure_requires:
   ExtUtils::MakeMaker: 0
 dynamic_config: 1
-generated_by: 'ExtUtils::MakeMaker version 6.64, CPAN::Meta::Converter version 2.120921'
+generated_by: 'ExtUtils::MakeMaker version 6.84, CPAN::Meta::Converter version 2.133380'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -36,9 +36,9 @@ requires:
   Time::Clock: 1.00
   perl: 5.006000
 resources:
+  MailingList: http://groups.google.com/group/rose-db-object
   bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=Rose-DB-Object
   homepage: http://rose.googlecode.com/
   license: http://dev.perl.org/licenses/
   repository: http://rose.googlecode.com/svn/trunk/modules/Rose-DB-Object
-  x_MailingList: http://groups.google.com/group/rose-db-object
-version: 0.809
+version: 0.810
