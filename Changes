@@ -1,4 +1,9 @@
-0.810 (01.18.2013) - John Siracusa <siracusa@gmail.com>
+0.811 (03.21.2014) - John Siracusa <siracusa@gmail.com>
+
+    * Fixed a bug that prevented many-to-many map records from being saved
+      to the database (RT 93531)
+
+0.810 (01.18.2014) - John Siracusa <siracusa@gmail.com>
 
     * Improved automated installation detection (RT 92255)
 
