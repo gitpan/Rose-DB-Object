@@ -1,3 +1,17 @@
+0.812 (11.07.2014) - John Siracusa <siracusa@gmail.com>
+
+    * Second attempt to address precision and scale mix-ups in auto-loaded
+      numeric column metadata.
+    * Fixed get_objects_count() with custom select lists and distinct
+      (Reported by Alexander Karelas)
+    * Fixed precision and scale references in the tutorial (RT 96079)
+    * Fixed an incorrect method name in the Rose::DB::Object::Helpers
+      documentation (RT 97602)
+    * Fixed a bug where save() parameters were not passed to map record
+      save() calls (RT 98730)
+    * Corrected a typo in the documentation (RT 94100)
+    * Updated tests to work with DBD::Pg versions greater than 2.x.x.
+
 0.811 (03.21.2014) - John Siracusa <siracusa@gmail.com>
 
     * Fixed a bug that prevented many-to-many map records from being saved
