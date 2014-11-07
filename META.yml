@@ -41,4 +41,4 @@ resources:
   homepage: http://rose.googlecode.com/
   license: http://dev.perl.org/licenses/
   repository: http://rose.googlecode.com/svn/trunk/modules/Rose-DB-Object
-version: '0.812'
+version: '0.813'
